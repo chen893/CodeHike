@@ -1,0 +1,17 @@
+{
+  "name": "build-your-own-redux",
+  "version": "1.0.0",
+  "description": "Build Your Own Redux - A CodeHike Tutorial",
+  "scripts": {
+    "dev": "next dev",
+    "build": "next build",
+    "start": "next start"
+  },
+  "dependencies": {
+    "codehike": "^1.1.0",
+    "next": "^16.2.2",
+    "react": "^19.2.4",
+    "react-dom": "^19.2.4",
+    "zod": "^4.3.6"
+  }
+}

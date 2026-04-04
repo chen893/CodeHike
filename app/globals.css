@@ -1,0 +1,263 @@
+:root {
+  --ink-dark: #232529;
+  --ink-dark-soft: #7b7f86;
+  --ink-bright: #dfe5ea;
+  --paper: #f6f2ea;
+  --paper-line: #d4cdc1;
+  --paper-text: #4e4a43;
+  --paper-strong: #35312b;
+  --mint: #8fd2c1;
+  --sky: #7fb9c8;
+  --olive: #b8c97b;
+  --amber: #ddb081;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html {
+  height: 100%;
+  scroll-behavior: smooth;
+}
+
+body {
+  margin: 0;
+  height: 100%;
+  overflow: hidden;
+  font-family: Georgia, "Times New Roman", "Songti SC", serif;
+  background: linear-gradient(90deg, var(--ink-dark) 0 50%, var(--paper) 50% 100%);
+  color: var(--paper-text);
+}
+
+a {
+  color: inherit;
+}
+
+pre,
+code {
+  font-family: "Cascadia Code", "Fira Code", monospace;
+}
+
+.page-shell {
+  width: min(1200px, calc(100vw - 40px));
+  margin: 0 auto;
+  padding: 48px 0 80px;
+}
+
+.editorial-shell {
+  height: 100vh;
+}
+
+.editorial-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1.08fr) minmax(420px, 0.92fr);
+  gap: 0;
+  align-items: start;
+  height: 100vh;
+  overflow: hidden;
+}
+
+.code-column {
+  height: 100vh;
+  background: var(--ink-dark);
+}
+
+.code-column-inner {
+  height: 100vh;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  padding: 32px 58px;
+}
+
+.code-column-kicker {
+  margin: 0 0 28px;
+  font-family: "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
+  font-size: 12px;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  color: rgba(223, 229, 234, 0.52);
+}
+
+.code-stage {
+  position: relative;
+  width: min(560px, 100%);
+  margin: 0 auto;
+}
+
+.code-meta {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 18px;
+}
+
+.code-frame-title,
+.code-file-label {
+  margin: 0;
+  font-family: "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
+  font-size: 12px;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: rgba(223, 229, 234, 0.5);
+}
+
+.code-content {
+  position: relative;
+  padding: 0;
+}
+
+.article-column {
+  height: 100vh;
+  overflow-y: auto;
+  overflow-x: hidden;
+  background: var(--paper);
+  padding: 0 0 0 64px;
+  overscroll-behavior: contain;
+  scroll-behavior: smooth;
+}
+
+.article-step {
+  min-height: 100vh;
+  display: flex;
+  align-items: flex-start;
+  padding: 0 72px 0 0;
+}
+
+.article-step-inner {
+  width: min(520px, 100%);
+  min-height: 100vh;
+  padding: 56px 0 120px 24px;
+  border-left: 1px solid var(--paper-line);
+  transition: border-color 180ms ease;
+}
+
+.article-step[data-selected="true"] .article-step-inner {
+  border-left-color: #bdb4a5;
+}
+
+.article-step-kicker {
+  margin: 0 0 18px;
+  font-family: "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
+  font-size: 12px;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: #938a7d;
+}
+
+.article-step-title {
+  margin: 0 0 42px;
+  color: var(--paper-strong);
+  font-size: clamp(34px, 3.3vw, 56px);
+  line-height: 1.14;
+  font-weight: 600;
+  letter-spacing: -0.035em;
+}
+
+.article-step-lead,
+.article-step-body {
+  margin: 0 0 34px;
+  color: var(--paper-text);
+  font-size: clamp(18px, 1.6vw, 22px);
+  line-height: 1.7;
+}
+
+.code-pre {
+  max-height: none;
+  margin: 0;
+  overflow: visible;
+  background: transparent !important;
+  color: var(--ink-bright);
+  font-size: 15px;
+  line-height: 1.95;
+}
+
+.code-line {
+  padding: 0;
+  transition:
+    opacity 220ms ease,
+    filter 220ms ease,
+    background-color 220ms ease;
+}
+
+.code-line[data-focus="true"] {
+  opacity: 1;
+}
+
+.code-pre:has([data-focus="true"]) .code-line:not([data-focus="true"]) {
+  opacity: 0.22;
+  filter: saturate(0.7);
+}
+
+.code-mark-wrap {
+  margin-left: -16px;
+  padding-left: 12px;
+  border-left: 2px solid transparent;
+}
+
+.code-line-added {
+  border-radius: 4px;
+}
+
+.code-line-ghost {
+  position: absolute;
+  z-index: 2;
+  pointer-events: none;
+  white-space: pre;
+  color: rgba(223, 229, 234, 0.5);
+}
+
+@media (max-width: 960px) {
+  body {
+    background: var(--paper);
+  }
+
+  .editorial-grid {
+    grid-template-columns: 1fr;
+    height: auto;
+    overflow: visible;
+  }
+
+  html,
+  body {
+    height: auto;
+  }
+
+  body {
+    overflow: auto;
+  }
+
+  .code-column {
+    min-height: auto;
+    height: auto;
+  }
+
+  .code-column-inner {
+    position: static;
+    min-height: auto;
+    height: auto;
+    padding: 28px 20px 12px;
+  }
+
+  .code-stage {
+    width: 100%;
+  }
+
+  .article-column {
+    height: auto;
+    overflow: visible;
+    padding: 0 20px 40px;
+  }
+
+  .article-step {
+    min-height: auto;
+    padding: 0;
+  }
+
+  .article-step-inner {
+    min-height: auto;
+    width: 100%;
+    padding: 36px 0 28px 16px;
+  }
+}
