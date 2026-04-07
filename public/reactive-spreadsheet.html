@@ -1,0 +1,1055 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>响应式电子表格</title>
+  <style>
+    :root {
+      --panel: #fffdf8;
+      --grid: #ffffff;
+      --line: #d8d2c5;
+      --line-strong: #b8af9c;
+      --text: #292522;
+      --muted: #766f67;
+      --accent: #1f6feb;
+      --accent-soft: #eaf2ff;
+      --error: #b42318;
+      --error-soft: #fee4e2;
+      --cycle: #a15c07;
+      --cycle-soft: #fff1d6;
+      --header: #f1ece3;
+      --shadow: 0 18px 45px rgba(41, 37, 34, 0.08);
+      --cell-width: 96px;
+      --cell-height: 30px;
+      color-scheme: light;
+      font-family: "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
+    }
+
+    * { box-sizing: border-box; }
+
+    html,
+    body {
+      margin: 0;
+      height: 100%;
+      overflow: hidden;
+      background: linear-gradient(180deg, #f9f7f2 0%, #f2ede4 100%);
+      color: var(--text);
+    }
+
+    body { padding: 18px; }
+
+    .app {
+      display: flex;
+      flex-direction: column;
+      height: calc(100vh - 36px);
+      min-height: 640px;
+      border: 1px solid rgba(184, 175, 156, 0.75);
+      background: rgba(255, 253, 248, 0.98);
+      box-shadow: var(--shadow);
+      overflow: hidden;
+    }
+
+    .toolbar {
+      display: grid;
+      grid-template-columns: 132px 1fr auto;
+      gap: 12px;
+      align-items: center;
+      padding: 14px 16px;
+      border-bottom: 1px solid var(--line);
+      background:
+        radial-gradient(circle at top left, rgba(31, 111, 235, 0.08), transparent 30%),
+        linear-gradient(180deg, rgba(255, 255, 255, 0.9), rgba(246, 242, 233, 0.96));
+    }
+
+    .cell-name {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      height: 42px;
+      border: 1px solid var(--line-strong);
+      background: rgba(255, 255, 255, 0.92);
+      font: 600 14px/1 Consolas, "SFMono-Regular", monospace;
+      letter-spacing: 0.04em;
+    }
+
+    .formula-wrap { display: grid; gap: 6px; }
+
+    .formula-label {
+      font-size: 12px;
+      color: var(--muted);
+      letter-spacing: 0.03em;
+      text-transform: uppercase;
+    }
+
+    .formula-input {
+      width: 100%;
+      height: 42px;
+      padding: 0 14px;
+      border: 1px solid var(--line-strong);
+      outline: none;
+      background: rgba(255, 255, 255, 0.96);
+      color: var(--text);
+      font: 500 14px/1.2 Consolas, "SFMono-Regular", monospace;
+      transition: border-color 120ms ease, box-shadow 120ms ease;
+    }
+
+    .formula-input:focus {
+      border-color: var(--accent);
+      box-shadow: 0 0 0 4px rgba(31, 111, 235, 0.12);
+    }
+
+    .status {
+      min-width: 180px;
+      text-align: right;
+      font-size: 13px;
+      color: var(--muted);
+      white-space: nowrap;
+    }
+
+    .content {
+      display: grid;
+      grid-template-rows: auto 1fr auto;
+      min-height: 0;
+      background: var(--panel);
+    }
+
+    .summary,
+    .legend {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 10px 18px;
+      padding: 12px 16px;
+      font-size: 13px;
+      color: var(--muted);
+      background: rgba(255, 252, 246, 0.9);
+    }
+
+    .summary { border-bottom: 1px solid var(--line); }
+    .legend { border-top: 1px solid var(--line); font-size: 12px; }
+    .summary strong { color: var(--text); font-weight: 600; }
+
+    .viewport {
+      position: relative;
+      min-height: 0;
+      overflow: auto;
+      background:
+        linear-gradient(180deg, rgba(255, 255, 255, 0.4), transparent 80px),
+        var(--grid);
+    }
+
+    .sheet {
+      border-collapse: collapse;
+      table-layout: fixed;
+      user-select: none;
+      font-size: 13px;
+      color: var(--text);
+    }
+
+    .sheet th,
+    .sheet td {
+      border: 1px solid var(--line);
+      min-width: var(--cell-width);
+      width: var(--cell-width);
+      height: var(--cell-height);
+      padding: 0;
+    }
+
+    .sheet th {
+      position: sticky;
+      z-index: 2;
+      background: var(--header);
+      font-weight: 600;
+      color: #4c463f;
+    }
+
+    .sheet .corner,
+    .sheet .row-header {
+      left: 0;
+      width: 54px;
+      min-width: 54px;
+      text-align: center;
+    }
+
+    .sheet .corner {
+      z-index: 4;
+      background: linear-gradient(180deg, #ece5d7, #e6dece);
+    }
+
+    .sheet .row-header { z-index: 3; }
+    .sheet .col-header { top: 0; text-align: center; }
+
+    .cell {
+      position: relative;
+      background: #fffefa;
+      cursor: pointer;
+      transition: background-color 120ms ease, box-shadow 120ms ease;
+    }
+
+    .cell-value {
+      display: block;
+      overflow: hidden;
+      padding: 0 10px;
+      text-align: right;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+      line-height: calc(var(--cell-height) - 2px);
+      font-variant-numeric: tabular-nums;
+      font-family: Consolas, "SFMono-Regular", monospace;
+    }
+
+    .cell:hover { background: #faf6ee; }
+    .cell.is-selected { background: var(--accent-soft); box-shadow: inset 0 0 0 2px var(--accent); z-index: 1; }
+    .cell.is-error { background: var(--error-soft); color: var(--error); }
+    .cell.is-cycle { background: var(--cycle-soft); color: var(--cycle); }
+    .cell.is-formula .cell-value { color: #11427b; }
+    .col-header.is-active,
+    .row-header.is-active { background: #dbe9ff; color: #123e77; }
+
+    .badge { display: inline-flex; align-items: center; gap: 6px; }
+    .swatch { width: 12px; height: 12px; border: 1px solid rgba(0, 0, 0, 0.08); }
+    .swatch.selection { background: var(--accent-soft); }
+    .swatch.error { background: var(--error-soft); }
+    .swatch.cycle { background: var(--cycle-soft); }
+
+    @media (max-width: 900px) {
+      body { padding: 0; }
+      .app { height: 100vh; min-height: 0; border: 0; }
+      .toolbar { grid-template-columns: 96px 1fr; }
+      .status { grid-column: 1 / -1; text-align: left; }
+    }
+  </style>
+</head>
+<body>
+  <div class="app" id="app">
+    <header class="toolbar">
+      <div class="cell-name" id="cell-name">A1</div>
+      <div class="formula-wrap">
+        <div class="formula-label">Formula / Value</div>
+        <input
+          id="formula-input"
+          class="formula-input"
+          type="text"
+          spellcheck="false"
+          autocomplete="off"
+          placeholder="输入数字，或使用 =A1+B2*2 / =SUM(A1:B3) / =AVG(A1:B3)"
+        >
+      </div>
+      <div class="status" id="status">已选中 A1，空单元格按 0 参与计算。</div>
+    </header>
+
+    <div class="content">
+      <div class="summary">
+        <span><strong>100 x 100</strong> 网格，10000 个单元格</span>
+        <span><strong>事件委托</strong> 处理点击与输入</span>
+        <span><strong>局部更新</strong> 只刷新受影响的节点</span>
+        <span><strong>安全解析</strong> 无 <code>eval</code> / <code>new Function</code></span>
+      </div>
+
+      <div class="viewport" id="viewport" tabindex="0">
+        <table class="sheet" id="sheet" aria-label="响应式电子表格"></table>
+      </div>
+
+      <div class="legend">
+        <span class="badge"><span class="swatch selection"></span> 当前选中</span>
+        <span class="badge"><span class="swatch error"></span> 解析错误或错误传播：<code>!ERR</code></span>
+        <span class="badge"><span class="swatch cycle"></span> 循环依赖：<code>!CYCLE</code></span>
+        <span>键盘：方向键移动，<code>Delete</code> 清空，<code>Enter</code> 聚焦公式栏。</span>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    (function () {
+      "use strict";
+
+      const ROWS = 100;
+      const COLS = 100;
+      const CELL_COUNT = ROWS * COLS;
+      const NUMBER_PATTERN = /^[+-]?(?:\d+(?:\.\d+)?|\.\d+)$/;
+
+      const STATE_EMPTY = "empty";
+      const STATE_OK = "ok";
+      const STATE_ERROR = "error";
+      const STATE_CYCLE = "cycle";
+
+      const sheetEl = document.getElementById("sheet");
+      const viewportEl = document.getElementById("viewport");
+      const formulaInputEl = document.getElementById("formula-input");
+      const cellNameEl = document.getElementById("cell-name");
+      const statusEl = document.getElementById("status");
+
+      const cellEls = new Array(CELL_COUNT);
+      const valueEls = new Array(CELL_COUNT);
+      const rowHeaderEls = new Array(ROWS);
+      const colHeaderEls = new Array(COLS);
+      const cells = new Array(CELL_COUNT);
+
+      let selectedIndex = 0;
+
+      initState();
+      renderGrid();
+      installEvents();
+      selectCell(0, true, false);
+
+      function initState() {
+        for (let index = 0; index < CELL_COUNT; index += 1) {
+          cells[index] = {
+            raw: "",
+            kind: "empty",
+            ast: null,
+            value: 0,
+            display: "",
+            state: STATE_EMPTY,
+            dependencies: new Set(),
+            dependents: new Set()
+          };
+        }
+      }
+
+      function renderGrid() {
+        let html = "<thead><tr><th class='corner'></th>";
+
+        for (let col = 0; col < COLS; col += 1) {
+          html += "<th class='col-header' data-col='" + col + "'>" + columnLabel(col) + "</th>";
+        }
+
+        html += "</tr></thead><tbody>";
+
+        for (let row = 0; row < ROWS; row += 1) {
+          html += "<tr><th class='row-header' data-row='" + row + "'>" + (row + 1) + "</th>";
+
+          for (let col = 0; col < COLS; col += 1) {
+            const index = row * COLS + col;
+            html += "<td class='cell' data-idx='" + index + "'><span class='cell-value'></span></td>";
+          }
+
+          html += "</tr>";
+        }
+
+        html += "</tbody>";
+        sheetEl.innerHTML = html;
+
+        const cellNodeList = sheetEl.querySelectorAll(".cell");
+        const valueNodeList = sheetEl.querySelectorAll(".cell-value");
+        const rowHeaderNodeList = sheetEl.querySelectorAll(".row-header");
+        const colHeaderNodeList = sheetEl.querySelectorAll(".col-header");
+
+        for (let index = 0; index < CELL_COUNT; index += 1) {
+          cellEls[index] = cellNodeList[index];
+          valueEls[index] = valueNodeList[index];
+        }
+
+        for (let row = 0; row < ROWS; row += 1) {
+          rowHeaderEls[row] = rowHeaderNodeList[row];
+        }
+
+        for (let col = 0; col < COLS; col += 1) {
+          colHeaderEls[col] = colHeaderNodeList[col];
+        }
+      }
+
+      function installEvents() {
+        document.getElementById("app").addEventListener("input", handleDelegatedInput);
+        sheetEl.addEventListener("click", handleGridClick);
+        viewportEl.addEventListener("keydown", handleViewportKeydown);
+        document.addEventListener("keydown", handleGlobalKeydown);
+      }
+
+      function handleDelegatedInput(event) {
+        if (event.target !== formulaInputEl) return;
+        setCellRaw(selectedIndex, formulaInputEl.value);
+      }
+
+      function handleGridClick(event) {
+        const cellEl = event.target.closest(".cell");
+        if (!cellEl) return;
+
+        const index = Number(cellEl.dataset.idx);
+        if (!Number.isInteger(index)) return;
+
+        selectCell(index, true, false);
+        viewportEl.focus({ preventScroll: true });
+      }
+
+      function handleViewportKeydown(event) {
+        if (event.target === formulaInputEl) return;
+        if (moveSelectionByKey(event.key)) {
+          event.preventDefault();
+        }
+      }
+
+      function handleGlobalKeydown(event) {
+        if (event.defaultPrevented) return;
+
+        if (event.target === formulaInputEl) {
+          if (event.key === "Escape") {
+            formulaInputEl.blur();
+            viewportEl.focus({ preventScroll: true });
+          }
+          return;
+        }
+
+        if (moveSelectionByKey(event.key)) {
+          event.preventDefault();
+          return;
+        }
+
+        if (event.key === "Enter") {
+          event.preventDefault();
+          formulaInputEl.focus();
+          formulaInputEl.setSelectionRange(formulaInputEl.value.length, formulaInputEl.value.length);
+          return;
+        }
+
+        if (event.key === "Delete" || event.key === "Backspace") {
+          event.preventDefault();
+          formulaInputEl.value = "";
+          setCellRaw(selectedIndex, "");
+        }
+      }
+
+      function moveSelectionByKey(key) {
+        const row = Math.floor(selectedIndex / COLS);
+        const col = selectedIndex % COLS;
+        let nextRow = row;
+        let nextCol = col;
+
+        if (key === "ArrowUp") nextRow -= 1;
+        else if (key === "ArrowDown") nextRow += 1;
+        else if (key === "ArrowLeft") nextCol -= 1;
+        else if (key === "ArrowRight") nextCol += 1;
+        else return false;
+
+        if (nextRow < 0 || nextRow >= ROWS || nextCol < 0 || nextCol >= COLS) {
+          return true;
+        }
+
+        selectCell(nextRow * COLS + nextCol, true, true);
+        return true;
+      }
+
+      function selectCell(index, syncInput, ensureVisible) {
+        if (index < 0 || index >= CELL_COUNT) return;
+
+        const previousIndex = selectedIndex;
+        const previousRow = Math.floor(previousIndex / COLS);
+        const previousCol = previousIndex % COLS;
+        selectedIndex = index;
+
+        cellEls[previousIndex].classList.remove("is-selected");
+        rowHeaderEls[previousRow].classList.remove("is-active");
+        colHeaderEls[previousCol].classList.remove("is-active");
+
+        const row = Math.floor(index / COLS);
+        const col = index % COLS;
+        cellEls[index].classList.add("is-selected");
+        rowHeaderEls[row].classList.add("is-active");
+        colHeaderEls[col].classList.add("is-active");
+        cellNameEl.textContent = cellId(index);
+
+        if (syncInput) {
+          formulaInputEl.value = cells[index].raw;
+        }
+
+        syncStatus(index);
+
+        if (ensureVisible) {
+          cellEls[index].scrollIntoView({ block: "nearest", inline: "nearest" });
+        }
+      }
+
+      function syncStatus(index) {
+        const cell = cells[index];
+        const label = cellId(index);
+
+        if (cell.state === STATE_CYCLE) {
+          statusEl.textContent = label + " 存在循环依赖，已阻止递归求值。";
+          return;
+        }
+
+        if (cell.state === STATE_ERROR) {
+          statusEl.textContent = label + " 公式错误，依赖它的单元格会继续传播为 !ERR。";
+          return;
+        }
+
+        if (cell.state === STATE_EMPTY) {
+          statusEl.textContent = "已选中 " + label + "，空单元格按 0 参与计算。";
+          return;
+        }
+
+        statusEl.textContent = label + " = " + cell.display;
+      }
+
+      function setCellRaw(index, nextRaw) {
+        const cell = cells[index];
+        const normalizedRaw = String(nextRaw).replace(/\r/g, "");
+
+        if (cell.raw === normalizedRaw) {
+          syncStatus(selectedIndex);
+          return;
+        }
+
+        for (const dependency of cell.dependencies) {
+          cells[dependency].dependents.delete(index);
+        }
+
+        const parsed = parseCellSource(normalizedRaw);
+        cell.raw = normalizedRaw;
+        cell.kind = parsed.kind;
+        cell.ast = parsed.ast;
+        cell.dependencies = parsed.dependencies;
+
+        for (const dependency of cell.dependencies) {
+          cells[dependency].dependents.add(index);
+        }
+
+        recomputeAffected(collectAffected(index));
+        syncStatus(selectedIndex);
+      }
+
+      function parseCellSource(raw) {
+        const trimmed = raw.trim();
+
+        if (trimmed === "") {
+          return { kind: "empty", ast: null, dependencies: new Set() };
+        }
+
+        if (trimmed.charAt(0) !== "=") {
+          if (!NUMBER_PATTERN.test(trimmed)) {
+            return { kind: "invalid", ast: null, dependencies: new Set() };
+          }
+
+          return {
+            kind: "literal",
+            ast: { type: "number", value: Number(trimmed) },
+            dependencies: new Set()
+          };
+        }
+
+        try {
+          const tokens = tokenize(trimmed.slice(1));
+          const parser = new Parser(tokens);
+          return {
+            kind: "formula",
+            ast: parser.parse(),
+            dependencies: parser.dependencies
+          };
+        } catch (error) {
+          return { kind: "invalid", ast: null, dependencies: new Set() };
+        }
+      }
+
+      function collectAffected(startIndex) {
+        const visited = new Uint8Array(CELL_COUNT);
+        const queue = [startIndex];
+        visited[startIndex] = 1;
+
+        for (let pointer = 0; pointer < queue.length; pointer += 1) {
+          const current = queue[pointer];
+
+          for (const dependent of cells[current].dependents) {
+            if (!visited[dependent]) {
+              visited[dependent] = 1;
+              queue.push(dependent);
+            }
+          }
+        }
+
+        return queue;
+      }
+
+      function recomputeAffected(affectedList) {
+        const affectedMark = new Uint8Array(CELL_COUNT);
+
+        for (let i = 0; i < affectedList.length; i += 1) {
+          affectedMark[affectedList[i]] = 1;
+        }
+
+        const cycleMark = findCycles(affectedList, affectedMark);
+
+        for (let i = 0; i < affectedList.length; i += 1) {
+          const index = affectedList[i];
+          if (!cycleMark[index]) continue;
+
+          const cell = cells[index];
+          cell.value = 0;
+          cell.display = "!CYCLE";
+          cell.state = STATE_CYCLE;
+          patchCellDom(index);
+        }
+
+        const indegree = new Int32Array(CELL_COUNT);
+        const queue = [];
+        let expected = 0;
+
+        for (let i = 0; i < affectedList.length; i += 1) {
+          const index = affectedList[i];
+          if (cycleMark[index]) continue;
+
+          expected += 1;
+          let count = 0;
+
+          for (const dependency of cells[index].dependencies) {
+            if (affectedMark[dependency] && !cycleMark[dependency]) {
+              count += 1;
+            }
+          }
+
+          indegree[index] = count;
+          if (count === 0) queue.push(index);
+        }
+
+        let processed = 0;
+
+        for (let pointer = 0; pointer < queue.length; pointer += 1) {
+          const index = queue[pointer];
+          processed += 1;
+          evaluateAndRenderCell(index);
+
+          for (const dependent of cells[index].dependents) {
+            if (!affectedMark[dependent] || cycleMark[dependent]) continue;
+
+            indegree[dependent] -= 1;
+            if (indegree[dependent] === 0) {
+              queue.push(dependent);
+            }
+          }
+        }
+
+        if (processed !== expected) {
+          for (let i = 0; i < affectedList.length; i += 1) {
+            const index = affectedList[i];
+            if (cycleMark[index]) continue;
+
+            if (indegree[index] > 0) {
+              const cell = cells[index];
+              cell.value = 0;
+              cell.display = "!CYCLE";
+              cell.state = STATE_CYCLE;
+              patchCellDom(index);
+            }
+          }
+        }
+      }
+
+      function findCycles(affectedList, affectedMark) {
+        const visited = new Uint8Array(CELL_COUNT);
+        const order = [];
+
+        for (let i = 0; i < affectedList.length; i += 1) {
+          const start = affectedList[i];
+          if (visited[start]) continue;
+
+          const stack = [{ index: start, expanded: false }];
+
+          while (stack.length > 0) {
+            const frame = stack.pop();
+            const current = frame.index;
+
+            if (frame.expanded) {
+              order.push(current);
+              continue;
+            }
+
+            if (visited[current]) continue;
+
+            visited[current] = 1;
+            stack.push({ index: current, expanded: true });
+
+            for (const dependency of cells[current].dependencies) {
+              if (affectedMark[dependency] && !visited[dependency]) {
+                stack.push({ index: dependency, expanded: false });
+              }
+            }
+          }
+        }
+
+        const assigned = new Uint8Array(CELL_COUNT);
+        const cycleMark = new Uint8Array(CELL_COUNT);
+
+        for (let i = order.length - 1; i >= 0; i -= 1) {
+          const start = order[i];
+          if (assigned[start]) continue;
+
+          const component = [];
+          const stack = [start];
+          assigned[start] = 1;
+
+          while (stack.length > 0) {
+            const current = stack.pop();
+            component.push(current);
+
+            for (const dependent of cells[current].dependents) {
+              if (affectedMark[dependent] && !assigned[dependent]) {
+                assigned[dependent] = 1;
+                stack.push(dependent);
+              }
+            }
+          }
+
+          if (component.length > 1) {
+            for (let j = 0; j < component.length; j += 1) {
+              cycleMark[component[j]] = 1;
+            }
+            continue;
+          }
+
+          const only = component[0];
+          if (cells[only].dependencies.has(only)) {
+            cycleMark[only] = 1;
+          }
+        }
+
+        return cycleMark;
+      }
+
+      function evaluateAndRenderCell(index) {
+        const cell = cells[index];
+
+        if (cell.kind === "empty") {
+          cell.value = 0;
+          cell.display = "";
+          cell.state = STATE_EMPTY;
+          patchCellDom(index);
+          return;
+        }
+
+        if (cell.kind === "invalid") {
+          cell.value = 0;
+          cell.display = "!ERR";
+          cell.state = STATE_ERROR;
+          patchCellDom(index);
+          return;
+        }
+
+        try {
+          const result = evaluateNode(cell.ast);
+          if (!Number.isFinite(result)) {
+            throw new Error("Non-finite result");
+          }
+
+          cell.value = result;
+          cell.display = formatNumber(result);
+          cell.state = STATE_OK;
+        } catch (error) {
+          cell.value = 0;
+          cell.display = "!ERR";
+          cell.state = STATE_ERROR;
+        }
+
+        patchCellDom(index);
+      }
+
+      function patchCellDom(index) {
+        const cell = cells[index];
+        const cellEl = cellEls[index];
+        const valueEl = valueEls[index];
+
+        if (valueEl.textContent !== cell.display) {
+          valueEl.textContent = cell.display;
+        }
+
+        cellEl.classList.toggle("is-error", cell.state === STATE_ERROR);
+        cellEl.classList.toggle("is-cycle", cell.state === STATE_CYCLE);
+        cellEl.classList.toggle("is-formula", cell.kind === "formula" && cell.state === STATE_OK);
+
+        if (selectedIndex === index) {
+          syncStatus(index);
+        }
+      }
+
+      function evaluateNode(node) {
+        if (node.type === "number") return node.value;
+
+        if (node.type === "cell") {
+          const dependency = cells[node.index];
+          if (dependency.state === STATE_ERROR || dependency.state === STATE_CYCLE) {
+            throw new Error("Dependency error");
+          }
+          return dependency.state === STATE_EMPTY ? 0 : dependency.value;
+        }
+
+        if (node.type === "unary") {
+          return -evaluateNode(node.argument);
+        }
+
+        if (node.type === "binary") {
+          const left = evaluateNode(node.left);
+          const right = evaluateNode(node.right);
+
+          if (node.operator === "+") return left + right;
+          if (node.operator === "-") return left - right;
+          if (node.operator === "*") return left * right;
+          if (node.operator === "/") {
+            if (right === 0) throw new Error("Division by zero");
+            return left / right;
+          }
+        }
+
+        if (node.type === "function") {
+          let total = 0;
+
+          for (let i = 0; i < node.indices.length; i += 1) {
+            const dependency = cells[node.indices[i]];
+            if (dependency.state === STATE_ERROR || dependency.state === STATE_CYCLE) {
+              throw new Error("Dependency error");
+            }
+            total += dependency.state === STATE_EMPTY ? 0 : dependency.value;
+          }
+
+          return node.name === "SUM"
+            ? total
+            : (node.indices.length === 0 ? 0 : total / node.indices.length);
+        }
+
+        throw new Error("Unknown node");
+      }
+
+      function formatNumber(value) {
+        if (Object.is(value, -0)) return "0";
+        if (Number.isInteger(value)) return String(value);
+        return String(Number(value.toFixed(10)));
+      }
+
+      function tokenize(source) {
+        const tokens = [];
+        let index = 0;
+
+        while (index < source.length) {
+          const char = source.charAt(index);
+
+          if (/\s/.test(char)) {
+            index += 1;
+            continue;
+          }
+
+          if (char === "+" || char === "-" || char === "*" || char === "/" || char === "(" || char === ")" || char === ":") {
+            tokens.push({ type: char, value: char });
+            index += 1;
+            continue;
+          }
+
+          if (isDigit(char) || (char === "." && isDigit(source.charAt(index + 1)))) {
+            const start = index;
+            let dotCount = 0;
+
+            while (index < source.length) {
+              const current = source.charAt(index);
+              if (current === ".") {
+                dotCount += 1;
+                if (dotCount > 1) break;
+                index += 1;
+                continue;
+              }
+              if (!isDigit(current)) break;
+              index += 1;
+            }
+
+            const literal = source.slice(start, index);
+            if (!NUMBER_PATTERN.test(literal)) throw new Error("Invalid number");
+            tokens.push({ type: "NUMBER", value: Number(literal) });
+            continue;
+          }
+
+          if (isLetter(char)) {
+            const start = index;
+            while (index < source.length && isLetter(source.charAt(index))) {
+              index += 1;
+            }
+
+            const letters = source.slice(start, index).toUpperCase();
+            const digitStart = index;
+            while (index < source.length && isDigit(source.charAt(index))) {
+              index += 1;
+            }
+
+            if (digitStart !== index) {
+              const cellIndex = indexFromParts(letters, source.slice(digitStart, index));
+              if (cellIndex === -1) throw new Error("Cell out of range");
+              tokens.push({ type: "CELL", value: cellIndex });
+              continue;
+            }
+
+            tokens.push({ type: "IDENT", value: letters });
+            continue;
+          }
+
+          throw new Error("Unexpected token");
+        }
+
+        tokens.push({ type: "EOF", value: null });
+        return tokens;
+      }
+
+      function Parser(tokens) {
+        this.tokens = tokens;
+        this.position = 0;
+        this.dependencies = new Set();
+      }
+
+      Parser.prototype.parse = function () {
+        const node = this.parseExpression();
+        this.expect("EOF");
+        return node;
+      };
+
+      Parser.prototype.parseExpression = function () {
+        let node = this.parseTerm();
+
+        while (this.match("+") || this.match("-")) {
+          const operator = this.previous().type;
+          node = {
+            type: "binary",
+            operator: operator,
+            left: node,
+            right: this.parseTerm()
+          };
+        }
+
+        return node;
+      };
+
+      Parser.prototype.parseTerm = function () {
+        let node = this.parseFactor();
+
+        while (this.match("*") || this.match("/")) {
+          const operator = this.previous().type;
+          node = {
+            type: "binary",
+            operator: operator,
+            left: node,
+            right: this.parseFactor()
+          };
+        }
+
+        return node;
+      };
+
+      Parser.prototype.parseFactor = function () {
+        if (this.match("+")) return this.parseFactor();
+        if (this.match("-")) return { type: "unary", argument: this.parseFactor() };
+        if (this.match("NUMBER")) return { type: "number", value: this.previous().value };
+
+        if (this.match("CELL")) {
+          const index = this.previous().value;
+          this.dependencies.add(index);
+          return { type: "cell", index: index };
+        }
+
+        if (this.match("IDENT")) {
+          const name = this.previous().value;
+          if (name !== "SUM" && name !== "AVG") throw new Error("Unknown function");
+
+          this.expect("(");
+          const startCell = this.expect("CELL").value;
+          this.expect(":");
+          const endCell = this.expect("CELL").value;
+          this.expect(")");
+
+          const indices = expandRange(startCell, endCell);
+          for (let i = 0; i < indices.length; i += 1) {
+            this.dependencies.add(indices[i]);
+          }
+
+          return { type: "function", name: name, indices: indices };
+        }
+
+        if (this.match("(")) {
+          const node = this.parseExpression();
+          this.expect(")");
+          return node;
+        }
+
+        throw new Error("Unexpected factor");
+      };
+
+      Parser.prototype.match = function (type) {
+        if (this.peek().type !== type) return false;
+        this.position += 1;
+        return true;
+      };
+
+      Parser.prototype.expect = function (type) {
+        const token = this.peek();
+        if (token.type !== type) throw new Error("Expected " + type);
+        this.position += 1;
+        return token;
+      };
+
+      Parser.prototype.peek = function () {
+        return this.tokens[this.position];
+      };
+
+      Parser.prototype.previous = function () {
+        return this.tokens[this.position - 1];
+      };
+
+      function expandRange(startIndex, endIndex) {
+        const startRow = Math.floor(startIndex / COLS);
+        const startCol = startIndex % COLS;
+        const endRow = Math.floor(endIndex / COLS);
+        const endCol = endIndex % COLS;
+        const minRow = Math.min(startRow, endRow);
+        const maxRow = Math.max(startRow, endRow);
+        const minCol = Math.min(startCol, endCol);
+        const maxCol = Math.max(startCol, endCol);
+        const indices = [];
+
+        for (let row = minRow; row <= maxRow; row += 1) {
+          const base = row * COLS;
+          for (let col = minCol; col <= maxCol; col += 1) {
+            indices.push(base + col);
+          }
+        }
+
+        return indices;
+      }
+
+      function indexFromParts(columnText, rowText) {
+        let column = 0;
+
+        for (let i = 0; i < columnText.length; i += 1) {
+          column = column * 26 + (columnText.charCodeAt(i) - 64);
+        }
+
+        column -= 1;
+        const row = Number(rowText) - 1;
+        if (!Number.isInteger(row) || row < 0 || row >= ROWS || column < 0 || column >= COLS) {
+          return -1;
+        }
+
+        return row * COLS + column;
+      }
+
+      function columnLabel(index) {
+        let value = index + 1;
+        let label = "";
+
+        while (value > 0) {
+          const remainder = (value - 1) % 26;
+          label = String.fromCharCode(65 + remainder) + label;
+          value = Math.floor((value - 1) / 26);
+        }
+
+        return label;
+      }
+
+      function cellId(index) {
+        const row = Math.floor(index / COLS);
+        const col = index % COLS;
+        return columnLabel(col) + String(row + 1);
+      }
+
+      function isDigit(char) {
+        return char >= "0" && char <= "9";
+      }
+
+      function isLetter(char) {
+        const code = char.charCodeAt(0);
+        return (code >= 65 && code <= 90) || (code >= 97 && code <= 122);
+      }
+    })();
+  </script>
+</body>
+</html>

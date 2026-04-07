@@ -33,7 +33,7 @@ function CodeFrame({ title, code }) {
   )
 }
 
-export function ReduxScrollyDemo({ steps }) {
+export function ReduxScrollyDemo({ steps, intro }) {
   return (
     <SelectionProvider className="editorial-grid" rootMargin="0% 0% -42% 0%">
       <aside className="code-column">
@@ -44,6 +44,18 @@ export function ReduxScrollyDemo({ steps }) {
       </aside>
 
       <div className="article-column">
+        {intro ? (
+          <section className="article-intro">
+            <p className="article-intro-kicker">Code Hike Tutorial</p>
+            <h1 className="article-intro-title">Build your own redux</h1>
+            {intro.map((paragraph) => (
+              <p key={paragraph} className="article-intro-body">
+                {paragraph}
+              </p>
+            ))}
+          </section>
+        ) : null}
+
         {steps.map((step, index) => (
           <Selectable
             key={step.title}

@@ -17,14 +17,12 @@
 }
 
 html {
-  height: 100%;
   scroll-behavior: smooth;
 }
 
 body {
   margin: 0;
-  height: 100%;
-  overflow: hidden;
+  min-height: 100vh;
   font-family: Georgia, "Times New Roman", "Songti SC", serif;
   background: linear-gradient(90deg, var(--ink-dark) 0 50%, var(--paper) 50% 100%);
   color: var(--paper-text);
@@ -46,7 +44,75 @@ code {
 }
 
 .editorial-shell {
-  height: 100vh;
+  min-height: 100vh;
+}
+
+.tutorial-page {
+  min-height: 100vh;
+  background: var(--paper);
+}
+
+.tutorial-content {
+  max-width: 100%;
+}
+
+.tutorial-summary {
+  width: min(980px, calc(100vw - 80px));
+  margin: 0 auto;
+  padding: 72px 0;
+}
+
+.tutorial-summary h2 {
+  margin: 0 0 24px;
+  color: var(--paper-strong);
+  font-size: clamp(34px, 4vw, 50px);
+  line-height: 1.08;
+  letter-spacing: -0.04em;
+}
+
+.tutorial-summary p,
+.tutorial-summary li {
+  width: min(760px, 100%);
+  margin: 0 0 22px;
+  font-size: clamp(18px, 1.5vw, 22px);
+  line-height: 1.75;
+}
+
+.tutorial-summary ul {
+  margin: 0;
+  padding-left: 24px;
+}
+
+.tutorial-summary-last {
+  padding-bottom: 120px;
+}
+
+.tutorial-static-code {
+  overflow: hidden;
+  width: min(760px, 100%);
+  margin-top: 28px;
+  border: 1px solid rgba(80, 74, 67, 0.12);
+  border-radius: 20px;
+  background: #15181d;
+  box-shadow: 0 12px 32px rgba(14, 16, 20, 0.14);
+}
+
+.tutorial-static-code-meta {
+  display: flex;
+  justify-content: flex-end;
+  padding: 12px 16px;
+  border-bottom: 1px solid rgba(223, 229, 234, 0.08);
+  color: rgba(223, 229, 234, 0.52);
+  font-family: "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
+  font-size: 12px;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+
+.tutorial-static-code pre {
+  margin: 0;
+  padding: 20px 22px;
+  background: transparent !important;
 }
 
 .editorial-grid {
@@ -54,21 +120,22 @@ code {
   grid-template-columns: minmax(0, 1.08fr) minmax(420px, 0.92fr);
   gap: 0;
   align-items: start;
-  height: 100vh;
-  overflow: hidden;
 }
 
 .code-column {
-  height: 100vh;
+  min-height: 100vh;
   background: var(--ink-dark);
+  align-self: stretch;
 }
 
 .code-column-inner {
+  position: sticky;
+  top: 0;
   height: 100vh;
   display: flex;
   flex-direction: column;
-  justify-content: center;
-  padding: 32px 58px;
+  justify-content: flex-start;
+  padding: 40px 58px 32px;
 }
 
 .code-column-kicker {
@@ -109,13 +176,43 @@ code {
 }
 
 .article-column {
-  height: 100vh;
-  overflow-y: auto;
-  overflow-x: hidden;
+  min-height: 100vh;
   background: var(--paper);
   padding: 0 0 0 64px;
-  overscroll-behavior: contain;
-  scroll-behavior: smooth;
+}
+
+.article-intro {
+  display: flex;
+  min-height: 100vh;
+  flex-direction: column;
+  justify-content: center;
+  padding: 48px 72px 72px 24px;
+  border-left: 1px solid var(--paper-line);
+}
+
+.article-intro-kicker {
+  margin: 0 0 18px;
+  font-family: "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
+  font-size: 12px;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  color: #8f8577;
+}
+
+.article-intro-title {
+  margin: 0 0 28px;
+  color: var(--paper-strong);
+  font-size: clamp(48px, 6vw, 88px);
+  line-height: 0.98;
+  letter-spacing: -0.05em;
+}
+
+.article-intro-body {
+  width: min(760px, 100%);
+  margin: 0 0 22px;
+  color: var(--paper-text);
+  font-size: clamp(20px, 1.8vw, 25px);
+  line-height: 1.72;
 }
 
 .article-step {
@@ -219,15 +316,6 @@ code {
     overflow: visible;
   }
 
-  html,
-  body {
-    height: auto;
-  }
-
-  body {
-    overflow: auto;
-  }
-
   .code-column {
     min-height: auto;
     height: auto;
@@ -242,6 +330,17 @@ code {
 
   .code-stage {
     width: 100%;
+  }
+
+  .tutorial-hero,
+  .tutorial-summary {
+    width: min(100vw - 32px, 980px);
+    padding: 40px 0;
+  }
+
+  .article-intro {
+    min-height: auto;
+    padding: 36px 0 28px 16px;
   }
 
   .article-column {
