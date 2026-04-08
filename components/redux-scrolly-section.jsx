@@ -1,5 +1,5 @@
 import { buildHighlightedSteps } from "../lib/redux-tutorial-content"
-import { ReduxScrollyDemo } from "./redux-scrolly-demo"
+import { TutorialScrollyDemo } from "./tutorial-scrolly-demo"
 
 export async function ReduxScrollySection() {
   const steps = await buildHighlightedSteps()
@@ -8,5 +8,5 @@ export async function ReduxScrollySection() {
     "阅读方式和 Build your own react 一样：左侧代码保持在舞台上，右侧正文随着滚动逐段推进。每一步只引入一个概念，让变化尽量小、尽量清楚。",
   ]
 
-  return <ReduxScrollyDemo steps={steps} intro={intro} />
+  return <TutorialScrollyDemo steps={steps} intro={intro} />
 }

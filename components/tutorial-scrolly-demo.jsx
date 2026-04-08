@@ -19,12 +19,12 @@ import {
   getStartingSnapshot,
 } from "codehike/utils/token-transitions"
 
-function CodeFrame({ title, code }) {
+function CodeFrame({ title, code, fileName }) {
   return (
     <div className="code-stage">
       <div className="code-meta">
         <p className="code-frame-title">{title}</p>
-        <span className="code-file-label">store.js</span>
+        <span className="code-file-label">{fileName || "store.js"}</span>
       </div>
       <div className="code-content">
         <Pre code={code} handlers={[focus, mark, tokenTransitions]} />
@@ -33,13 +33,13 @@ function CodeFrame({ title, code }) {
   )
 }
 
-export function ReduxScrollyDemo({ steps, intro }) {
+export function TutorialScrollyDemo({ steps, intro, title, fileName }) {
   return (
     <SelectionProvider className="editorial-grid" rootMargin="0% 0% -42% 0%">
       <aside className="code-column">
         <div className="code-column-inner">
-          <p className="code-column-kicker">Build your own redux</p>
-          <SelectedCodeFrame steps={steps} />
+          <p className="code-column-kicker">{title || "Build your own redux"}</p>
+          <SelectedCodeFrame steps={steps} fileName={fileName} />
         </div>
       </aside>
 
@@ -47,7 +47,7 @@ export function ReduxScrollyDemo({ steps, intro }) {
         {intro ? (
           <section className="article-intro">
             <p className="article-intro-kicker">Code Hike Tutorial</p>
-            <h1 className="article-intro-title">Build your own redux</h1>
+            <h1 className="article-intro-title">{title || "Build your own redux"}</h1>
             {intro.map((paragraph) => (
               <p key={paragraph} className="article-intro-body">
                 {paragraph}
@@ -80,11 +80,11 @@ export function ReduxScrollyDemo({ steps, intro }) {
   )
 }
 
-function SelectedCodeFrame({ steps }) {
+function SelectedCodeFrame({ steps, fileName }) {
   const [selectedIndex] = useSelectedIndex()
   const step = steps[selectedIndex] ?? steps[0]
 
-  return <CodeFrame title={step.eyebrow} code={step.highlighted} />
+  return <CodeFrame title={step.eyebrow} code={step.highlighted} fileName={fileName} />
 }
 
 function FocusedPre(props) {
