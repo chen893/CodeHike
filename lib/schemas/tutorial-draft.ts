@@ -1,0 +1,46 @@
+import { z } from 'zod';
+
+export const contentPatchSchema = z.object({
+  find: z.string().min(1),
+  replace: z.string(),
+});
+
+export const contentRangeSchema = z.object({
+  find: z.string().min(1),
+});
+
+export const contentMarkSchema = z.object({
+  find: z.string().min(1),
+  color: z.string().min(1),
+});
+
+export const tutorialStepSchema = z.object({
+  id: z.string().min(1),
+  eyebrow: z.string().optional(),
+  title: z.string().min(1),
+  lead: z.string().optional(),
+  paragraphs: z.array(z.string()),
+  patches: z.array(contentPatchSchema).optional(),
+  focus: contentRangeSchema.nullable().optional(),
+  marks: z.array(contentMarkSchema).optional(),
+});
+
+export const tutorialDraftSchema = z.object({
+  meta: z.object({
+    title: z.string().min(1),
+    lang: z.string().min(1),
+    fileName: z.string().min(1),
+    description: z.string().min(1),
+  }),
+  intro: z.object({
+    paragraphs: z.array(z.string()),
+  }),
+  baseCode: z.string().min(1),
+  steps: z.array(tutorialStepSchema).min(1),
+});
+
+export type TutorialDraft = z.infer<typeof tutorialDraftSchema>;
+export type TutorialStep = z.infer<typeof tutorialStepSchema>;
+export type ContentPatch = z.infer<typeof contentPatchSchema>;
+export type ContentRange = z.infer<typeof contentRangeSchema>;
+export type ContentMark = z.infer<typeof contentMarkSchema>;

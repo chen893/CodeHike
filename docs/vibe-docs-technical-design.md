@@ -32,6 +32,9 @@
 - Next.js 16 App Router
 - React 19
 - CodeHike 1.1
+- PostgreSQL + Drizzle ORM
+- Vercel AI SDK v6（结构化生成 + 流式输出）
+- Zod（schema 定义 + 校验 + AI 输出约束）
 - Node.js runtime route handlers
 
 ### 1.2 当前已跑通链路
@@ -366,49 +369,69 @@ type PublishedTutorial = {
 
 ## 6. 持久化方案
 
-### 6.1 P0 选择：文件仓储
+### 6.1 数据库选型：PostgreSQL + Drizzle ORM
 
-为了尽快在当前仓库内完成闭环，P0 默认采用文件仓储，而不是先接数据库。
+P0 直接采用 PostgreSQL 作为持久化存储，ORM 层使用 Drizzle。
 
-推荐目录：
+选型理由：
+
+1. PostgreSQL 支持 JSONB 字段，适合存储 `tutorialDraft`、`sourceItems` 等结构化大对象。
+2. 原生支持事务，保证发布等复合操作的原子性。
+3. 可部署于 Vercel Postgres、Neon、Supabase 等云服务，无本地文件系统依赖。
+4. Drizzle 是轻量级 TypeScript ORM，schema 直接写 TS，与项目的类型定义复用。
+
+不选 SQLite 的原因：
+
+1. 部署目标包括 Vercel 等 Serverless 平台，SQLite 依赖本地文件系统，不适用于只读或临时文件系统环境。
+2. 虽然有 Turso（libSQL 云服务）作为替代，但引入额外概念和依赖。
+3. PostgreSQL 生态更成熟，迁移工具、云托管方案更丰富。
+
+不选 Prisma 的原因：
+
+1. Prisma 的 schema 定义语言（`.prisma` 文件）与 TypeScript 类型系统割裂，需要额外生成步骤。
+2. Drizzle 的 schema 直接写 TS，与项目的 Zod schema、API 类型可以共享定义。
+3. Drizzle 对 JSONB 字段的操作更直观。
+
+### 6.2 推荐的 PostgreSQL 托管方案
+
+本地开发：
 
 ```text
-data/
-  drafts/
-    <draftId>.json
-  published/
-    <slug>.json
+docker run -d -p 5432:5432 -e POSTGRES_DB=vibedocs postgres:16
 ```
 
-原因：
+或使用本地安装的 PostgreSQL。
 
-1. 当前仓库没有数据库依赖。
-2. 文档、调试和 Git 协作阶段更容易直接查看内容。
-3. 先把对象模型和链路做稳，比先选数据库更重要。
+云部署（按需选择）：
 
-边界说明：
+- **Neon**：Serverless PostgreSQL，免费层足够 P0 使用，与 Vercel 集成最好。
+- **Supabase**：PostgreSQL + 额外功能（Auth、Storage），如果后续需要用户系统可一步到位。
+- **Vercel Postgres**：基于 Neon，Vercel 控制台内直接创建。
 
-1. 文件仓储只适用于本地开发、演示环境或单实例自托管场景。
-2. 如果目标部署环境是只读文件系统或多实例运行环境，必须先把 repository 适配到持久化存储，再进入真实发布阶段。
-3. 因此，文件仓储是 P0 的实现策略，不是长期基础设施承诺。
+### 6.3 仓储抽象
 
-### 6.2 仓储抽象
+所有数据库访问必须通过 Drizzle query 层封装，不在 route handler 中直接写 SQL。
 
-即使 P0 用文件，也必须通过 repository 抽象访问：
+仓储模块：
 
-- `draft-repository`
-- `published-tutorial-repository`
+- `lib/db/schema.ts` — Drizzle table 定义
+- `lib/db/index.ts` — 数据库连接与客户端初始化
+- `lib/repositories/draft-repository.ts`
+- `lib/repositories/published-tutorial-repository.ts`
 
-不要在 route handler 中直接读写 JSON 文件。
+### 6.4 数据库 Schema 设计要点
 
-### 6.3 写入策略
+- `drafts` 表：存储 `DraftRecord`，其中 `sourceItems`、`teachingBrief`、`tutorialDraft` 使用 JSONB 字段。
+- `published_tutorials` 表：存储 `PublishedTutorial`，其中 `tutorialDraftSnapshot` 使用 JSONB 字段。
+- `slug` 字段加唯一索引，保证发布 slug 不冲突。
+- `inputHash` 和 `tutorialDraftInputHash` 用于检测输入与内容的同步状态。
 
-文件写入必须是原子操作：
+### 6.5 写入策略
 
-1. 先写临时文件
-2. 再 rename 覆盖目标文件
+所有写操作通过 Drizzle 事务执行：
 
-避免半写状态污染草稿或发布快照。
+1. 发布操作（创建 `PublishedTutorial` + 更新 `DraftRecord.status`）必须在同一事务内完成。
+2. 单步 regenerate 涉及校验 + 更新 `tutorialDraft` + 更新 `generation` 状态，也应在事务内。
 
 ### 6.4 slug 策略
 
@@ -454,27 +477,32 @@ P0 保留路径至少包括：
 
 ```text
 lib/
+  db/
+    schema.ts            # Drizzle table 定义（drafts, published_tutorials）
+    index.ts             # 数据库连接与客户端初始化
   drafts/
-    draft-schema.js
-    draft-validator.js
-    draft-mutations.js
+    draft-schema.ts      # Zod schema，同时用于 API 校验 + AI 输出约束
+    draft-validator.ts
+    draft-mutations.ts
   published/
-    published-schema.js
+    published-schema.ts
   repositories/
-    draft-repository.js
-    published-tutorial-repository.js
+    draft-repository.ts
+    published-tutorial-repository.ts
   services/
-    create-draft.js
-    generate-tutorial-draft.js
-    update-draft-meta.js
-    update-draft-step.js
-    append-draft-step.js
-    regenerate-draft-step.js
-    build-draft-preview-payload.js
-    publish-draft.js
+    create-draft.ts
+    generate-tutorial-draft.ts
+    update-draft-meta.ts
+    update-draft-step.ts
+    append-draft-step.ts
+    regenerate-draft-step.ts
+    build-draft-preview-payload.ts
+    publish-draft.ts
   ai/
-    tutorial-generator.js
-    prompt-templates.js
+    tutorial-generator.ts
+    prompt-templates.ts
+  types/
+    api.ts               # 共享的 request/response 类型定义
 ```
 
 以及：
@@ -649,20 +677,50 @@ P0 允许更新：
 3. 如果修改后 `tutorialDraftInputHash !== inputHash`，系统必须把 `syncState` 标为 `stale`。
 4. `stale` 草稿仍可查看已有内容，但不能直接发布。
 
-### 9.4 生成教程草稿
+### 9.4 生成教程草稿（SSE 流式）
 
 ```text
 POST /api/drafts/[id]/generate
 ```
 
+**此接口使用 SSE（Server-Sent Events）流式返回生成结果。**
+
 职责：
 
 - 读取 `sourceItems + teachingBrief`
-- 调用 AI 生成 `tutorialDraft`
-- 运行 schema 校验和组装校验
+- 调用 AI 生成 `tutorialDraft`（通过 Vercel AI SDK v6 的 `streamObject`）
+- 前端逐步接收生成的 title → intro → steps
+- 生成完成后在服务端执行 schema 校验和可执行校验
 - 回写 `tutorialDraftInputHash = inputHash`
 - 把 `syncState` 标为 `fresh`
 - 保存回 `DraftRecord`
+
+SSE 流格式：
+
+```text
+event: object
+data: {"meta":{"title":"..."},...}          // 逐步补全的部分 JSON
+
+event: object
+data: {"meta":{"title":"..."},"intro":...}  // 继续补全
+
+event: done
+data: {"success":true,"draftId":"..."}
+```
+
+前端消费方式：
+
+- 使用 Vercel AI SDK v6 的 `useObject` hook 或 `streamObject` 客户端方法
+- 实时展示生成进度（标题出来就显示标题，步骤出来就追加步骤）
+- 收到 `done` 事件后刷新为完整草稿
+
+选择 SSE 而非同步响应的原因：
+
+1. 教程生成通常需要 30-60 秒，同步阻塞会导致用户面对长时间 loading。
+2. 流式输出让用户尽早看到内容，体感上显著优于等待完整响应。
+3. Vercel AI SDK v6 原生支持 SSE + Zod schema 约束输出，与项目校验体系统一。
+
+**注意：此接口是唯一使用 SSE 的接口。** 其他所有 CRUD 操作（创建、编辑、发布等）继续使用普通 REST JSON 响应。
 
 ### 9.5 编辑单个步骤
 
@@ -783,23 +841,36 @@ AI 必须输出结构化 JSON，目标结构就是 `TutorialDraft`。
 
 ### 10.3 生成流程
 
-建议流程：
+使用 Vercel AI SDK v6 的 `streamObject` 进行结构化流式生成：
 
 ```text
 load DraftRecord
   -> build generation prompt
-  -> call AI provider
-  -> parse structured JSON
-  -> validate TutorialDraft schema
+  -> streamObject({ model, schema: TutorialDraftZodSchema, prompt })
+  -> 流式返回 SSE 给前端
+  -> 生成完成后，在服务端执行可执行校验
   -> run buildTutorialSteps() as executable validation
   -> persist DraftRecord
 ```
 
+AI SDK 集成要点：
+
+1. 使用 `streamObject` 而非 `generateObject`，获得流式体验。
+2. `schema` 参数直接传入 Zod schema，AI 输出自动受 schema 约束——结构校验与生成一体化。
+3. 前端使用 `useObject` hook 消费流式响应，实时渲染生成进度。
+4. 生成完成后服务端仍需额外运行可执行校验（`buildTutorialSteps()`），因为 Zod 只能校验结构，无法验证 patch 锚点是否正确命中。
+
 ### 10.4 校验策略
 
-生成结果必须同时通过两层校验：
+生成结果必须通过两层校验：
 
-#### 结构校验
+#### 结构校验（由 Zod + AI SDK 自动完成）
+
+Zod schema 同时用于三个场景：
+
+1. AI `streamObject` 的输出约束——生成阶段保证结构正确。
+2. API 入参校验——`POST /api/drafts`、`PATCH /api/drafts/[id]/steps/[stepId]` 等。
+3. 数据库写入前校验——repository 层的最后一道防线。
 
 检查：
 
@@ -879,13 +950,25 @@ P0 建议采用：
 
 ### 11.4 技术边界
 
-P0 的 mutation 入口统一选择 route handlers，不再并行设计一套 server actions 写路径。
+#### API 层：Route Handlers，不引入 tRPC
+
+P0 的 mutation 入口统一选择 route handlers，不引入 tRPC，也不并行设计 server actions 写路径。
 
 原因：
 
-1. 当前系统已经以 API route 为主。
+1. 当前系统已经以 API route 为主，接口约 10 个，复杂度不高。
 2. 如果 P0 同时维护 route handlers 和 server actions，两边都要复制校验、错误结构和仓储调用。
 3. 单一写入口更利于后续接 AI 生成、发布和审计日志。
+4. tRPC 的核心价值是端到端类型安全，但 Next.js App Router 通过共享 TS 类型文件（`lib/types/api.ts`）即可实现同样效果，无需引入额外依赖。
+
+#### 类型安全方案
+
+不使用 tRPC，改用共享 TypeScript 类型文件实现端到端类型安全：
+
+- `lib/types/api.ts`：统一定义所有 API 的 request/response 类型
+- Route Handler 端引用类型做入参校验
+- 前端通过同一个类型文件获得响应类型推导
+- Zod schema 作为运行时校验层，TS 类型作为编译时校验层
 
 ---
 
@@ -1001,18 +1084,21 @@ P0 最少手工验收清单：
 
 建议按以下顺序落地：
 
-### Phase 1：仓储与对象模型
+### Phase 1：数据库与对象模型
 
-- 建 `DraftRecord` / `PublishedTutorial` schema
+- 安装 `drizzle-orm`、`pg`、`zod`、`ai`（Vercel AI SDK v6）
+- 建 Drizzle schema（`lib/db/schema.ts`）和数据库连接（`lib/db/index.ts`）
+- 建 Zod schema（`lib/drafts/draft-schema.ts`），同时用于校验 + AI 输出约束
 - 建 repository 抽象
-- 文件仓储读写跑通
+- 数据库读写跑通（本地 PostgreSQL 或 Docker）
 
 ### Phase 2：输入与生成
 
 - `/new`
 - `POST /api/drafts`
-- `POST /api/drafts/[id]/generate`
-- 生成后的校验与保存
+- `POST /api/drafts/[id]/generate`（SSE 流式）
+- 集成 Vercel AI SDK v6 `streamObject` + Zod schema
+- 生成后的可执行校验与保存
 
 ### Phase 3：草稿工作区
 
@@ -1061,11 +1147,13 @@ P0 最少手工验收清单：
 
 - 预览和发布统一复用当前渲染链路与 payload 结构
 
-### 16.5 风险：过早引入数据库或任务队列
+### 16.5 风险：过早引入复杂基础设施
 
 决策：
 
-- 先用文件仓储和同步生成链路完成闭环，再考虑升级基础设施
+- P0 直接使用 PostgreSQL + Drizzle ORM，避免文件仓储在部署阶段的迁移成本。
+- 生成链路使用 Vercel AI SDK v6 的 `streamObject` 做 SSE 流式输出，不引入独立任务队列。
+- API 层统一用 Route Handlers + 共享 TS 类型，不引入 tRPC 或 server actions。
 
 ---
 

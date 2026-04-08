@@ -19,9 +19,7 @@ export function RemoteTutorialPage({ slug, title }) {
       setState(initialState)
 
       try {
-        const response = await fetch(`/api/tutorials/${slug}`, {
-          cache: "no-store",
-        })
+        const response = await fetch(`/api/tutorials/${slug}`)
 
         if (!response.ok) {
           throw new Error(`请求失败，状态码 ${response.status}`)

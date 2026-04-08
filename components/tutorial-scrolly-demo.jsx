@@ -24,7 +24,7 @@ function CodeFrame({ title, code, fileName }) {
     <div className="code-stage">
       <div className="code-meta">
         <p className="code-frame-title">{title}</p>
-        <span className="code-file-label">{fileName || "store.js"}</span>
+        <span className="code-file-label">{fileName || "code"}</span>
       </div>
       <div className="code-content">
         <Pre code={code} handlers={[focus, mark, tokenTransitions]} />
@@ -48,8 +48,8 @@ export function TutorialScrollyDemo({ steps, intro, title, fileName }) {
           <section className="article-intro">
             <p className="article-intro-kicker">Code Hike Tutorial</p>
             <h1 className="article-intro-title">{title || "Tutorial renderer"}</h1>
-            {intro.map((paragraph) => (
-              <p key={paragraph} className="article-intro-body">
+            {intro.map((paragraph, index) => (
+              <p key={`intro-${index}`} className="article-intro-body">
                 {paragraph}
               </p>
             ))}
@@ -58,7 +58,7 @@ export function TutorialScrollyDemo({ steps, intro, title, fileName }) {
 
         {steps.map((step, index) => (
           <Selectable
-            key={step.title}
+            key={step.id || `step-${index}`}
             index={index}
             selectOn={["click", "scroll"]}
             className="article-step"
@@ -67,8 +67,8 @@ export function TutorialScrollyDemo({ steps, intro, title, fileName }) {
               <p className="article-step-kicker">{step.eyebrow}</p>
               <h2 className="article-step-title">{step.title}</h2>
               <p className="article-step-lead">{step.lead}</p>
-              {step.paragraphs.map((paragraph) => (
-                <p key={paragraph} className="article-step-body">
+              {step.paragraphs.map((paragraph, pIndex) => (
+                <p key={`step-${index}-p-${pIndex}`} className="article-step-body">
                   {paragraph}
                 </p>
               ))}

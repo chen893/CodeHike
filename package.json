@@ -8,9 +8,25 @@
     "start": "next start"
   },
   "dependencies": {
+    "@ai-sdk/openai": "^3.0.52",
+    "@ai-sdk/openai-compatible": "^2.0.41",
+    "@ai-sdk/react": "^3.0.155",
+    "ai": "^6.0.153",
     "codehike": "^1.1.0",
+    "diff": "^5.2.0",
+    "drizzle-orm": "^0.45.2",
     "next": "^16.2.2",
+    "pg": "^8.20.0",
     "react": "^19.2.4",
-    "react-dom": "^19.2.4"
+    "react-dom": "^19.2.4",
+    "zod": "^4.3.6"
+  },
+  "devDependencies": {
+    "@types/pg": "^8.20.0",
+    "@types/react": "^19.2.14",
+    "@types/react-dom": "^19.2.3",
+    "dotenv": "^17.4.1",
+    "drizzle-kit": "^0.31.10",
+    "typescript": "^6.0.2"
   }
 }

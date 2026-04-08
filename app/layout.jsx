@@ -1,8 +1,8 @@
 import "./globals.css"
 
 export const metadata = {
-  title: "Tutorial Renderer",
-  description: "A generic CodeHike-based app for rendering scrolly tutorials.",
+  title: "VibeDocs",
+  description: "AI 驱动的 scrollytelling 源码教学教程生成与渲染。",
 }
 
 export default function RootLayout({ children }) {

@@ -1,0 +1,108 @@
+# CLAUDE.md
+
+This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
+
+## Project Overview
+
+VibeDocs — AI 驱动的 scrollytelling 源码教学教程生成与渲染应用。用户输入源码 + 教学意图，系统生成可编辑、可预览、可发布的逐步构建式教程。
+
+## Dev Commands
+
+```bash
+npm run dev     # next dev --webpack
+npm run build   # next build --webpack
+npm start       # next start (production)
+```
+
+无测试、无 lint 配置。
+
+数据库需要 `DATABASE_URL` 环境变量（PostgreSQL），AI 生成需要 `DEEPSEEK_API_KEY`。
+
+## Architecture
+
+### 核心渲染链路（已跑通，不重写）
+
+```text
+TutorialDraft (DSL JSON)
+  → lib/tutorial-assembler.js   # patch 应用 + CodeHike 高亮 + focus/marks 注入 → TutorialStep[]
+  → lib/tutorial-payload.js     # 包装为 TutorialPayload
+  → components/tutorial-scrolly-demo.jsx  # 客户端 scrollytelling 渲染
+```
+
+### 两条消费路径
+
+1. **静态直出** — `app/[slug]/page.jsx`：服务端先查 DB published，回退到 registry → `buildTutorialSteps()` → 直接渲染
+2. **远程加载** — `app/[slug]/request/page.jsx`：客户端 fetch `/api/tutorials/[slug]` → payload → 渲染
+
+### 草稿编辑流程（v3 新增）
+
+```text
+用户输入源码 + TeachingBrief
+  → app/new/page.tsx → 创建 DraftRecord
+  → app/drafts/[id]/page.tsx → 编辑工作区
+  → AI 生成（DeepSeek + Vercel AI SDK v6 streamText + Output.object + Zod schema）
+  → 编辑 steps / meta → 预览 → 发布为 PublishedTutorial 快照
+```
+
+### 分层结构
+
+| 层 | 目录 | 职责 |
+|----|------|------|
+| 路由 | `app/` | Next.js App Router 页面和 API route handlers |
+| 组件 | `components/` | 客户端交互组件（编辑器、表单、渲染器） |
+| 服务 | `lib/services/` | 业务逻辑（创建、生成、发布等），被 API 路由调用 |
+| 数据 | `lib/repositories/` | Drizzle ORM 数据访问，返回类型化 domain 对象 |
+| Schema | `lib/schemas/` | Zod schema（AI 输出约束 + API 校验），`index.ts` 为 barrel |
+| DB | `lib/db/` | Drizzle schema 定义 + 连接池 |
+| AI | `lib/ai/` | prompt 模板 + AI 调用封装 |
+| 渲染 | `lib/tutorial-assembler.js` | patch 应用 + 高亮 + 注解注入（纯服务端） |
+
+### 数据源
+
+- `content/sample-tutorial.js` — 示例教程 DSL 数据（registry 回退）
+- `lib/tutorial-registry.js` — 静态 slug 注册表
+
+### 关键约束
+
+- 所有 patch 应用、高亮、focus/marks 注入都在**服务端**完成
+- 客户端只消费渲染好的 payload，不反推 patch、不重建教学结构
+- 静态页和远程页共享同一个 `TutorialScrollyDemo` 渲染器
+- AI 输出用 `Output.object({ schema })` 结构化，Zod schema 同时约束 AI 输出 + API 校验
+- `app/[slug]/page.jsx` 用 `React.cache()` 避免重复 DB 查询和高亮计算
+- 混用 JS（`.js`/`.jsx`，渲染链路）和 TS（`.ts`/`.tsx`，v3 新增功能），不要强行统一
+
+## Docs Index
+
+| 文件 | 内容 |
+|------|------|
+| `docs/tutorial-data-format.md` | 教程 DSL 完整定义 — JSON 结构、Patch 机制、代码组装算法 |
+| `docs/current-tutorial-flow.md` | 渲染分支全流程 — 路由、数据加载、组装层 |
+| `docs/vibe-docs-prd.md` | VibeDocs v3.0 PRD — 产品定义、P0 范围 |
+| `docs/vibe-docs-technical-design.md` | v3.0 技术方案 — 数据模型、API 设计、AI 生成链路 |
+
+**修改代码前务必先阅读相关文档。** 数据结构变更对照 `tutorial-data-format.md`，新增功能对照 `vibe-docs-technical-design.md`。
+
+## AGENTS.md
+
+仓库根目录有 `AGENTS.md`，包含产品定位、权威数据模型定义、P0 范围边界、预览层交互硬约束、实现优先级。做产品决策前必读。
+
+## Tech Stack
+
+| 技术 | 用途 |
+|------|------|
+| Next.js 16 (App Router) | 路由、Server Components、Route Handlers |
+| React 19 | UI |
+| PostgreSQL + Drizzle ORM | 持久化 DraftRecord / PublishedTutorial |
+| Vercel AI SDK v6 (`ai`) | `streamText` + `Output.object` + Zod 结构化流式生成 |
+| DeepSeek (via `@ai-sdk/openai-compatible`) | LLM provider |
+| Zod 4 | schema 定义（AI 输出约束 + API 校验 + DB 写入校验） |
+| CodeHike | scrollytelling 代码高亮 |
+
+## External Docs
+
+**始终通过 Context7 MCP 工具获取最新版本文档。** 使用流程：先 `resolve-library-id` → 再 `query-docs`。
+
+- **Vercel AI SDK (ai)** — 目标 **v6**，API 与 v4/v5 有 Breaking Changes，严禁凭记忆使用旧 API
+- **Next.js** — App Router API（route handlers、server components、generateStaticParams）
+- **Code Hike** — scrollytelling 代码高亮库，官方文档 https://codehike.org/docs
+- **Drizzle ORM** — schema 定义、query API、PostgreSQL 迁移

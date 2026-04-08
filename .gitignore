@@ -1,3 +1,15 @@
 node_modules/
 .next/
 dev-server.log
+.env.local
+.env.local.*
+drizzle/
+
+# Claude Code
+.claude/
+
+# TypeScript
+tsconfig.tsbuildinfo
+
+# Next.js auto-generated
+next-env.d.ts

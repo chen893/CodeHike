@@ -9,19 +9,22 @@ export function generateStaticParams() {
   return tutorialSlugs.map((slug) => ({ slug }))
 }
 
+// 允许 generateStaticParams 未包含的 slug 正常渲染
+export const dynamicParams = true
+
 export async function generateMetadata({ params }) {
   const { slug } = await params
   const tutorial = getTutorialBySlug(slug)
 
   if (!tutorial) {
     return {
-      title: "Tutorial Not Found",
+      title: "教程未找到",
     }
   }
 
   return {
-    title: `${tutorial.meta.title} Request`,
-    description: `Fetch the payload for ${tutorial.meta.title} and render it in the generic tutorial shell.`,
+    title: `${tutorial.meta.title} — 远程加载`,
+    description: `加载并渲染教程: ${tutorial.meta.title}`,
   }
 }
 
