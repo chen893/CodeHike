@@ -21,7 +21,7 @@ export async function generateMetadata({ params }) {
 
   return {
     title: `${tutorial.meta.title} Request`,
-    description: `通过 mock 请求教程数据，并在前端渲染 ${tutorial.meta.title}。`,
+    description: `Fetch the payload for ${tutorial.meta.title} and render it in the generic tutorial shell.`,
   }
 }
 

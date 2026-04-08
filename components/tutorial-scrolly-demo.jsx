@@ -38,7 +38,7 @@ export function TutorialScrollyDemo({ steps, intro, title, fileName }) {
     <SelectionProvider className="editorial-grid" rootMargin="0% 0% -42% 0%">
       <aside className="code-column">
         <div className="code-column-inner">
-          <p className="code-column-kicker">{title || "Build your own redux"}</p>
+          <p className="code-column-kicker">{title || "Tutorial renderer"}</p>
           <SelectedCodeFrame steps={steps} fileName={fileName} />
         </div>
       </aside>
@@ -47,7 +47,7 @@ export function TutorialScrollyDemo({ steps, intro, title, fileName }) {
         {intro ? (
           <section className="article-intro">
             <p className="article-intro-kicker">Code Hike Tutorial</p>
-            <h1 className="article-intro-title">{title || "Build your own redux"}</h1>
+            <h1 className="article-intro-title">{title || "Tutorial renderer"}</h1>
             {intro.map((paragraph) => (
               <p key={paragraph} className="article-intro-body">
                 {paragraph}

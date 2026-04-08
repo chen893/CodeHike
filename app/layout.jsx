@@ -1,8 +1,8 @@
 import "./globals.css"
 
 export const metadata = {
-  title: "Build Your Own Redux",
-  description: "A small Code Hike scrollycoding prototype for Redux.",
+  title: "Tutorial Renderer",
+  description: "A generic CodeHike-based app for rendering scrolly tutorials.",
 }
 
 export default function RootLayout({ children }) {
