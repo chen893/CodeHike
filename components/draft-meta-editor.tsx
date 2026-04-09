@@ -1,6 +1,9 @@
 'use client';
 
 import { useEffect, useState } from 'react';
+import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
+import { Textarea } from '@/components/ui/textarea';
 
 interface DraftMetaEditorProps {
   title: string;
@@ -40,33 +43,50 @@ export function DraftMetaEditor({
   }
 
   return (
-    <div className="draft-meta-editor">
-      <h2>元信息编辑</h2>
-      <label className="form-label">
-        <span className="form-label-text">标题</span>
-        <input className="form-input" value={title} onChange={(e) => setTitle(e.target.value)} />
-      </label>
-      <label className="form-label">
-        <span className="form-label-text">描述</span>
-        <input
-          className="form-input"
-          value={description}
-          onChange={(e) => setDescription(e.target.value)}
-        />
-      </label>
-      <label className="form-label">
-        <span className="form-label-text">简介段落（用空行分隔）</span>
-        <textarea
-          className="form-input"
-          value={intro}
-          onChange={(e) => setIntro(e.target.value)}
-          rows={6}
-        />
-      </label>
-      <div className="editor-actions">
-        <button className="btn btn-primary" onClick={handleSave} disabled={saving}>
-          {saving ? '保存中...' : '保存'}
-        </button>
+    <div className="space-y-6">
+      <div className="space-y-1">
+        <h3 className="text-xl font-bold tracking-tight text-slate-900">元信息编辑</h3>
+        <p className="text-xs text-slate-500">
+          修改教程的标题、描述和开场白。
+        </p>
+      </div>
+      
+      <div className="space-y-5">
+        <label className="block space-y-1.5">
+          <span className="text-sm font-medium text-slate-700">标题</span>
+          <Input
+            className="bg-white border-slate-200 focus:ring-slate-400"
+            value={title}
+            onChange={(e) => setTitle(e.target.value)}
+          />
+        </label>
+        <label className="block space-y-1.5">
+          <span className="text-sm font-medium text-slate-700">描述</span>
+          <Input
+            className="bg-white border-slate-200 focus:ring-slate-400"
+            value={description}
+            onChange={(e) => setDescription(e.target.value)}
+          />
+        </label>
+        <label className="block space-y-1.5">
+          <span className="text-sm font-medium text-slate-700">开场白</span>
+          <Textarea
+            className="min-h-[120px] bg-white border-slate-200 focus:ring-slate-400 leading-6"
+            value={intro}
+            onChange={(e) => setIntro(e.target.value)}
+            rows={5}
+          />
+        </label>
+        <div className="flex items-center justify-end border-t border-slate-100 pt-5">
+          <Button 
+            type="button" 
+            onClick={handleSave} 
+            disabled={saving}
+            className="bg-slate-900 text-slate-50 hover:bg-slate-900/90 rounded-md h-9 px-4"
+          >
+            {saving ? '保存中...' : '保存元信息'}
+          </Button>
+        </div>
       </div>
     </div>
   );

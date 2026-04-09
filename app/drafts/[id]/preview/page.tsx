@@ -16,7 +16,7 @@ export default async function DraftPreviewPage({
   const steps = await buildTutorialSteps(draft.tutorialDraft as any);
 
   return (
-    <main className="tutorial-page">
+    <main className="min-h-screen">
       <TutorialScrollyDemo
         steps={steps}
         intro={draft.tutorialDraft.intro.paragraphs}

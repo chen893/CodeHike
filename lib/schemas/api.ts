@@ -1,7 +1,12 @@
 import { z } from 'zod';
 import { sourceItemSchema } from './source-item';
 import { teachingBriefSchema } from './teaching-brief';
-import { tutorialStepSchema } from './tutorial-draft';
+import {
+  contentMarkSchema,
+  contentPatchSchema,
+  contentRangeSchema,
+  tutorialStepSchema,
+} from './tutorial-draft';
 
 // POST /api/drafts
 export const createDraftRequestSchema = z.object({
@@ -28,6 +33,13 @@ export const updateStepRequestSchema = z.object({
   title: z.string().optional(),
   lead: z.string().optional(),
   paragraphs: z.array(z.string()).optional(),
+  patches: z.array(contentPatchSchema).optional(),
+  focus: contentRangeSchema.nullable().optional(),
+  marks: z.array(contentMarkSchema).optional(),
+});
+
+export const replaceStepsRequestSchema = z.object({
+  stepIds: z.array(z.string().min(1)).min(1),
 });
 
 // POST /api/drafts/[id]/steps/[stepId]/regenerate

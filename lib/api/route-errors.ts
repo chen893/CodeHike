@@ -6,6 +6,14 @@ export function getRouteErrorMessage(err: unknown, fallback: string) {
   }
 
   if (err instanceof Error && err.message) {
+    if (err.message.toLowerCase().startsWith('validation:')) {
+      return err.message.replace(/^validation:\s*/i, '');
+    }
+
+    if (err.message.toLowerCase().startsWith('conflict:')) {
+      return err.message.replace(/^conflict:\s*/i, '');
+    }
+
     return err.message;
   }
 

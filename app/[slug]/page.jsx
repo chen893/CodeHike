@@ -59,7 +59,7 @@ export default async function TutorialPage({ params }) {
   if (published) {
     const steps = await buildTutorialSteps(published.tutorialDraftSnapshot)
     return (
-      <main className="tutorial-page">
+      <main className="min-h-screen">
         <TutorialScrollyDemo
           steps={steps}
           intro={published.tutorialDraftSnapshot.intro.paragraphs}
@@ -79,7 +79,7 @@ export default async function TutorialPage({ params }) {
   const steps = await buildTutorialSteps(tutorial)
 
   return (
-    <main className="tutorial-page">
+    <main className="min-h-screen">
       <TutorialScrollyDemo
         steps={steps}
         intro={tutorial.intro.paragraphs}

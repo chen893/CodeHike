@@ -21,12 +21,16 @@ import {
 
 function CodeFrame({ title, code, fileName }) {
   return (
-    <div className="code-stage">
-      <div className="code-meta">
-        <p className="code-frame-title">{title}</p>
-        <span className="code-file-label">{fileName || "code"}</span>
+    <div className="relative flex h-full w-full flex-1 flex-col overflow-y-auto px-6 pb-6">
+      <div className="mb-[18px] flex items-center justify-between pt-8">
+        <p className="text-[11px] font-medium uppercase tracking-[0.12em] text-slate-400">
+          {title || ""}
+        </p>
+        <span className="text-[11px] font-medium uppercase tracking-[0.12em] text-slate-500">
+          {fileName || "code"}
+        </span>
       </div>
-      <div className="code-content">
+      <div className="code-content overflow-x-auto">
         <Pre code={code} handlers={[focus, mark, changeIndicator, tokenTransitions]} />
       </div>
     </div>
@@ -35,63 +39,97 @@ function CodeFrame({ title, code, fileName }) {
 
 function MobileCodeFrame({ step, fileName }) {
   return (
-    <div className="article-step-code-mobile">
-      <div className="code-meta">
-        <p className="code-frame-title">{step.eyebrow}</p>
-        <span className="code-file-label">{fileName || "code"}</span>
+    <div className="mt-5 max-h-[40vh] overflow-y-auto rounded-md border border-black/10 bg-[#1e1e2e] px-4 py-3 lg:hidden">
+      <div className="mb-2.5 flex items-center justify-between">
+        <p className="text-[11px] font-medium uppercase tracking-[0.12em] text-slate-400">
+          {step.eyebrow || ""}
+        </p>
+        <span className="text-[11px] font-medium uppercase tracking-[0.12em] text-slate-500">
+          {fileName || "code"}
+        </span>
       </div>
-      <div className="code-content">
+      <div className="code-content overflow-x-auto">
         <Pre code={step.highlighted} handlers={[focus, mark, changeIndicator]} />
       </div>
     </div>
   )
 }
 
-export function TutorialScrollyDemo({ steps, intro, title, fileName }) {
+export function TutorialScrollyDemo({
+  steps,
+  intro,
+  title,
+  fileName,
+}) {
   return (
-    <SelectionProvider className="editorial-grid" rootMargin="0% 0% -42% 0%">
-      <aside className="code-column">
-        <div className="code-column-inner">
+    <SelectionProvider
+      className="grid min-h-screen bg-[#f7f8fa] text-slate-900 lg:grid-cols-[minmax(0,1.08fr)_minmax(420px,0.92fr)]"
+      rootMargin="0% 0% -42% 0%"
+    >
+      <aside className="hidden min-h-screen bg-[#1e1e2e] lg:block">
+        <div className="sticky top-0 flex h-screen items-start justify-center overflow-hidden">
           <SelectedCodeFrame steps={steps} fileName={fileName} />
         </div>
       </aside>
 
-      <div className="article-column">
+      <div className="relative min-h-screen bg-[#f7f8fa] px-5 pb-10 lg:px-0 lg:pb-0">
         <StepRail steps={steps} />
 
         {intro ? (
-          <section className="article-intro">
-            <h1 className="article-intro-title">{title || "Tutorial renderer"}</h1>
-            {intro.map((paragraph, index) => (
-              <p key={`intro-${index}`} className="article-intro-body">
-                {paragraph}
-              </p>
-            ))}
-          </section>
-        ) : null}
-
-        {steps.map((step, index) => (
-          <Selectable
-            key={step.id || `step-${index}`}
-            index={index}
-            selectOn={["click", "scroll"]}
-            className="article-step"
-          >
-            <article className="article-step-inner">
-              {step.eyebrow && (
-                <p className="article-step-kicker">{step.eyebrow}</p>
-              )}
-              <h2 className="article-step-title">{step.title}</h2>
-              {step.lead && <p className="article-step-lead">{step.lead}</p>}
-              {step.paragraphs.map((paragraph, pIndex) => (
-                <p key={`step-${index}-p-${pIndex}`} className="article-step-body">
+          <section className="flex min-h-auto flex-col justify-center py-9 pl-4 sm:py-10 sm:pl-8 lg:min-h-screen lg:pl-10 lg:pr-14 lg:pb-[72px] lg:pt-12">
+            <h1 className="text-[clamp(2.625rem,5vw,4.5rem)] font-extrabold leading-[1.02] tracking-[-0.04em] text-slate-900">
+              {title || "Tutorial renderer"}
+            </h1>
+            <div className="mt-4">
+              {intro.map((paragraph, index) => (
+                <p
+                  key={`intro-${index}`}
+                  className="mt-4 w-full max-w-[600px] text-[clamp(1rem,1.4vw,1.1875rem)] leading-[1.75] text-slate-500"
+                >
                   {paragraph}
                 </p>
               ))}
-              <MobileCodeFrame step={step} fileName={fileName} />
-            </article>
-          </Selectable>
-        ))}
+            </div>
+          </section>
+        ) : null}
+
+        <div>
+          {steps.map((step, index) => (
+            <Selectable
+              key={step.id || `step-${index}`}
+              index={index}
+              selectOn={["click", "scroll"]}
+              className="article-step scroll-mt-24 border-l-2 border-slate-200 pl-5 transition-colors data-[selected=true]:border-[#2563eb] sm:pl-8 lg:flex lg:min-h-screen lg:items-start lg:pl-10 lg:pr-14"
+            >
+              <article className="w-full max-w-[560px] py-9 pb-7 lg:py-14 lg:pb-[120px]">
+                {step.eyebrow && (
+                  <p className="mb-3 text-[11px] font-semibold uppercase tracking-[0.1em] text-[#2563eb]">
+                    {step.eyebrow}
+                  </p>
+                )}
+                <h2 className="text-[clamp(1.75rem,2.8vw,2.75rem)] font-bold leading-[1.15] tracking-[-0.025em] text-slate-900">
+                  {step.title}
+                </h2>
+                {step.lead && (
+                  <p className="mt-6 max-w-[560px] text-[clamp(1rem,1.3vw,1.125rem)] font-medium leading-[1.6] text-slate-900">
+                    {step.lead}
+                  </p>
+                )}
+                <div>
+                  {step.paragraphs.map((paragraph, pIndex) => (
+                    <p
+                      key={`step-${index}-p-${pIndex}`}
+                      className="mt-5 max-w-[560px] text-[clamp(0.9375rem,1.2vw,1.0625rem)] leading-[1.8] text-slate-500"
+                    >
+                      {paragraph}
+                    </p>
+                  ))}
+                </div>
+                <MobileCodeFrame step={step} fileName={fileName} />
+              </article>
+            </Selectable>
+          ))}
+        </div>
       </div>
     </SelectionProvider>
   )
@@ -128,26 +166,38 @@ function StepRail({ steps }) {
   }
 
   return (
-    <div className="step-rail">
+    <div className="fixed right-5 top-1/2 z-20 hidden -translate-y-1/2 flex-col items-center gap-1 rounded-full border border-slate-200/80 bg-white/80 p-2 shadow-[0_1px_3px_rgba(15,23,42,0.08),0_4px_12px_rgba(15,23,42,0.04)] backdrop-blur lg:flex">
       {steps.map((step, i) => {
         const state = getStepState(i)
+        const isHovered = hoveredIndex === i
+
         return (
           <div
             key={step.id || i}
-            className={`step-rail-node ${state}`}
+            className="step-rail-node relative flex h-8 w-8 cursor-pointer items-center justify-center rounded-full transition-all hover:bg-[#2563eb]/[0.06]"
             onMouseEnter={() => setHoveredIndex(i)}
             onMouseLeave={() => setHoveredIndex(null)}
             onClick={() => handleSelect(i)}
           >
-            {/* Dash mark */}
-            <div className={`step-rail-dash ${state}`} />
+            <div
+              className={`step-rail-dash ${state} transition-all ${
+                state === "current"
+                  ? `${isHovered ? "h-1 w-6" : "h-1 w-[22px]"} rounded-sm bg-[#2563eb]`
+                  : state === "completed"
+                    ? `${isHovered ? "h-[3px] w-[18px]" : "h-[3px] w-[14px]"} rounded-[1.5px] bg-[#2563eb]/25`
+                    : `${isHovered ? "h-[3px] w-[18px] bg-black/25" : "h-[3px] w-[14px] bg-black/12"} rounded-[1.5px]`
+              }`}
+            />
 
-            {/* Hover tooltip — appears to the left of the rail */}
-            {hoveredIndex === i && (
-              <div className="step-rail-tooltip">
-                <span className="step-rail-tooltip-title">{step.title}</span>
+            {isHovered && (
+              <div className="absolute right-[calc(100%+10px)] top-1/2 flex w-[220px] -translate-y-1/2 flex-col gap-1 rounded-lg border border-slate-200 bg-white px-3 py-2 text-left shadow-lg">
+                <div className="block text-[13px] font-semibold leading-[1.35] text-slate-900">
+                  {step.title}
+                </div>
                 {getChangeHint(step) && (
-                  <span className="step-rail-tooltip-hint">{getChangeHint(step)}</span>
+                  <span className="block text-[11px] text-slate-400">
+                    {getChangeHint(step)}
+                  </span>
                 )}
               </div>
             )}
@@ -162,11 +212,19 @@ function SelectedCodeFrame({ steps, fileName }) {
   const [selectedIndex] = useSelectedIndex()
   const step = steps[selectedIndex] ?? steps[0]
 
+  if (!step) {
+    return (
+      <div className="flex h-full w-full items-center justify-center px-6 text-sm text-slate-500">
+        没有步骤
+      </div>
+    )
+  }
+
   return <CodeFrame title={step.eyebrow} code={step.highlighted} fileName={fileName} />
 }
 
 function FocusedPre(props) {
-  return <InnerPre merge={props} className="code-pre" />
+  return <InnerPre merge={props} className="code-pre overflow-hidden rounded-2xl" />
 }
 
 class SmoothPre extends React.Component {
@@ -227,7 +285,7 @@ class SmoothPre extends React.Component {
   }
 
   render() {
-    return <InnerPre merge={this.props} className="code-pre" />
+    return <InnerPre merge={this.props} className="code-pre overflow-hidden rounded-2xl" />
   }
 }
 
@@ -248,7 +306,7 @@ const mark = {
 
     return (
       <div
-        className="code-mark-wrap"
+        className="code-mark-wrap flex rounded-r-lg border-l-2 px-2 py-0.5"
         style={{
           borderLeftColor: annotation ? color : "transparent",
           background: annotation ? `rgb(from ${color} r g b / 0.14)` : "transparent",
@@ -277,13 +335,17 @@ const changeIndicator = {
 
     return (
       <div
-        className="code-change-line"
+        className="code-change-line flex items-stretch rounded-r-lg px-2 py-0.5"
         style={{
           borderLeft: `2px solid ${borderColor}`,
           background: bgColor,
         }}
       >
-        <span className={`line-indicator ${isAdded ? 'line-added' : 'line-modified'}`}>
+        <span
+          className={`line-indicator mr-2 inline-flex h-5 w-5 items-center justify-center rounded-full text-[11px] font-semibold ${
+            isAdded ? "line-added bg-emerald-300/20 text-emerald-100" : "line-modified bg-amber-300/20 text-amber-100"
+          }`}
+        >
           {isAdded ? "+" : "~"}
         </span>
         <InnerLine merge={props} className="code-line" />

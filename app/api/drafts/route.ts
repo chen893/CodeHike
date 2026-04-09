@@ -1,6 +1,20 @@
 import { NextResponse } from 'next/server';
 import { getRouteErrorMessage, isRouteValidationError } from '@/lib/api/route-errors';
+import * as draftRepo from '@/lib/repositories/draft-repository';
 import { createDraft } from '@/lib/services/create-draft';
+
+export async function GET() {
+  try {
+    const drafts = await draftRepo.listDraftSummaries();
+    return NextResponse.json(drafts);
+  } catch (err) {
+    console.error('获取草稿列表失败:', err);
+    return NextResponse.json(
+      { message: '获取草稿列表失败', code: 'INTERNAL_ERROR' },
+      { status: 500 }
+    );
+  }
+}
 
 export async function POST(req: Request) {
   try {

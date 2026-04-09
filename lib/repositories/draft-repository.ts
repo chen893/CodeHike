@@ -1,7 +1,7 @@
-import { eq } from 'drizzle-orm';
+import { desc, eq, sql } from 'drizzle-orm';
 import { db } from '../db';
 import { drafts, type draftStatusEnum, type syncStateEnum, type generationStateEnum } from '../db/schema';
-import type { DraftRecord } from '../types/api';
+import type { DraftRecord, DraftSummary } from '../types/api';
 import type { SourceItem } from '../schemas/source-item';
 import type { TeachingBrief } from '../schemas/teaching-brief';
 import type { TutorialDraft, TutorialStep } from '../schemas/tutorial-draft';
@@ -9,6 +9,23 @@ import type { TutorialOutline } from '../schemas/tutorial-outline';
 import type { GenerationQuality } from '../schemas/generation-quality';
 
 type DraftRow = typeof drafts.$inferSelect;
+type DraftSummaryRow = {
+  id: string;
+  status: DraftSummary['status'];
+  syncState: DraftSummary['syncState'];
+  generationState: DraftSummary['generationState'];
+  generationErrorMessage: string | null;
+  validationValid: boolean;
+  validationErrors: string[];
+  publishedSlug: string | null;
+  updatedAt: Date;
+  hasTutorialDraft: boolean;
+  stepCount: number;
+  metaTitle: string | null;
+  metaDescription: string | null;
+  teachingTopic: string | null;
+  teachingCoreQuestion: string | null;
+};
 
 function toDraftRecord(row: DraftRow): DraftRecord {
   return {
@@ -37,6 +54,24 @@ function toDraftRecord(row: DraftRow): DraftRecord {
   };
 }
 
+function toDraftSummary(row: DraftSummaryRow): DraftSummary {
+  return {
+    id: row.id,
+    status: row.status,
+    syncState: row.syncState,
+    generationState: row.generationState,
+    generationErrorMessage: row.generationErrorMessage ?? null,
+    validationValid: row.validationValid,
+    validationErrors: row.validationErrors ?? [],
+    publishedSlug: row.publishedSlug ?? null,
+    hasTutorialDraft: Boolean(row.hasTutorialDraft),
+    stepCount: Number(row.stepCount),
+    title: row.metaTitle || row.teachingTopic || '新草稿',
+    baseDescription: row.metaDescription || row.teachingCoreQuestion || null,
+    updatedAt: row.updatedAt,
+  };
+}
+
 export async function createDraft(data: {
   sourceItems: SourceItem[];
   teachingBrief: TeachingBrief;
@@ -56,6 +91,40 @@ export async function createDraft(data: {
 export async function getDraftById(id: string): Promise<DraftRecord | null> {
   const [row] = await db.select().from(drafts).where(eq(drafts.id, id));
   return row ? toDraftRecord(row) : null;
+}
+
+export async function listDrafts(): Promise<DraftRecord[]> {
+  const rows = await db
+    .select()
+    .from(drafts)
+    .orderBy(desc(drafts.updatedAt));
+
+  return rows.map(toDraftRecord);
+}
+
+export async function listDraftSummaries(): Promise<DraftSummary[]> {
+  const rows = await db
+    .select({
+      id: drafts.id,
+      status: drafts.status,
+      syncState: drafts.syncState,
+      generationState: drafts.generationState,
+      generationErrorMessage: drafts.generationErrorMessage,
+      validationValid: drafts.validationValid,
+      validationErrors: drafts.validationErrors,
+      publishedSlug: drafts.publishedSlug,
+      updatedAt: drafts.updatedAt,
+      hasTutorialDraft: sql<boolean>`${drafts.tutorialDraft} is not null`,
+      stepCount: sql<number>`coalesce(jsonb_array_length(${drafts.tutorialDraft} -> 'steps'), 0)`,
+      metaTitle: sql<string | null>`${drafts.tutorialDraft} -> 'meta' ->> 'title'`,
+      metaDescription: sql<string | null>`${drafts.tutorialDraft} -> 'meta' ->> 'description'`,
+      teachingTopic: sql<string | null>`${drafts.teachingBrief} ->> 'topic'`,
+      teachingCoreQuestion: sql<string | null>`${drafts.teachingBrief} ->> 'core_question'`,
+    })
+    .from(drafts)
+    .orderBy(desc(drafts.updatedAt));
+
+  return rows.map((row) => toDraftSummary(row as DraftSummaryRow));
 }
 
 export async function updateDraft(
@@ -237,4 +306,13 @@ export async function updateDraftGenerationQuality(
     .where(eq(drafts.id, id))
     .returning();
   return row ? toDraftRecord(row) : null;
+}
+
+export async function deleteDraft(id: string): Promise<boolean> {
+  const rows = await db
+    .delete(drafts)
+    .where(eq(drafts.id, id))
+    .returning({ id: drafts.id });
+
+  return rows.length > 0;
 }

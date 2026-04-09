@@ -29,6 +29,22 @@ export interface DraftRecord {
   updatedAt: Date;
 }
 
+export interface DraftSummary {
+  id: string;
+  status: 'draft' | 'published';
+  syncState: 'empty' | 'fresh' | 'stale';
+  generationState: 'idle' | 'running' | 'succeeded' | 'failed';
+  generationErrorMessage: string | null;
+  validationValid: boolean;
+  validationErrors: string[];
+  publishedSlug: string | null;
+  hasTutorialDraft: boolean;
+  stepCount: number;
+  title: string;
+  baseDescription: string | null;
+  updatedAt: Date;
+}
+
 export interface PublishedTutorial {
   id: string;
   draftRecordId: string;

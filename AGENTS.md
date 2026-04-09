@@ -1,4 +1,4 @@
-# CLAUDE.md
+# AGENTS.md
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
@@ -116,6 +116,7 @@ lib/services/compute-generation-quality.ts # 质量指标计算
 | `docs/archive/` | 已归档的过时文档（v3.0 实施计划、旧渲染流程） |
 
 **修改代码前务必先阅读相关文档。** 数据结构变更对照 `tutorial-data-format.md`，新增功能对照 `vibe-docs-technical-design.md`。
+**实施过程中如遇到问题，必须将问题现象、根因分析和解决方案补充记录到 `docs/v3-implementation-issues.md`。**
 
 ## AGENTS.md
 

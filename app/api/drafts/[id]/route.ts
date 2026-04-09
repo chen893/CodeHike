@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import { getRouteErrorMessage, isRouteValidationError } from '@/lib/api/route-errors';
 import * as draftRepo from '@/lib/repositories/draft-repository';
+import { deleteDraft } from '@/lib/services/delete-draft';
 import { updateDraftRequestSchema } from '@/lib/schemas/api';
 import { computeInputHash } from '@/lib/utils/hash';
 
@@ -88,5 +89,25 @@ export async function PATCH(
       { message, code },
       { status: code === 'VALIDATION_ERROR' ? 400 : 500 }
     );
+  }
+}
+
+export async function DELETE(
+  req: Request,
+  context: { params: Promise<{ id: string }> }
+) {
+  const { id } = await context.params;
+
+  try {
+    const result = await deleteDraft(id);
+    return NextResponse.json(result);
+  } catch (err) {
+    console.error('删除草稿失败:', err);
+    const message = getRouteErrorMessage(err, '删除草稿失败');
+    const isNotFound = message.includes('not found');
+    const isConflict = err instanceof Error && err.message.toLowerCase().startsWith('conflict:');
+    const status = isNotFound ? 404 : isConflict ? 409 : 500;
+    const code = isNotFound ? 'NOT_FOUND' : isConflict ? 'CONFLICT' : 'DELETE_DRAFT_ERROR';
+    return NextResponse.json({ message, code }, { status });
   }
 }

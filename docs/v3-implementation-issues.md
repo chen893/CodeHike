@@ -109,3 +109,208 @@
 **验证**：优化 prompt 后，Redux 300 行源码教程生成成功，6 步全部通过可执行校验。
 
 **影响文件**：`lib/ai/prompt-templates.ts`
+
+---
+
+## 问题 8：步骤结构编辑误把“整份草稿全量校验”当成保存门槛
+
+**现象**：删除或重排中间步骤后，后续步骤的 patch 链会暂时失效。此时尝试修复第一个失效步骤，`PATCH /api/drafts/[id]/steps/[stepId]` 仍然返回校验失败，用户必须一次性修完所有后续步骤才能保存任何一个步骤。
+
+**根因**：`updateDraftStep()` 在请求包含 `patches/focus/marks` 时直接对整份 `tutorialDraft` 做全量校验。删除/重排服务本身允许草稿以“后续步骤待修复”的状态落库，但步骤保存服务却要求整份草稿立刻恢复全绿，两个策略冲突。
+
+**解决**：结构编辑保存时只校验“从 baseCode 到当前步骤”为止的链路是否成立；当前步骤可保存后，再对整份草稿重新计算 `validationValid / validationErrors`，把仍然存在的后续问题继续暴露给 UI。
+
+**影响文件**：
+- `lib/services/update-draft-step.ts`
+- `lib/utils/validation.ts`
+
+---
+
+## 问题 9：步骤重排接口信任客户端完整步骤对象，存在越权修改入口
+
+**现象**：`PUT /api/drafts/[id]/steps` 本应只用于重排，但客户端如果提交修改过的完整 `steps` 数组，也会被服务端直接持久化，从而绕过单步编辑接口里的 patch 校验。
+
+**根因**：重排服务只校验步骤数量和 ID 集合是否一致，然后直接把客户端提供的步骤对象整体写回数据库，没有把“顺序调整”和“内容编辑”两个职责分离。
+
+**解决**：将重排接口收口为只接收 `stepIds` 顺序数组。服务端基于数据库里的权威步骤对象重新组装 `steps`，这样客户端无法借重排接口修改标题、段落或 patch 内容。
+
+**影响文件**：
+- `lib/schemas/api.ts`
+- `lib/services/replace-draft-steps.ts`
+- `components/draft-workspace.tsx`
+
+---
+
+## 问题 10：草稿列表页把整份源码和教程 JSON 传进客户端，负载过重
+
+**现象**：`/drafts` 页面只显示卡片摘要，但服务端查询和传输的是完整 `DraftRecord[]`，其中包含 `sourceItems.content`、`tutorialDraft.baseCode`、步骤数组和生成质量等大字段。草稿一多，页面数据量会迅速膨胀。
+
+**根因**：列表查询复用了详情页仓储方法，直接 `select * from drafts`，没有为列表页单独抽取摘要 DTO。
+
+**解决**：新增 `listDraftSummaries()`，通过 SQL 从 `jsonb` 中只抽取标题、描述、步骤数和状态所需字段；`app/drafts/page.tsx` 与 `GET /api/drafts` 都改为返回轻量 summary 数据。
+
+**影响文件**：
+- `lib/repositories/draft-repository.ts`
+- `app/drafts/page.tsx`
+- `app/api/drafts/route.ts`
+- `components/drafts-page.tsx`
+
+---
+
+## 问题 11：生成失败后缺少“按失败原因恢复”的入口
+
+**现象**：当前系统只能展示失败文本，不能根据失败原因直接给出下一步操作。目录生成失败时，用户只能手动重开整条流程；步骤编排或删除导致 patch 链断开时，用户只能逐步手动点“重新生成”。
+
+**根因**：失败状态只以 `generationErrorMessage` 和 `validationErrors` 的文本形式暴露，UI 没有把“无大纲可用的生成失败”和“已有草稿但后续步骤坏链”区分开，也没有提供批量恢复动作。
+
+**解决**：
+- 在生成页里识别 outline 阶段失败，直接提供“重新生成目录”入口，复用现有 `/api/drafts/[id]/generate` 流。
+- 在工作区里顺序分析 patch 链，定位首个失效步骤；当步骤编排、删除或 patch 链断开时，提供“从失败步骤开始重新生成后续步骤”的批量修复入口。
+- 校验错误统一补充成“第几步失效”的格式，便于 UI 和用户定位。
+
+**影响文件**：
+- `components/generation-progress.tsx`
+- `components/draft-workspace.tsx`
+- `lib/tutorial-draft-code.js`
+- `lib/utils/validation.ts`
+
+---
+
+## 问题 12：Tailwind CSS v4 + shadcn/ui 在当前环境下不能直接沿用旧式初始化方式
+
+**现象**：
+1. 项目虽然已经安装了 `tailwindcss`、`postcss`、`autoprefixer`，但没有可用的 Tailwind 样式输出，页面上的 Tailwind class 不生效。
+2. `npx shadcn@latest init` 在当前终端环境中长时间停留在 spinner 状态，无法作为稳定的初始化方式接入。
+
+**根因**：
+1. Tailwind CSS v4 不再使用旧的 `tailwindcss` PostCSS plugin 配置，必须改为 `@tailwindcss/postcss`，并在全局样式里通过 `@import "tailwindcss";` 引入。
+2. 当前仓库是已有项目、且在 agent 终端里运行 CLI，`shadcn` 初始化流程对交互和环境探测更敏感，直接 CLI 初始化不稳定。
+
+**解决**：
+1. 安装 `@tailwindcss/postcss`，新增 `postcss.config.mjs`，把 PostCSS 配置切到 v4 推荐方式。
+2. 手动创建 `components.json`、`lib/utils.ts` 和 `components/ui/*` 基础原语，按 shadcn/ui 的目录约定接入，而不是依赖交互式 CLI。
+3. 将 `app/globals.css` 重写为 Tailwind v4 入口，并只保留 CodeHike / CodeMirror 必需的少量全局样式，其余页面样式迁到组件内的 Tailwind class。
+
+**影响文件**：
+- `postcss.config.mjs`
+- `components.json`
+- `app/globals.css`
+- `lib/utils.ts`
+- `components/ui/*`
+
+---
+
+## 问题 13：Tailwind CSS v4 在 Next.js dev 模式下未自动发现模板源，导致页面看起来“完全无样式”
+
+**现象**：
+- `npm run build` 和 `npm start` 后样式正常。
+- 但 `npm run dev` 时，页面 HTML 已经输出了大量 Tailwind class，`/_next/static/css/app/layout.css` 也成功加载，却缺少 `bg-slate-50`、`text-slate-900`、`.relative` 等 utility 规则，导致页面在浏览器里看起来接近无样式。
+
+**根因**：
+- 仅依赖 Tailwind v4 的自动 source detection 在当前 Next.js + webpack dev 流程里不稳定，`app/`、`components/`、`lib/` 下的模板文件没有被 dev 模式稳定纳入扫描范围。
+- 结果是 dev 下只生成了基础层和部分样式，utility 层没有完整产出。
+
+**解决**：
+- 在 `app/globals.css` 里显式声明 source：
+  - `@source "../app";`
+  - `@source "../components";`
+  - `@source "../lib";`
+- 然后重启 dev server，使 Tailwind 重新建立扫描结果。
+
+**验证**：
+
+---
+
+## 问题 14：生成步骤列表过长时撑高整个页面，打断工作区布局
+
+**现象**：
+- 教程步骤较多时，`GenerationProgress` 右侧“生成进度 / 即时预览”里的步骤列表会无限增高。
+- 在创建页和草稿工作区里，用户会被迫滚动整个页面才能继续查看当前阶段信息，生成态不再是一个稳定的局部工作区。
+
+**根因**：
+- `components/generation-progress.tsx` 里的 v1 / v2 进度视图都直接把步骤项渲染在普通块级容器里，没有给列表设置内部滚动边界。
+- 一旦 outline 或解析出的步骤数变多，列表高度会直接参与页面整体文档流计算，最终把整个页面撑长。
+
+**解决**：
+- 为进度步骤列表增加统一的限高滚动容器，使用 `max-height + overflow-y-auto + overscroll-contain`，把滚动收口在组件内部。
+- v1 兼容流和 v2 多阶段流共用同一套滚动策略，避免回退模式再次出现相同问题。
+
+**影响文件**：
+- `components/generation-progress.tsx`
+
+---
+
+## 问题 15：公共 AppShell 侧边栏可见但无法点击，且在部分桌面宽度下导航直接消失
+
+**现象**：
+- 首页、创建页、草稿列表页共用的 `AppShell` 中，桌面侧边栏虽然可见，但点击导航项没有反应。
+- 浏览器宽度处于 `lg` 到 `xl` 之间时，桌面侧边栏还未显示，移动端抽屉按钮却已经隐藏，导致整套导航入口不可达。
+
+**根因**：
+- `components/app-shell.tsx` 把侧边栏设为 `fixed`，但没有显式 `z-index`；同层级下后渲染的 `main` 覆盖了左侧区域，点击事件落到主内容层而不是侧边栏。
+- 侧边栏使用 `xl:*` 断点显示，而抽屉按钮使用 `lg:hidden`，两个断点不一致，造成 `1024px-1279px` 区间没有任何导航入口。
+
+**解决**：
+- 给 `AppShell` 建立独立 stacking context，并为桌面侧边栏补上明确层级，让它稳定浮在主内容层之上。
+- 将公共壳层的桌面侧边栏和主内容偏移统一到 `lg` 断点，和抽屉按钮的隐藏时机保持一致，避免中间断点出现“无导航”状态。
+
+**影响文件**：
+- `components/app-shell.tsx`
+
+---
+
+## 问题 16：教程展示页的分支内 UI 重构误伤阅读链路，需要回收为单一 classic 渲染实现
+
+**现象**：
+- 教程展示组件曾同时维护 classic / modern 两套分支样式。
+- 结果是草稿预览、发布页和特定 slug 页面之间出现视觉不一致，用户还需要额外判断当前看到的是哪一套阅读体验。
+
+**根因**：
+- `components/tutorial-scrolly-demo.jsx` 是静态直出、草稿预览、远程预览共用的核心渲染器；在同一个组件里长期并存两套视觉分支，会让预览与发布不再天然同态。
+- `app/[slug]/page.jsx` 还需要额外按 slug 注入变体，进一步放大了共享渲染链路的维护成本。
+
+**解决**：
+- 删除 `TutorialScrollyDemo` 中的 modern 分支，只保留 classic 这一套 Tailwind 实现。
+- 同时移除 `app/[slug]/page.jsx` 里按 slug 传入 `variant` 的逻辑，让草稿预览、发布页和远程页都直接复用同一个阅读组件实现。
+
+**影响文件**：
+- `app/[slug]/page.jsx`
+- `components/tutorial-scrolly-demo.jsx`
+
+---
+
+## 问题 17：`/drafts` 直接查数据库却被构建期预渲染，草稿列表会冻结在部署时刻
+
+**现象**：
+- `app/drafts/page.tsx` 直接调用 Drizzle 仓储读取草稿摘要，但新部署后访问 `/drafts` 看到的是构建时快照。
+- 新增草稿、删除草稿、发布状态变化不会在首次访问时反映出来；同时构建阶段也被迫依赖数据库可用。
+
+**根因**：
+- Next.js 16 App Router 会尽量预渲染无请求边界的页面。
+- 该页面虽然读了数据库，但没有显式建立动态渲染边界，结果被当成可静态产出的路由处理。
+
+**解决**：
+- 在 `app/drafts/page.tsx` 中调用 `await connection()`，让页面只在真实请求到来时执行数据库查询，避免构建期预渲染。
+
+**影响文件**：
+- `app/drafts/page.tsx`
+
+---
+
+## 问题 18：远程教程/预览容器缺少请求版本保护，旧响应会覆盖新内容
+
+**现象**：
+- 用户在远程教程页连续点击“刷新数据”，或在远程预览页切换 `fetchUrl` 后立刻重试时，较早发出的请求可能晚于新请求返回。
+- 一旦旧请求最后落地，页面会被回滚到过期教程、过期草稿 payload，或者展示已经失效的错误态。
+
+**根因**：
+- `components/remote-tutorial-page.jsx` 和 `components/remote-preview-page.tsx` 在异步请求完成后直接 `setState`，没有校验当前响应是否仍属于最新一次加载。
+- effect 清理阶段也没有让挂起请求失效，导致路由切换或组件卸载后，旧请求仍可能继续提交状态。
+
+**解决**：
+- 两个远程容器统一引入请求版本号 `ref`。
+- 每次触发加载时递增版本号，只允许当前版本对应的响应更新状态；在 `useEffect` 清理时再次递增版本号，使切换路由和卸载后的挂起请求自动失效。
+
+**影响文件**：
+- `components/remote-tutorial-page.jsx`
+- `components/remote-preview-page.tsx`

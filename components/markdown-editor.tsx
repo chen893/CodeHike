@@ -93,53 +93,86 @@ export function MarkdownEditor({ value, onChange, placeholder }: MarkdownEditorP
   }
 
   return (
-    <div className="markdown-editor">
-      <div className="md-toolbar">
-        <button type="button" className="md-toolbar-btn" onClick={() => handleToolbar('bold')} title="Bold">
-          <strong>B</strong>
+    <div className="overflow-hidden rounded-md border border-slate-200 bg-white shadow-sm focus-within:ring-2 focus-within:ring-slate-400 focus-within:ring-offset-1 transition-shadow">
+      <div className="flex flex-wrap items-center gap-1.5 border-b border-slate-200 bg-slate-50 px-2.5 py-1.5">
+        <button
+          type="button"
+          className="inline-flex h-8 w-8 items-center justify-center rounded-md border border-slate-200 bg-white text-xs font-bold text-slate-700 transition-colors hover:bg-slate-100"
+          onClick={() => handleToolbar('bold')}
+          title="Bold"
+        >
+          B
         </button>
-        <button type="button" className="md-toolbar-btn" onClick={() => handleToolbar('italic')} title="Italic">
-          <em>I</em>
+        <button
+          type="button"
+          className="inline-flex h-8 w-8 items-center justify-center rounded-md border border-slate-200 bg-white text-xs italic font-bold text-slate-700 transition-colors hover:bg-slate-100"
+          onClick={() => handleToolbar('italic')}
+          title="Italic"
+        >
+          I
         </button>
-        <button type="button" className="md-toolbar-btn" onClick={() => handleToolbar('code')} title="Inline code">
-          <code>{'{}'}</code>
+        <button
+          type="button"
+          className="inline-flex h-8 w-8 items-center justify-center rounded-md border border-slate-200 bg-white text-[10px] font-mono font-bold text-slate-700 transition-colors hover:bg-slate-100"
+          onClick={() => handleToolbar('code')}
+          title="Inline code"
+        >
+          {'{}'}
         </button>
-        <div className="md-toolbar-divider" />
-        <button type="button" className="md-toolbar-btn" onClick={() => handleToolbar('quote')} title="Blockquote">
+        <div className="mx-1 h-4 w-px bg-slate-200" />
+        <button
+          type="button"
+          className="inline-flex h-8 w-8 items-center justify-center rounded-md border border-slate-200 bg-white text-xs text-slate-700 transition-colors hover:bg-slate-100"
+          onClick={() => handleToolbar('quote')}
+          title="Blockquote"
+        >
           &ldquo;
         </button>
-        <button type="button" className="md-toolbar-btn" onClick={() => handleToolbar('link')} title="Link">
-          &#x1F517;
+        <button
+          type="button"
+          className="inline-flex h-8 w-8 items-center justify-center rounded-md border border-slate-200 bg-white text-xs text-slate-700 transition-colors hover:bg-slate-100"
+          onClick={() => handleToolbar('link')}
+          title="Link"
+        >
+          🔗
         </button>
-        <div className="md-tabs">
+        <div className="ml-auto flex items-center rounded-md border border-slate-200 bg-white p-0.5">
           <button
             type="button"
-            className={`md-tab${tab === 'edit' ? ' active' : ''}`}
+            className={`rounded px-3 py-1 text-xs font-bold transition-colors ${
+              tab === 'edit'
+                ? 'bg-slate-900 text-slate-50'
+                : 'text-slate-500 hover:text-slate-900'
+            }`}
             onClick={() => setTab('edit')}
           >
             Edit
           </button>
           <button
             type="button"
-            className={`md-tab${tab === 'preview' ? ' active' : ''}`}
+            className={`rounded px-3 py-1 text-xs font-bold transition-colors ${
+              tab === 'preview'
+                ? 'bg-slate-900 text-slate-50'
+                : 'text-slate-500 hover:text-slate-900'
+            }`}
             onClick={() => setTab('preview')}
           >
             Preview
           </button>
         </div>
       </div>
-      <div className="md-content">
+      <div className="bg-white">
         {tab === 'edit' ? (
           <textarea
             ref={textareaRef}
-            className="md-textarea"
+            className="min-h-[200px] w-full bg-white px-4 py-3 text-sm leading-6 text-slate-900 outline-none placeholder:text-slate-400 font-mono"
             value={value}
             onChange={(e) => onChange(e.target.value)}
             placeholder={placeholder}
           />
         ) : (
           <div
-            className="md-preview"
+            className="min-h-[200px] space-y-4 px-4 py-3 text-sm leading-6 text-slate-700 [&_a]:text-slate-900 [&_a]:underline [&_blockquote]:border-l-4 [&_blockquote]:border-slate-200 [&_blockquote]:pl-4 [&_blockquote]:italic [&_blockquote]:text-slate-500 [&_code]:rounded [&_code]:bg-slate-100 [&_code]:px-1 [&_code]:py-0.5 [&_code]:font-mono [&_code]:text-slate-900 [&_strong]:font-bold [&_p]:mb-4"
             dangerouslySetInnerHTML={{ __html: simpleMarkdownToHtml(value) }}
           />
         )}

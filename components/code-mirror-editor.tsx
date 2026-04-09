@@ -117,5 +117,10 @@ export function CodeMirrorEditor({
     }
   }, [value]);
 
-  return <div ref={containerRef} className="codemirror-wrapper" />;
+  return (
+    <div
+      ref={containerRef}
+      className="overflow-hidden bg-slate-950"
+    />
+  );
 }

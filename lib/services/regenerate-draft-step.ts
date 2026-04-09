@@ -42,7 +42,13 @@ export async function regenerateDraftStep(
         paragraphs: regeneratedStep.paragraphs ?? step.paragraphs,
       };
     }
-    return { ...regeneratedStep, id: step.id };
+    return {
+      ...step,
+      ...regeneratedStep,
+      id: step.id,
+      teachingGoal: regeneratedStep.teachingGoal ?? step.teachingGoal,
+      conceptIntroduced: regeneratedStep.conceptIntroduced ?? step.conceptIntroduced,
+    };
   });
 
   const updated = await draftRepo.updateDraftSteps(id, steps);

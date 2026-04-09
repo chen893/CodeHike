@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server';
 import { getRouteErrorMessage, isRouteValidationError } from '@/lib/api/route-errors';
+import { deleteDraftStep } from '@/lib/services/delete-draft-step';
 import { updateDraftStep } from '@/lib/services/update-draft-step';
 
 export async function PATCH(
@@ -28,6 +29,33 @@ export async function PATCH(
     const isValidation = isRouteValidationError(err);
     const status = isNotFound ? 404 : isValidation ? 400 : 500;
     const code = isNotFound ? 'NOT_FOUND' : isValidation ? 'VALIDATION_ERROR' : 'UPDATE_STEP_ERROR';
+    return NextResponse.json({ message, code }, { status });
+  }
+}
+
+export async function DELETE(
+  req: Request,
+  context: { params: Promise<{ id: string; stepId: string }> }
+) {
+  const { id, stepId } = await context.params;
+
+  try {
+    const draft = await deleteDraftStep(id, stepId);
+    return NextResponse.json(draft);
+  } catch (err) {
+    console.error('删除步骤失败:', err);
+    const message = getRouteErrorMessage(err, '删除步骤失败');
+    const isNotFound = message.includes('not found');
+    const isValidation = isRouteValidationError(err);
+    const isConflict = err instanceof Error && err.message.toLowerCase().startsWith('conflict:');
+    const status = isNotFound ? 404 : isConflict ? 409 : isValidation ? 400 : 500;
+    const code = isNotFound
+      ? 'NOT_FOUND'
+      : isConflict
+        ? 'CONFLICT'
+        : isValidation
+          ? 'VALIDATION_ERROR'
+          : 'DELETE_STEP_ERROR';
     return NextResponse.json({ message, code }, { status });
   }
 }
