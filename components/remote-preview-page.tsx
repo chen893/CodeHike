@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from 'react';
 import { TutorialScrollyDemo } from './tutorial-scrolly-demo';
+import { withBasePath } from '@/lib/base-path';
 
 interface RemotePreviewPageProps {
   fetchUrl: string;
@@ -18,7 +19,7 @@ export function RemotePreviewPage({ fetchUrl, title }: RemotePreviewPageProps) {
   useEffect(() => {
     let cancelled = false;
 
-    fetch(fetchUrl)
+    fetch(withBasePath(fetchUrl))
       .then((res) => {
         if (!res.ok) throw new Error(`HTTP ${res.status}`);
         return res.json();

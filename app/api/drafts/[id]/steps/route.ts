@@ -1,4 +1,5 @@
 import { NextResponse } from 'next/server';
+import { getRouteErrorMessage, isRouteValidationError } from '@/lib/api/route-errors';
 import { appendDraftStep } from '@/lib/services/append-draft-step';
 
 export async function POST(
@@ -27,11 +28,11 @@ export async function POST(
 
     const draft = await appendDraftStep(id, (body as { step: unknown }).step);
     return NextResponse.json(draft);
-  } catch (err: any) {
+  } catch (err) {
     console.error('添加步骤失败:', err);
-    const message = err.message || '添加步骤失败';
+    const message = getRouteErrorMessage(err, '添加步骤失败');
     const isNotFound = message.includes('not found');
-    const isValidation = message.includes('validation');
+    const isValidation = isRouteValidationError(err);
     const status = isNotFound ? 404 : isValidation ? 400 : 500;
     const code = isNotFound ? 'NOT_FOUND' : isValidation ? 'VALIDATION_ERROR' : 'APPEND_STEP_ERROR';
     return NextResponse.json({ message, code }, { status });

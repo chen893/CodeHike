@@ -111,6 +111,7 @@ lib/services/compute-generation-quality.ts # 质量指标计算
 | `docs/vibe-docs-technical-design.md` | v3.0 技术方案 — 架构分层、API 设计、AI 生成链路 |
 | `docs/v3-implementation-issues.md` | v3.0 实施问题记录 — 技术决策和解决方案 |
 | `docs/vibe-docs-v3.1-prd.md` | v3.1 PRD — 多阶段生成、阅读交互增强 |
+| `docs/vibe-docs-v3.2-prd.md` | v3.2 PRD — 草稿 CRUD 闭环、步骤管理、多文件输入、Patch 编辑 |
 | `docs/mini-redux.js` | Redux 核心源码实现（简化版），测试用文件 |
 | `docs/archive/` | 已归档的过时文档（v3.0 实施计划、旧渲染流程） |
 

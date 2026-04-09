@@ -4,6 +4,7 @@ import { useState } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import type { DraftRecord } from '@/lib/types/api';
+import { withBasePath } from '@/lib/base-path';
 import { StepList } from './step-list';
 import { StepEditor } from './step-editor';
 import { DraftMetaEditor } from './draft-meta-editor';
@@ -25,7 +26,7 @@ export function DraftWorkspace({ draft: initialDraft }: DraftWorkspaceProps) {
 
   async function refresh() {
     try {
-      const res = await fetch(`/api/drafts/${draft.id}`);
+      const res = await fetch(withBasePath(`/api/drafts/${draft.id}`));
       if (res.ok) setDraft(await res.json());
     } catch (err) {
       console.error('刷新草稿失败:', err);
@@ -39,7 +40,7 @@ export function DraftWorkspace({ draft: initialDraft }: DraftWorkspaceProps) {
   }) {
     setSaving(true);
     try {
-      const res = await fetch(`/api/drafts/${draft.id}`, {
+      const res = await fetch(withBasePath(`/api/drafts/${draft.id}`), {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(data),
@@ -61,7 +62,7 @@ export function DraftWorkspace({ draft: initialDraft }: DraftWorkspaceProps) {
   async function saveStep(stepId: string, data: any) {
     setSaving(true);
     try {
-      const res = await fetch(`/api/drafts/${draft.id}/steps/${stepId}`, {
+      const res = await fetch(withBasePath(`/api/drafts/${draft.id}/steps/${stepId}`), {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(data),
@@ -92,7 +93,7 @@ export function DraftWorkspace({ draft: initialDraft }: DraftWorkspaceProps) {
 
     setSaving(true);
     try {
-      const res = await fetch(`/api/drafts/${draft.id}/steps`, {
+      const res = await fetch(withBasePath(`/api/drafts/${draft.id}/steps`), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ step: newStep }),
@@ -117,7 +118,7 @@ export function DraftWorkspace({ draft: initialDraft }: DraftWorkspaceProps) {
     setSaving(true);
     try {
       const res = await fetch(
-        `/api/drafts/${draft.id}/steps/${stepId}/regenerate`,
+        withBasePath(`/api/drafts/${draft.id}/steps/${stepId}/regenerate`),
         {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
@@ -144,7 +145,7 @@ export function DraftWorkspace({ draft: initialDraft }: DraftWorkspaceProps) {
 
     setSaving(true);
     try {
-      const res = await fetch(`/api/drafts/${draft.id}/publish`, {
+      const res = await fetch(withBasePath(`/api/drafts/${draft.id}/publish`), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ slug: slug || undefined }),

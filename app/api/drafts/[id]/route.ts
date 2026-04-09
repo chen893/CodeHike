@@ -1,4 +1,5 @@
 import { NextResponse } from 'next/server';
+import { getRouteErrorMessage, isRouteValidationError } from '@/lib/api/route-errors';
 import * as draftRepo from '@/lib/repositories/draft-repository';
 import { updateDraftRequestSchema } from '@/lib/schemas/api';
 import { computeInputHash } from '@/lib/utils/hash';
@@ -79,11 +80,12 @@ export async function PATCH(
 
     const updated = await draftRepo.getDraftById(id);
     return NextResponse.json(updated);
-  } catch (err: any) {
+  } catch (err) {
     console.error('更新草稿失败:', err);
-    const code = err.message?.includes('validation') ? 'VALIDATION_ERROR' : 'INTERNAL_ERROR';
+    const message = getRouteErrorMessage(err, '更新草稿失败');
+    const code = isRouteValidationError(err) ? 'VALIDATION_ERROR' : 'INTERNAL_ERROR';
     return NextResponse.json(
-      { message: err.message || '更新草稿失败', code },
+      { message, code },
       { status: code === 'VALIDATION_ERROR' ? 400 : 500 }
     );
   }

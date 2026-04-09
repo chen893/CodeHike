@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react"
 import { TutorialScrollyDemo } from "./tutorial-scrolly-demo"
+import { withBasePath } from "@/lib/base-path"
 
 const initialState = {
   status: "loading",
@@ -19,7 +20,7 @@ export function RemoteTutorialPage({ slug, title }) {
       setState(initialState)
 
       try {
-        const response = await fetch(`/api/tutorials/${slug}`)
+        const response = await fetch(withBasePath(`/api/tutorials/${slug}`))
 
         if (!response.ok) {
           throw new Error(`请求失败，状态码 ${response.status}`)

@@ -2,9 +2,26 @@
 
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { GenerationProgress } from './generation-progress';
+import { GenerationProgress, type GenerationContext } from './generation-progress';
 import { CodeMirrorEditor } from './code-mirror-editor';
 import type { SourceItem, TeachingBrief } from '@/lib/schemas/index';
+import { withBasePath } from '@/lib/base-path';
+import { createUuid } from '@/lib/utils/uuid';
+
+const audienceLabels: Record<TeachingBrief['audience_level'], string> = {
+  beginner: '初学者',
+  intermediate: '中级',
+  advanced: '高级',
+};
+
+const languageLabels: Record<string, string> = {
+  javascript: 'JavaScript',
+  typescript: 'TypeScript',
+  python: 'Python',
+  go: 'Go',
+  rust: 'Rust',
+  java: 'Java',
+};
 
 export function CreateDraftForm() {
   const router = useRouter();
@@ -39,7 +56,7 @@ export function CreateDraftForm() {
 
       const sourceItems: SourceItem[] = [
         {
-          id: crypto.randomUUID(),
+          id: createUuid(),
           kind: 'snippet',
           label: sourceLabel || 'main',
           content: sourceCode,
@@ -47,7 +64,7 @@ export function CreateDraftForm() {
         },
       ];
 
-      const createRes = await fetch('/api/drafts', {
+      const createRes = await fetch(withBasePath('/api/drafts'), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ sourceItems, teachingBrief: brief }),
@@ -72,11 +89,22 @@ export function CreateDraftForm() {
     }
   }
 
+  const generationContext: GenerationContext = {
+    topic: brief.topic.trim(),
+    sourceLabel: sourceLabel.trim() || 'main',
+    sourceLanguage: languageLabels[sourceLanguage] || sourceLanguage,
+    outputLanguage: brief.output_language,
+    audienceLabel: audienceLabels[brief.audience_level],
+    coreQuestion: brief.core_question.trim(),
+    codeLineCount: Math.max(1, sourceCode.replace(/\n$/, '').split(/\r?\n/).length),
+  };
+
   if (generating && draftId) {
     return (
       <GenerationProgress
         draftId={draftId}
         onComplete={handleGenerationComplete}
+        context={generationContext}
       />
     );
   }

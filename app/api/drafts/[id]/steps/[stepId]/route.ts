@@ -1,4 +1,5 @@
 import { NextResponse } from 'next/server';
+import { getRouteErrorMessage, isRouteValidationError } from '@/lib/api/route-errors';
 import { updateDraftStep } from '@/lib/services/update-draft-step';
 
 export async function PATCH(
@@ -20,11 +21,11 @@ export async function PATCH(
 
     const draft = await updateDraftStep(id, stepId, body as any);
     return NextResponse.json(draft);
-  } catch (err: any) {
+  } catch (err) {
     console.error('更新步骤失败:', err);
-    const message = err.message || '更新步骤失败';
+    const message = getRouteErrorMessage(err, '更新步骤失败');
     const isNotFound = message.includes('not found');
-    const isValidation = message.includes('validation');
+    const isValidation = isRouteValidationError(err);
     const status = isNotFound ? 404 : isValidation ? 400 : 500;
     const code = isNotFound ? 'NOT_FOUND' : isValidation ? 'VALIDATION_ERROR' : 'UPDATE_STEP_ERROR';
     return NextResponse.json({ message, code }, { status });

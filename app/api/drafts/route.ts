@@ -1,4 +1,5 @@
 import { NextResponse } from 'next/server';
+import { getRouteErrorMessage, isRouteValidationError } from '@/lib/api/route-errors';
 import { createDraft } from '@/lib/services/create-draft';
 
 export async function POST(req: Request) {
@@ -15,11 +16,12 @@ export async function POST(req: Request) {
 
     const draft = await createDraft(body as Parameters<typeof createDraft>[0]);
     return NextResponse.json(draft, { status: 201 });
-  } catch (err: any) {
+  } catch (err) {
     console.error('创建草稿失败:', err);
-    const code = err.message?.includes('validation') ? 'VALIDATION_ERROR' : 'INTERNAL_ERROR';
+    const message = getRouteErrorMessage(err, '创建草稿失败');
+    const code = isRouteValidationError(err) ? 'VALIDATION_ERROR' : 'INTERNAL_ERROR';
     return NextResponse.json(
-      { message: err.message || '创建草稿失败', code },
+      { message, code },
       { status: code === 'VALIDATION_ERROR' ? 400 : 500 }
     );
   }
