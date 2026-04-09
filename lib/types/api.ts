@@ -1,6 +1,8 @@
 import type { SourceItem } from '../schemas/source-item';
 import type { TeachingBrief } from '../schemas/teaching-brief';
 import type { TutorialDraft } from '../schemas/tutorial-draft';
+import type { TutorialOutline } from '../schemas/tutorial-outline';
+import type { GenerationQuality } from '../schemas/generation-quality';
 
 export interface DraftRecord {
   id: string;
@@ -15,6 +17,8 @@ export interface DraftRecord {
   generationErrorMessage: string | null;
   generationModel: string | null;
   generationLastAt: Date | null;
+  generationOutline: TutorialOutline | null;
+  generationQuality: GenerationQuality | null;
   validationValid: boolean;
   validationErrors: string[];
   validationCheckedAt: Date | null;

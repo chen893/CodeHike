@@ -69,28 +69,22 @@ export function RemoteTutorialPage({ slug, title }) {
   }
 
   return (
-    <main className="tutorial-page">
-      <section className="request-shell">
-        <div className="request-card">
-          <p className="request-kicker">Mock Data Request</p>
-          <h1 className="request-title">{title}</h1>
-          {state.status === "loading" ? (
-            <>
-              <p className="request-body">
-                页面已发起请求，正在从本地 mock 接口加载教程数据。
-              </p>
-              <div className="request-pulse" aria-hidden="true" />
-            </>
-          ) : (
-            <>
-              <p className="request-body">
-                数据请求失败，当前没有可渲染的教程内容。
-              </p>
-              <p className="request-error">{state.error}</p>
-            </>
-          )}
-        </div>
-      </section>
+    <main className="remote-loading">
+      <div className="remote-loading-card">
+        <h1>{title}</h1>
+        {state.status === "loading" ? (
+          <>
+            <div className="remote-spinner" />
+            <p>正在从本地 mock 接口加载教程数据...</p>
+            <div className="remote-pulse" aria-hidden="true" />
+          </>
+        ) : (
+          <>
+            <p>数据请求失败，当前没有可渲染的教程内容。</p>
+            <p className="remote-error">{state.error}</p>
+          </>
+        )}
+      </div>
     </main>
   )
 }

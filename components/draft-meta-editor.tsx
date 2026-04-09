@@ -25,7 +25,6 @@ export function DraftMetaEditor({
   const [description, setDescription] = useState(propDesc);
   const [intro, setIntro] = useState(propIntro.join('\n\n'));
 
-  // 当 props 变化时（保存后父组件刷新了 draft），重置本地状态
   useEffect(() => {
     setTitle(propTitle);
     setDescription(propDesc);
@@ -43,20 +42,22 @@ export function DraftMetaEditor({
   return (
     <div className="draft-meta-editor">
       <h2>元信息编辑</h2>
-      <label>
-        <span>标题</span>
-        <input value={title} onChange={(e) => setTitle(e.target.value)} />
+      <label className="form-label">
+        <span className="form-label-text">标题</span>
+        <input className="form-input" value={title} onChange={(e) => setTitle(e.target.value)} />
       </label>
-      <label>
-        <span>描述</span>
+      <label className="form-label">
+        <span className="form-label-text">描述</span>
         <input
+          className="form-input"
           value={description}
           onChange={(e) => setDescription(e.target.value)}
         />
       </label>
-      <label>
-        <span>简介段落（用空行分隔）</span>
+      <label className="form-label">
+        <span className="form-label-text">简介段落（用空行分隔）</span>
         <textarea
+          className="form-input"
           value={intro}
           onChange={(e) => setIntro(e.target.value)}
           rows={6}

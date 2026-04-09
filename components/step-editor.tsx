@@ -1,6 +1,8 @@
 'use client';
 
 import { useEffect, useState } from 'react';
+import { CodeMirrorEditor } from './code-mirror-editor';
+import { MarkdownEditor } from './markdown-editor';
 import type { TutorialStep } from '@/lib/schemas/tutorial-draft';
 
 interface StepEditorProps {
@@ -24,7 +26,6 @@ export function StepEditor({
   const [paragraphs, setParagraphs] = useState(step.paragraphs.join('\n\n'));
   const [regenMode, setRegenMode] = useState<'prose' | 'step'>('prose');
 
-  // 当 step prop 变化时（切换步骤或重新生成后），重置本地状态
   useEffect(() => {
     setEyebrow(step.eyebrow ?? '');
     setTitle(step.title);
@@ -47,24 +48,40 @@ export function StepEditor({
         Step {stepIndex + 1}: {step.title}
       </h3>
 
-      <label>
-        <span>Eyebrow</span>
-        <input value={eyebrow} onChange={(e) => setEyebrow(e.target.value)} />
+      <div className="form-row">
+        <label className="form-label">
+          <span className="form-label-text">Eyebrow</span>
+          <input
+            className="form-input"
+            value={eyebrow}
+            onChange={(e) => setEyebrow(e.target.value)}
+          />
+        </label>
+        <label className="form-label">
+          <span className="form-label-text">标题</span>
+          <input
+            className="form-input"
+            value={title}
+            onChange={(e) => setTitle(e.target.value)}
+          />
+        </label>
+      </div>
+
+      <label className="form-label">
+        <span className="form-label-text">导语</span>
+        <input
+          className="form-input"
+          value={lead}
+          onChange={(e) => setLead(e.target.value)}
+        />
       </label>
-      <label>
-        <span>标题</span>
-        <input value={title} onChange={(e) => setTitle(e.target.value)} />
-      </label>
-      <label>
-        <span>导语</span>
-        <input value={lead} onChange={(e) => setLead(e.target.value)} />
-      </label>
-      <label>
-        <span>讲解段落（用空行分隔）</span>
-        <textarea
+
+      <label className="form-label">
+        <span className="form-label-text">讲解段落（支持 Markdown）</span>
+        <MarkdownEditor
           value={paragraphs}
-          onChange={(e) => setParagraphs(e.target.value)}
-          rows={8}
+          onChange={setParagraphs}
+          placeholder="用空行分隔段落。支持 **粗体**、*斜体*、`行内代码`、> 引用"
         />
       </label>
 
@@ -82,7 +99,8 @@ export function StepEditor({
         <select
           value={regenMode}
           onChange={(e) => setRegenMode(e.target.value as 'prose' | 'step')}
-          className="btn btn-secondary"
+          className="form-input"
+          style={{ width: 'auto', padding: '6px 8px', fontSize: 13 }}
         >
           <option value="prose">仅文案</option>
           <option value="step">完整步骤</option>

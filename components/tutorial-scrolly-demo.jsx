@@ -1,6 +1,6 @@
 "use client"
 
-import React from "react"
+import React, { useState } from "react"
 import { diffArrays } from "diff"
 import {
   getPreRef,
@@ -27,7 +27,21 @@ function CodeFrame({ title, code, fileName }) {
         <span className="code-file-label">{fileName || "code"}</span>
       </div>
       <div className="code-content">
-        <Pre code={code} handlers={[focus, mark, tokenTransitions]} />
+        <Pre code={code} handlers={[focus, mark, changeIndicator, tokenTransitions]} />
+      </div>
+    </div>
+  )
+}
+
+function MobileCodeFrame({ step, fileName }) {
+  return (
+    <div className="article-step-code-mobile">
+      <div className="code-meta">
+        <p className="code-frame-title">{step.eyebrow}</p>
+        <span className="code-file-label">{fileName || "code"}</span>
+      </div>
+      <div className="code-content">
+        <Pre code={step.highlighted} handlers={[focus, mark, changeIndicator]} />
       </div>
     </div>
   )
@@ -38,15 +52,15 @@ export function TutorialScrollyDemo({ steps, intro, title, fileName }) {
     <SelectionProvider className="editorial-grid" rootMargin="0% 0% -42% 0%">
       <aside className="code-column">
         <div className="code-column-inner">
-          <p className="code-column-kicker">{title || "Tutorial renderer"}</p>
           <SelectedCodeFrame steps={steps} fileName={fileName} />
         </div>
       </aside>
 
       <div className="article-column">
+        <StepRail steps={steps} />
+
         {intro ? (
           <section className="article-intro">
-            <p className="article-intro-kicker">Code Hike Tutorial</p>
             <h1 className="article-intro-title">{title || "Tutorial renderer"}</h1>
             {intro.map((paragraph, index) => (
               <p key={`intro-${index}`} className="article-intro-body">
@@ -64,19 +78,83 @@ export function TutorialScrollyDemo({ steps, intro, title, fileName }) {
             className="article-step"
           >
             <article className="article-step-inner">
-              <p className="article-step-kicker">{step.eyebrow}</p>
+              {step.eyebrow && (
+                <p className="article-step-kicker">{step.eyebrow}</p>
+              )}
               <h2 className="article-step-title">{step.title}</h2>
-              <p className="article-step-lead">{step.lead}</p>
+              {step.lead && <p className="article-step-lead">{step.lead}</p>}
               {step.paragraphs.map((paragraph, pIndex) => (
                 <p key={`step-${index}-p-${pIndex}`} className="article-step-body">
                   {paragraph}
                 </p>
               ))}
+              <MobileCodeFrame step={step} fileName={fileName} />
             </article>
           </Selectable>
         ))}
       </div>
     </SelectionProvider>
+  )
+}
+
+/* ─── Step Rail — dash-style vertical navigator with hover tooltips ─── */
+
+function StepRail({ steps }) {
+  const [selectedIndex, selectIndex] = useSelectedIndex()
+  const [hoveredIndex, setHoveredIndex] = useState(null)
+
+  function handleSelect(i) {
+    selectIndex(i)
+    // Sync: scroll the article step into view
+    const stepEls = document.querySelectorAll('.article-step')
+    if (stepEls[i]) {
+      stepEls[i].scrollIntoView({ behavior: "smooth", block: "center" })
+    }
+  }
+
+  function getStepState(i) {
+    if (i === selectedIndex) return "current"
+    if (i < selectedIndex) return "completed"
+    return "upcoming"
+  }
+
+  function getChangeHint(step) {
+    if (!step.patches || step.patches.length === 0) return null
+    const patchCount = step.patches.length
+    const totalLines = step.patches.reduce((sum, p) => {
+      return sum + Math.abs((p.replace || "").split("\n").length - (p.find || "").split("\n").length)
+    }, 0)
+    return `${patchCount} change${patchCount > 1 ? "s" : ""} · ~${totalLines} line${totalLines !== 1 ? "s" : ""}`
+  }
+
+  return (
+    <div className="step-rail">
+      {steps.map((step, i) => {
+        const state = getStepState(i)
+        return (
+          <div
+            key={step.id || i}
+            className={`step-rail-node ${state}`}
+            onMouseEnter={() => setHoveredIndex(i)}
+            onMouseLeave={() => setHoveredIndex(null)}
+            onClick={() => handleSelect(i)}
+          >
+            {/* Dash mark */}
+            <div className={`step-rail-dash ${state}`} />
+
+            {/* Hover tooltip — appears to the left of the rail */}
+            {hoveredIndex === i && (
+              <div className="step-rail-tooltip">
+                <span className="step-rail-tooltip-title">{step.title}</span>
+                {getChangeHint(step) && (
+                  <span className="step-rail-tooltip-hint">{getChangeHint(step)}</span>
+                )}
+              </div>
+            )}
+          </div>
+        )
+      })}
+    </div>
   )
 }
 
@@ -176,6 +254,38 @@ const mark = {
           background: annotation ? `rgb(from ${color} r g b / 0.14)` : "transparent",
         }}
       >
+        <InnerLine merge={props} className="code-line" />
+      </div>
+    )
+  },
+}
+
+const changeIndicator = {
+  name: "change-indicator",
+  Line: ({ annotation, ...props }) => {
+    const changeType = annotation?.query
+
+    if (!changeType) {
+      return <InnerLine merge={props} className="code-line" />
+    }
+
+    const isAdded = changeType === "added"
+    const borderColor = isAdded ? "var(--mint)" : "var(--amber)"
+    const bgColor = isAdded
+      ? "rgba(143, 210, 193, 0.08)"
+      : "rgba(221, 176, 129, 0.08)"
+
+    return (
+      <div
+        className="code-change-line"
+        style={{
+          borderLeft: `2px solid ${borderColor}`,
+          background: bgColor,
+        }}
+      >
+        <span className={`line-indicator ${isAdded ? 'line-added' : 'line-modified'}`}>
+          {isAdded ? "+" : "~"}
+        </span>
         <InnerLine merge={props} className="code-line" />
       </div>
     )

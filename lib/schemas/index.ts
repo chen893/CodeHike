@@ -13,6 +13,15 @@ export {
   type ContentMark,
 } from './tutorial-draft';
 export {
+  tutorialOutlineSchema,
+  type TutorialOutline,
+  type OutlineStep,
+} from './tutorial-outline';
+export {
+  generationQualitySchema,
+  type GenerationQuality,
+} from './generation-quality';
+export {
   createDraftRequestSchema,
   updateDraftRequestSchema,
   appendStepRequestSchema,

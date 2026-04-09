@@ -23,6 +23,9 @@ export const tutorialStepSchema = z.object({
   patches: z.array(contentPatchSchema).optional(),
   focus: contentRangeSchema.nullable().optional(),
   marks: z.array(contentMarkSchema).optional(),
+  // v3.1: multi-phase generation metadata (optional, backward compatible)
+  teachingGoal: z.string().optional(),
+  conceptIntroduced: z.string().optional(),
 });
 
 export const tutorialDraftSchema = z.object({

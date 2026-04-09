@@ -10,7 +10,17 @@ export async function POST(
   const { id } = await context.params;
 
   try {
-    return await initiateGeneration(id);
+    let generationVersion: 'v1' | 'v2' = 'v2';
+    try {
+      const body = await req.json();
+      if (body.generationVersion === 'v1') {
+        generationVersion = 'v1';
+      }
+    } catch {
+      // Empty body or invalid JSON — use default v2
+    }
+
+    return await initiateGeneration(id, undefined, generationVersion);
   } catch (err: any) {
     console.error('生成教程失败:', err);
     return NextResponse.json(

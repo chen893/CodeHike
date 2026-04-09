@@ -1,253 +1,110 @@
-# VibeDocs
+# AGENTS.md
 
-## 产品定位
+This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
-**产品定位：** AI 驱动的源码教学内容生成器  
-**一句话定义：** 用户输入一段源码和明确的教学意图，系统生成一份可编辑、可预览、可发布的逐步构建式教程草稿。
+## Project Overview
 
----
+VibeDocs — AI 驱动的 scrollytelling 源码教学教程生成与渲染应用。用户输入源码 + 教学意图，系统生成可编辑、可预览、可发布的逐步构建式教程。
 
-## 1. 这是什么
+## Dev Commands
 
-VibeDocs 的目标，是把“读源码 -> 提炼教学主线 -> 组织步骤 -> 生成讲解 -> 编辑发布”这条链路产品化。
-
-它不是代码高亮工具、Diff 工具或录屏工具的增强版，而是一个面向技术作者的教学内容生产系统。系统的核心产物不是 HTML 页面，也不是单次模型回答，而是一份可以持续编辑、预览和发布的结构化教程数据。
-
-默认判断标准：
-
-1. 方案是否更接近“生成和维护教程数据”。
-2. 方案是否让教程内容更容易编辑、预览和发布。
-3. 方案是否复用当前已经跑通的数据 -> 组装 -> 渲染链路。
-
-如果某个方向更像：
-
-- 代码展示器
-- Diff 播放器
-- 单次模型问答页面
-
-而不像：
-
-- 教学主线生成器
-- 结构化教程编辑器
-- 可发布的教程草稿系统
-
-则默认认为方向偏了。
-
----
-
-## 2. 当前系统基线
-
-当前仓库已经验证了一条稳定链路：
-
-```text
-教程内容数据
-  -> 服务端组装
-  -> CodeHike 渲染
-  -> 教学页面
+```bash
+npm run dev     # next dev --webpack
+npm run build   # next build --webpack
+npm start       # next start (production)
 ```
 
-这意味着：
+无测试、无 lint 配置。
 
-1. 当前系统已经能稳定完成“数据 -> 页面渲染”。
-2. 后续新增能力默认建立在这条链路之上，而不是推翻它。
-3. 生成、编辑、预览、发布不能各自维护一套页面模型。
+数据库需要 `DATABASE_URL` 环境变量（PostgreSQL），AI 生成需要 `DEEPSEEK_API_KEY`。
 
-当前仓库的关键共识：
+## Architecture
 
-- `Tutorial Draft` 负责表达教程内容本身
-- `Tutorial Payload` 负责前端渲染消费
-- 组装逻辑在服务端完成
-- 渲染器只负责展示，不负责重新理解教学结构
+### 核心渲染链路（已跑通，不重写）
 
----
+```text
+TutorialDraft (DSL JSON)
+  → lib/tutorial-assembler.js   # patch 应用 + CodeHike 高亮 + focus/marks 注入 → TutorialStep[]
+  → lib/tutorial-payload.js     # 包装为 TutorialPayload
+  → components/tutorial-scrolly-demo.jsx  # 客户端 scrollytelling 渲染
+```
 
-## 3. 权威数据模型
+### 两条消费路径
 
-后续设计和实现时，默认按下面这组对象理解系统，不要再发明平行概念。
+1. **静态直出** — `app/[slug]/page.jsx`：服务端先查 DB published，回退到 registry → `buildTutorialSteps()` → 直接渲染
+2. **远程加载** — `app/[slug]/request/page.jsx`：客户端 fetch `/api/tutorials/[slug]` → payload → 渲染
 
-### 3.1 `DraftRecord`
+### 草稿编辑流程（v3 新增）
 
-`DraftRecord` 是顶层持久化对象，用来承载一篇草稿从输入到发布前的完整上下文。
+```text
+用户输入源码 + TeachingBrief
+  → app/new/page.tsx → 创建 DraftRecord
+  → app/drafts/[id]/page.tsx → 编辑工作区
+  → AI 生成（DeepSeek + Vercel AI SDK v6 streamText + Output.object + Zod schema）
+  → 编辑 steps / meta → 预览 → 发布为 PublishedTutorial 快照
+```
 
-它至少应包含：
+### 分层结构
 
-- `sourceItems`
-- `teachingBrief`
-- `tutorialDraft`
-- `status`
-- `createdAt`
-- `updatedAt`
+| 层 | 目录 | 职责 |
+|----|------|------|
+| 路由 | `app/` | Next.js App Router 页面和 API route handlers |
+| 组件 | `components/` | 客户端交互组件（编辑器、表单、渲染器） |
+| 服务 | `lib/services/` | 业务逻辑（创建、生成、发布等），被 API 路由调用 |
+| 数据 | `lib/repositories/` | Drizzle ORM 数据访问，返回类型化 domain 对象 |
+| Schema | `lib/schemas/` | Zod schema（AI 输出约束 + API 校验），`index.ts` 为 barrel |
+| DB | `lib/db/` | Drizzle schema 定义 + 连接池 |
+| AI | `lib/ai/` | prompt 模板 + AI 调用封装 |
+| 渲染 | `lib/tutorial-assembler.js` | patch 应用 + 高亮 + 注解注入（纯服务端） |
 
-原则：
+### 数据源
 
-1. 源码输入、教学意图、教程内容必须归属于同一条记录。
-2. 不要再引入第二个“外层草稿容器”。
-3. 远程预览、草稿保存、发布动作都应以 `DraftRecord` 为起点。
+- `content/sample-tutorial.js` — 示例教程 DSL 数据（registry 回退）
+- `lib/tutorial-registry.js` — 静态 slug 注册表
 
-### 3.2 `Tutorial Draft`
+### 关键约束
 
-`Tutorial Draft` 是 `DraftRecord` 内部的权威教程内容结构，也是编辑器直接操作的对象。
+- 所有 patch 应用、高亮、focus/marks 注入都在**服务端**完成
+- 客户端只消费渲染好的 payload，不反推 patch、不重建教学结构
+- 静态页和远程页共享同一个 `TutorialScrollyDemo` 渲染器
+- AI 输出用 `Output.object({ schema })` 结构化，Zod schema 同时约束 AI 输出 + API 校验
+- `app/[slug]/page.jsx` 用 `React.cache()` 避免重复 DB 查询和高亮计算
+- 混用 JS（`.js`/`.jsx`，渲染链路）和 TS（`.ts`/`.tsx`，v3 新增功能），不要强行统一
 
-它负责表达：
+## Docs Index
 
-- 教程标题与简介
-- `baseCode`
-- 步骤序列
-- 每一步的讲解文案
-- 每一步的 `patches`
-- 每一步的 `focus`
-- 每一步的 `marks`
+| 文件 | 内容 |
+|------|------|
+| `docs/tutorial-data-format.md` | 教程 DSL 完整定义 — JSON 结构、Patch 机制、代码组装算法 |
+| `docs/vibe-docs-prd.md` | VibeDocs v3.0 PRD — 产品定义、数据模型、P0 范围 |
+| `docs/vibe-docs-technical-design.md` | v3.0 技术方案 — 架构分层、API 设计、AI 生成链路 |
+| `docs/v3-implementation-issues.md` | v3.0 实施问题记录 — 技术决策和解决方案 |
+| `docs/vibe-docs-v3.1-prd.md` | v3.1 PRD — 多阶段生成、阅读交互增强 |
+| `docs/archive/` | 已归档的过时文档（v3.0 实施计划、旧渲染流程） |
 
-原则：
+**修改代码前务必先阅读相关文档。** 数据结构变更对照 `tutorial-data-format.md`，新增功能对照 `vibe-docs-technical-design.md`。
 
-1. AI 的核心输出目标是 `tutorialDraft`，不是最终页面。
-2. 编辑器默认直接修改 `tutorialDraft`。
-3. 不要再为渲染层发明另一套教程内容格式。
+## AGENTS.md
 
-### 3.3 `Tutorial Payload`
+仓库根目录有 `AGENTS.md`，包含产品定位、权威数据模型定义、P0 范围边界、预览层交互硬约束、实现优先级。做产品决策前必读。
 
-`Tutorial Payload` 是服务端从 `tutorialDraft` 派生出的渲染数据。
+## Tech Stack
 
-原则：
+| 技术 | 用途 |
+|------|------|
+| Next.js 16 (App Router) | 路由、Server Components、Route Handlers |
+| React 19 | UI |
+| PostgreSQL + Drizzle ORM | 持久化 DraftRecord / PublishedTutorial |
+| Vercel AI SDK v6 (`ai`) | `streamText` + `Output.object` + Zod 结构化流式生成 |
+| DeepSeek (via `@ai-sdk/openai-compatible`) | LLM provider |
+| Zod 4 | schema 定义（AI 输出约束 + API 校验 + DB 写入校验） |
+| CodeHike | scrollytelling 代码高亮 |
 
-1. 页面渲染消费 `Tutorial Payload`。
-2. `patch` 应用、高亮、focus 注入、mark 注入都在服务端完成。
-3. 前端不负责反推 patch，不负责重建教学结构。
+## External Docs
 
-### 3.4 `Published Tutorial`
+**始终通过 Context7 MCP 工具获取最新版本文档。** 使用流程：先 `resolve-library-id` → 再 `query-docs`。
 
-“发布”不是生成一个可分享的草稿预览链接，而是从 `DraftRecord` 冻结出独立的 `Published Tutorial` 快照。
-
-原则：
-
-1. 已发布内容必须有独立身份和稳定 URL。
-2. 已发布内容不能被后续草稿编辑隐式污染。
-3. 发布结果继续复用当前渲染链路，不另起一套页面系统。
-
----
-
-## 4. 默认工作流
-
-VibeDocs 默认服务于以下链路：
-
-1. 用户输入源码。
-2. 用户填写明确的 `Teaching Brief`。
-3. 系统创建或更新 `DraftRecord`。
-4. 系统生成 `tutorialDraft`。
-5. 用户在草稿上继续编辑。
-6. 系统通过当前渲染链路提供预览。
-7. 用户将草稿冻结为 `Published Tutorial`。
-
-工作流上的硬约束：
-
-1. 没有明确教学意图时，不应直接生成。
-2. 生成结果必须是结构化教程草稿，而不是一次性长文。
-3. 预览与发布必须共享同一套渲染契约。
-
----
-
-## 5. 内容生成原则
-
-生成教程内容时，默认遵循以下原则：
-
-1. 教学优先，不是代码搬运。  
-不要把源码逐段转述，要明确每一步为什么存在。
-
-2. 先有主线，再有步骤。  
-先定义“这篇教程要教会什么”，再决定保留哪些代码变化。
-
-3. 步骤必须细。  
-不要一大段解释配一大块改动，每次推进只引入一处或少量变化。
-
-4. 讲构建过程，不讲结果说明书。  
-默认用逐步构建式叙事，而不是直接展示最终答案。
-
-5. 教学意图必须显式影响结果。  
-同一段源码，在不同 `Teaching Brief` 下，应生成不同教程结构。
-
-6. 输出必须可编辑。  
-模型结果默认落到结构化字段中，而不是只生成最终文案。
-
----
-
-## 6. P0 范围
-
-当前阶段默认先做小而闭合的产品能力，不要一开始就扩到全量编辑器。
-
-### 6.1 P0 要支持
-
-- 源码输入
-- `Teaching Brief` 输入
-- AI 生成 `tutorialDraft`
-- 修改标题和简介
-- 修改步骤标题与文案
-- 新增步骤
-- 单步 regenerate
-- 静态预览
-- 远程预览
-- 发布为冻结快照
-
-### 6.2 暂不放进 P0
-
-- 删除步骤
-- 调整步骤顺序
-- 直接编辑 `patches`
-- 直接编辑 `focus`
-- 直接编辑 `marks`
-- 复杂版本树
-- 独立的发布页渲染系统
-
-原因：
-
-当前 patch 链是顺序组装的。删除步骤、重排步骤和底层 patch 可视化编辑，会显著抬高 rebase 和校验成本，应放在后续阶段处理。
-
----
-
-## 7. 预览层硬约束
-
-当项目需要把教程草稿渲染成预览页时，默认按 `Build your own react` 的交互范式实现。
-
-硬规则：
-
-1. 左侧固定代码舞台，右侧独立滚动文章区。  
-不要让整页滚动；桌面端优先让文章栏单独 `overflow-y: auto`。
-
-2. 代码区必须是“同一个面板持续变化”。  
-不要切整块代码组件；应保持同一个代码面板实例，只更新内部 code 数据。
-
-3. 教程节奏要细。  
-不要一大段解释配一大块代码改动，应接近逐句讲解。
-
-4. 代码变化要可感知。  
-新增行、删除行、focus 区域都应有明显但克制的视觉反馈。
-
-5. 避免双滚动冲突。  
-代码面板默认不要再有独立纵向滚动，也不要轻易对代码区执行内部 `scrollTo`。
-
-6. 小样验证时，先验证交互结构，再扩正式教程。  
-先做小原型确认布局、滚动、代码变化方式，再扩完整内容。
-
-7. UI 气质应更像编辑式教程，而不是营销页。  
-左侧深色、安静、克制；右侧暖白、长文阅读排版；避免过强卡片感、玻璃感和装饰性边框。
-
-如果用户说“参考 Build your own react”，默认按以上规则执行，除非用户明确要求其他结构。
-
----
-
-## 8. 实现优先级
-
-后续在这个仓库里做产品和代码决策时，默认优先级如下：
-
-1. 先保证数据模型清晰，尤其是 `DraftRecord` 和 `tutorialDraft` 的边界。
-2. 再保证生成链路可控、可校验、可编辑。
-3. 再保证预览体验准确表达步骤变化。
-4. 最后才是表现层细节和装饰性效果。
-
-默认禁止的方向：
-
-1. 让 AI 直接产出页面而不是结构化草稿。
-2. 让编辑器维护另一套教程内容结构。
-3. 让发布页绕开当前渲染链路。
-4. 为了做动效而破坏教程步骤的可理解性。
-
-如果新方案和这些原则冲突，默认回到“结构化教程数据是否更清晰、是否更容易编辑发布”这个基准重新判断。
+- **Vercel AI SDK (ai)** — 目标 **v6**，API 与 v4/v5 有 Breaking Changes，严禁凭记忆使用旧 API
+- **Next.js** — App Router API（route handlers、server components、generateStaticParams）
+- **Code Hike** — scrollytelling 代码高亮库，官方文档 https://codehike.org/docs
+- **Drizzle ORM** — schema 定义、query API、PostgreSQL 迁移

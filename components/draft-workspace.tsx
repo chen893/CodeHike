@@ -2,6 +2,7 @@
 
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
+import Link from 'next/link';
 import type { DraftRecord } from '@/lib/types/api';
 import { StepList } from './step-list';
 import { StepEditor } from './step-editor';
@@ -17,6 +18,7 @@ export function DraftWorkspace({ draft: initialDraft }: DraftWorkspaceProps) {
   const [selectedStepIndex, setSelectedStepIndex] = useState<number>(0);
   const [saving, setSaving] = useState(false);
   const [editingMeta, setEditingMeta] = useState(false);
+  const [drawerOpen, setDrawerOpen] = useState(false);
 
   const hasDraft = !!draft.tutorialDraft;
   const steps = draft.tutorialDraft?.steps ?? [];
@@ -170,52 +172,83 @@ export function DraftWorkspace({ draft: initialDraft }: DraftWorkspaceProps) {
             ? '已就绪'
             : '待校验';
 
-  return (
-    <div className="draft-workspace">
-      <div className="draft-sidebar">
-        <div className="draft-sidebar-header">
-          <h1>{draft.tutorialDraft?.meta.title || '新草稿'}</h1>
-          <span className="status-badge">{statusLabel}</span>
-        </div>
+  const sidebarContent = (
+    <>
+      <div className="app-sidebar-logo">
+        <Link href="/">VibeDocs</Link>
+      </div>
+      <div className="draft-sidebar-header">
+        <h1>{draft.tutorialDraft?.meta.title || '新草稿'}</h1>
+        <span className="status-badge">{statusLabel}</span>
+      </div>
 
+      {hasDraft && (
+        <StepList
+          steps={steps}
+          selectedIndex={selectedStepIndex}
+          onSelect={(i) => {
+            setSelectedStepIndex(i);
+            setDrawerOpen(false);
+          }}
+        />
+      )}
+
+      <div className="draft-sidebar-actions">
+        <button
+          className="btn btn-secondary"
+          onClick={appendStep}
+          disabled={saving || !hasDraft}
+        >
+          追加步骤
+        </button>
         {hasDraft && (
-          <StepList
-            steps={steps}
-            selectedIndex={selectedStepIndex}
-            onSelect={setSelectedStepIndex}
-          />
-        )}
-
-        <div style={{ marginTop: 'auto', display: 'flex', flexDirection: 'column', gap: 8 }}>
-          <button
-            className="btn btn-secondary"
-            onClick={appendStep}
-            disabled={saving || !hasDraft}
-          >
-            追加步骤
-          </button>
-          {hasDraft && (
-            <button
-              className="btn btn-primary"
-              onClick={() =>
-                router.push(`/drafts/${draft.id}/preview`)
-              }
-            >
-              预览
-            </button>
-          )}
           <button
             className="btn btn-primary"
-            onClick={handlePublish}
-            disabled={saving || !hasDraft || draft.syncState === 'stale'}
+            onClick={() =>
+              router.push(`/drafts/${draft.id}/preview`)
+            }
           >
-            发布
+            预览
           </button>
-          <button className="btn btn-secondary" onClick={() => setEditingMeta(!editingMeta)}>
-            {editingMeta ? '关闭元信息' : '编辑元信息'}
-          </button>
-        </div>
+        )}
+        <button
+          className="btn btn-primary"
+          onClick={handlePublish}
+          disabled={saving || !hasDraft || draft.syncState === 'stale'}
+        >
+          发布
+        </button>
+        <button className="btn btn-secondary" onClick={() => setEditingMeta(!editingMeta)}>
+          {editingMeta ? '关闭元信息' : '编辑元信息'}
+        </button>
       </div>
+    </>
+  );
+
+  return (
+    <div className="draft-workspace">
+      {/* Desktop sidebar */}
+      <div className="draft-sidebar">
+        {sidebarContent}
+      </div>
+
+      {/* Mobile hamburger */}
+      <button
+        className="mobile-menu-btn"
+        onClick={() => setDrawerOpen(true)}
+        aria-label="Open menu"
+      >
+        &#9776;
+      </button>
+
+      {/* Mobile drawer */}
+      {drawerOpen && (
+        <div className="drawer-overlay open" onClick={() => setDrawerOpen(false)}>
+          <div className="drawer-panel" onClick={(e) => e.stopPropagation()}>
+            {sidebarContent}
+          </div>
+        </div>
+      )}
 
       <div className="draft-editor-area">
         {editingMeta && hasDraft && draft.tutorialDraft && (
@@ -239,7 +272,7 @@ export function DraftWorkspace({ draft: initialDraft }: DraftWorkspaceProps) {
         )}
 
         {!hasDraft && (
-          <div style={{ color: 'var(--paper-text)', padding: 32 }}>
+          <div style={{ color: 'var(--text-secondary)', padding: 32 }}>
             {draft.generationState === 'idle'
               ? '教程尚未生成'
               : draft.generationState === 'running'

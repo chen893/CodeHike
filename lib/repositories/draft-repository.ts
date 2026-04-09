@@ -5,6 +5,8 @@ import type { DraftRecord } from '../types/api';
 import type { SourceItem } from '../schemas/source-item';
 import type { TeachingBrief } from '../schemas/teaching-brief';
 import type { TutorialDraft, TutorialStep } from '../schemas/tutorial-draft';
+import type { TutorialOutline } from '../schemas/tutorial-outline';
+import type { GenerationQuality } from '../schemas/generation-quality';
 
 type DraftRow = typeof drafts.$inferSelect;
 
@@ -22,6 +24,8 @@ function toDraftRecord(row: DraftRow): DraftRecord {
     generationErrorMessage: row.generationErrorMessage ?? null,
     generationModel: row.generationModel ?? null,
     generationLastAt: row.generationLastAt ?? null,
+    generationOutline: (row.generationOutline as TutorialOutline | null) ?? null,
+    generationQuality: (row.generationQuality as GenerationQuality | null) ?? null,
     validationValid: row.validationValid,
     validationErrors: (row.validationErrors as string[]) ?? [],
     validationCheckedAt: row.validationCheckedAt ?? null,
@@ -200,6 +204,36 @@ export async function updateDraftSteps(
   const [row] = await db
     .update(drafts)
     .set({ tutorialDraft: td as any, updatedAt: new Date() })
+    .where(eq(drafts.id, id))
+    .returning();
+  return row ? toDraftRecord(row) : null;
+}
+
+export async function updateDraftGenerationOutline(
+  id: string,
+  outline: TutorialOutline
+): Promise<DraftRecord | null> {
+  const [row] = await db
+    .update(drafts)
+    .set({
+      generationOutline: outline as any,
+      updatedAt: new Date(),
+    })
+    .where(eq(drafts.id, id))
+    .returning();
+  return row ? toDraftRecord(row) : null;
+}
+
+export async function updateDraftGenerationQuality(
+  id: string,
+  quality: GenerationQuality
+): Promise<DraftRecord | null> {
+  const [row] = await db
+    .update(drafts)
+    .set({
+      generationQuality: quality as any,
+      updatedAt: new Date(),
+    })
     .where(eq(drafts.id, id))
     .returning();
   return row ? toDraftRecord(row) : null;

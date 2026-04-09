@@ -42,6 +42,10 @@ export const drafts = pgTable('drafts', {
   generationModel: varchar('generation_model', { length: 64 }),
   generationLastAt: timestamp('generation_last_at', { withTimezone: true }),
 
+  // v3.1: Multi-phase generation metadata
+  generationOutline: jsonb('generation_outline').$type<unknown | null>(),
+  generationQuality: jsonb('generation_quality').$type<unknown | null>(),
+
   // Validation
   validationValid: boolean('validation_valid').default(false).notNull(),
   validationErrors: jsonb('validation_errors')
