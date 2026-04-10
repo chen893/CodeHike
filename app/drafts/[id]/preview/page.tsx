@@ -1,7 +1,6 @@
 import { notFound } from 'next/navigation';
 import { TutorialScrollyDemo } from '../../../../components/tutorial-scrolly-demo';
-import { buildTutorialSteps } from '../../../../lib/tutorial-assembler';
-import * as draftRepo from '@/lib/repositories/draft-repository';
+import { getDraftPreviewPageData } from '@/lib/services/draft-queries';
 
 export default async function DraftPreviewPage({
   params,
@@ -9,19 +8,17 @@ export default async function DraftPreviewPage({
   params: Promise<{ id: string }>;
 }) {
   const { id } = await params;
-  const draft = await draftRepo.getDraftById(id);
+  const preview = await getDraftPreviewPageData(id);
 
-  if (!draft?.tutorialDraft) notFound();
-
-  const steps = await buildTutorialSteps(draft.tutorialDraft as any);
+  if (!preview) notFound();
 
   return (
     <main className="min-h-screen">
       <TutorialScrollyDemo
-        steps={steps}
-        intro={draft.tutorialDraft.intro.paragraphs}
-        title={draft.tutorialDraft.meta.title}
-        fileName={draft.tutorialDraft.meta.fileName}
+        steps={preview.steps}
+        intro={preview.intro}
+        title={preview.title}
+        fileName={preview.fileName}
       />
     </main>
   );

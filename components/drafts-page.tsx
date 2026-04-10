@@ -1,10 +1,8 @@
 'use client';
 
-import { useState } from 'react';
 import Link from 'next/link';
-import { withBasePath } from '@/lib/base-path';
 import { getDraftStatusInfo } from '@/lib/draft-status';
-import type { DraftSummary } from '@/lib/types/api';
+import type { ClientDraftSummary } from '@/lib/types/client';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import {
@@ -14,9 +12,10 @@ import {
   CardHeader,
   CardTitle,
 } from '@/components/ui/card';
+import { useDraftsPageController } from '@/components/drafts/use-drafts-page-controller';
 
 interface DraftsPageProps {
-  drafts: DraftSummary[];
+  drafts: ClientDraftSummary[];
 }
 
 function formatUpdatedAt(value: string | Date) {
@@ -29,11 +28,11 @@ function formatUpdatedAt(value: string | Date) {
   }).format(new Date(value));
 }
 
-function getDraftTitle(draft: DraftSummary) {
+function getDraftTitle(draft: ClientDraftSummary) {
   return draft.title;
 }
 
-function getDraftDescription(draft: DraftSummary) {
+function getDraftDescription(draft: ClientDraftSummary) {
   if (draft.validationErrors.length > 0) {
     return draft.validationErrors[0];
   }
@@ -47,7 +46,7 @@ function getDraftDescription(draft: DraftSummary) {
   );
 }
 
-function partitionDrafts(drafts: DraftSummary[]) {
+function partitionDrafts(drafts: ClientDraftSummary[]) {
   return drafts.reduce(
     (groups, draft) => {
       if (draft.status === 'published') {
@@ -59,42 +58,15 @@ function partitionDrafts(drafts: DraftSummary[]) {
       return groups;
     },
     {
-      drafts: [] as DraftSummary[],
-      published: [] as DraftSummary[],
+      drafts: [] as ClientDraftSummary[],
+      published: [] as ClientDraftSummary[],
     }
   );
 }
 
 export function DraftsPage({ drafts: initialDrafts }: DraftsPageProps) {
-  const [drafts, setDrafts] = useState(initialDrafts);
-  const [deletingId, setDeletingId] = useState<string | null>(null);
+  const { drafts, deletingId, handleDelete } = useDraftsPageController({ initialDrafts });
   const groups = partitionDrafts(drafts);
-
-  async function handleDelete(draft: DraftSummary) {
-    const title = getDraftTitle(draft);
-    const confirmed = window.confirm(`确认删除草稿《${title}》？此操作无法撤销。`);
-    if (!confirmed) return;
-
-    setDeletingId(draft.id);
-
-    try {
-      const response = await fetch(withBasePath(`/api/drafts/${draft.id}`), {
-        method: 'DELETE',
-      });
-
-      if (!response.ok) {
-        const error = await response.json();
-        throw new Error(error.message || '删除草稿失败');
-      }
-
-      setDrafts((current) => current.filter((item) => item.id !== draft.id));
-    } catch (error) {
-      const message = error instanceof Error ? error.message : '删除草稿失败';
-      alert(message);
-    } finally {
-      setDeletingId(null);
-    }
-  }
 
   return (
     <div className="mx-auto flex w-full max-w-6xl flex-col gap-8 px-4 py-10 sm:px-6 lg:px-8">
@@ -140,9 +112,9 @@ function DraftSection({
 }: {
   title: string;
   description: string;
-  drafts: DraftSummary[];
+  drafts: ClientDraftSummary[];
   deletingId: string | null;
-  onDelete: (draft: DraftSummary) => Promise<void>;
+  onDelete: (draft: ClientDraftSummary) => Promise<void>;
 }) {
   return (
     <section className="space-y-4">
@@ -181,9 +153,9 @@ function DraftCard({
   deleting,
   onDelete,
 }: {
-  draft: DraftSummary;
+  draft: ClientDraftSummary;
   deleting: boolean;
-  onDelete: (draft: DraftSummary) => Promise<void>;
+  onDelete: (draft: ClientDraftSummary) => Promise<void>;
 }) {
   const status = getDraftStatusInfo(draft);
   const stepCount = draft.stepCount;

@@ -6,7 +6,7 @@ import { MarkdownEditor } from './markdown-editor';
 import {
   getCodeBeforeStep,
   getStepCodePreview,
-} from '@/lib/tutorial-draft-code';
+} from '@/lib/tutorial/draft-code';
 import { createUuid } from '@/lib/utils/uuid';
 import type {
   ContentMark,

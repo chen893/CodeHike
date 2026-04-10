@@ -7,7 +7,7 @@ import type { SourceItem } from '../schemas/source-item';
 import type { TeachingBrief } from '../schemas/teaching-brief';
 import { buildOutlinePrompt } from './outline-prompt';
 import { buildStepFillPrompt } from './step-fill-prompt';
-import { applyContentPatches } from '../tutorial-assembler';
+import { applyContentPatches } from '../tutorial/assembler';
 import { validateTutorialDraft } from '../utils/validation';
 
 const deepseek = createOpenAICompatible({
@@ -78,9 +78,10 @@ export function createMultiPhaseGenerationStream(
           outline = result.output;
           controller.enqueue(encoder.encode(sseEvent('outline', outline)));
         } catch (outlineErr: any) {
-          console.error('[multi-phase] Outline generation failed:', outlineErr.message);
+          const cause = outlineErr.cause ? String(outlineErr.cause) : '';
+          console.error('[multi-phase] Outline generation failed:', outlineErr.message, cause);
           controller.enqueue(encoder.encode(
-            sseEvent('error', { phase: 'outline', message: outlineErr.message })
+            sseEvent('error', { phase: 'outline', message: outlineErr.message, cause })
           ));
           controller.close();
           rejectResult(outlineErr);

@@ -9,8 +9,7 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card"
-import { listTutorials } from "../lib/tutorial-registry"
-import * as publishedRepo from "../lib/repositories/published-tutorial-repository"
+import { getHomePageData } from "@/lib/services/tutorial-queries"
 
 export const metadata = {
   title: "VibeDocs",
@@ -18,14 +17,7 @@ export const metadata = {
 }
 
 export default async function Page() {
-  const tutorials = listTutorials()
-
-  let publishedTutorials = []
-  try {
-    publishedTutorials = await publishedRepo.listPublished()
-  } catch (err) {
-    console.error("加载已发布教程列表失败:", err)
-  }
+  const { tutorials, publishedTutorials } = await getHomePageData()
 
   return (
     <AppShell activePath="/">

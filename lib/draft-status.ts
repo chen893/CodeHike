@@ -1,4 +1,5 @@
 import type { DraftRecord, DraftSummary } from './types/api';
+import type { ClientDraftRecord, ClientDraftSummary } from './types/client';
 
 export type StatusVariant = 'draft' | 'generating' | 'done' | 'failed';
 
@@ -8,11 +9,17 @@ export interface DraftStatusInfo {
   detail: string | null;
 }
 
-function draftHasTutorial(draft: DraftRecord | DraftSummary) {
+type DraftStatusSource =
+  | DraftRecord
+  | DraftSummary
+  | ClientDraftRecord
+  | ClientDraftSummary;
+
+function draftHasTutorial(draft: DraftStatusSource) {
   return 'hasTutorialDraft' in draft ? draft.hasTutorialDraft : !!draft.tutorialDraft;
 }
 
-export function getDraftStatusInfo(draft: DraftRecord | DraftSummary): DraftStatusInfo {
+export function getDraftStatusInfo(draft: DraftStatusSource): DraftStatusInfo {
   if (draft.status === 'published') {
     return {
       label: '已发布',

@@ -1,62 +1,21 @@
 "use client"
 
-import { useEffect, useRef, useState } from "react"
 import { TutorialScrollyDemo } from "./tutorial-scrolly-demo"
-import { withBasePath } from "@/lib/base-path"
+import { useRemoteResource } from "@/components/tutorial/use-remote-resource"
+import { fetchTutorialPayloadBySlug } from "@/components/tutorial/tutorial-client"
 
 import { Badge } from "./ui/badge"
 import { Button } from "./ui/button"
 import { ChevronLeft, ExternalLink, RefreshCcw } from "lucide-react"
 import Link from "next/link"
 
-const initialState = {
-  status: "loading",
-  tutorial: null,
-  error: "",
-}
-
 export function RemoteTutorialPage({ slug, title }) {
-  const [state, setState] = useState(initialState)
-  const requestVersionRef = useRef(0)
+  const { state, reload } = useRemoteResource({
+    deps: [slug],
+    load: () => fetchTutorialPayloadBySlug(slug),
+  })
 
-  async function loadTutorial() {
-    const requestVersion = requestVersionRef.current + 1
-    requestVersionRef.current = requestVersion
-    setState(initialState)
-    try {
-      const response = await fetch(withBasePath(`/api/tutorials/${slug}`))
-      if (!response.ok) {
-        throw new Error(`请求失败，状态码 ${response.status}`)
-      }
-      const tutorial = await response.json()
-      if (requestVersion !== requestVersionRef.current) {
-        return
-      }
-      setState({
-        status: "success",
-        tutorial,
-        error: "",
-      })
-    } catch (error) {
-      if (requestVersion !== requestVersionRef.current) {
-        return
-      }
-      setState({
-        status: "error",
-        tutorial: null,
-        error: error instanceof Error ? error.message : "未知错误",
-      })
-    }
-  }
-
-  useEffect(() => {
-    loadTutorial()
-    return () => {
-      requestVersionRef.current += 1
-    }
-  }, [slug])
-
-  if (state.status === "success" && state.tutorial) {
+  if (state.status === "success") {
     return (
       <main className="flex min-h-screen flex-col bg-[radial-gradient(circle_at_top,_rgba(14,165,233,0.18),_transparent_35%),linear-gradient(180deg,_#020617_0%,_#0f172a_42%,_#111827_100%)] text-slate-100">
         {/* Modern Sticky Header */}
@@ -72,7 +31,7 @@ export function RemoteTutorialPage({ slug, title }) {
               <div className="flex flex-col">
                 <div className="flex items-center gap-2">
                   <h1 className="text-sm font-bold tracking-tight text-white sm:text-base">
-                    {state.tutorial.title}
+                    {state.data.title}
                   </h1>
                   <Badge variant="outline" className="h-5 border-cyan-500/30 bg-cyan-500/10 text-[10px] font-bold uppercase tracking-wider text-cyan-400">
                     Remote
@@ -88,7 +47,7 @@ export function RemoteTutorialPage({ slug, title }) {
                 variant="outline"
                 size="sm"
                 className="hidden border-white/10 bg-white/5 text-slate-300 transition hover:bg-white/10 hover:text-white sm:flex"
-                onClick={loadTutorial}
+                onClick={() => void reload()}
               >
                 <RefreshCcw size={14} className="mr-2" />
                 刷新数据
@@ -105,10 +64,10 @@ export function RemoteTutorialPage({ slug, title }) {
         </header>
 
         <TutorialScrollyDemo
-          steps={state.tutorial.steps}
-          intro={state.tutorial.intro}
-          title={state.tutorial.title}
-          fileName={state.tutorial.fileName}
+          steps={state.data.steps}
+          intro={state.data.intro}
+          title={state.data.title}
+          fileName={state.data.fileName}
         />
       </main>
     )
@@ -143,11 +102,11 @@ export function RemoteTutorialPage({ slug, title }) {
               <div className="mb-6 inline-flex rounded-full bg-rose-500/10 px-4 py-1.5 text-xs font-bold uppercase tracking-widest text-rose-400 ring-1 ring-inset ring-rose-500/20">
                 加载失败
               </div>
-              <p className="text-slate-300">{state.error}</p>
+              <p className="text-slate-300">{state.message}</p>
               <Button
                 variant="outline"
                 className="mt-8 border-white/10 bg-white/5 hover:bg-white/10"
-                onClick={loadTutorial}
+                onClick={() => void reload()}
               >
                 <RefreshCcw size={16} className="mr-2" />
                 重试加载

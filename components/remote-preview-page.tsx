@@ -1,8 +1,8 @@
 'use client';
 
-import { useEffect, useRef, useState } from 'react';
 import { TutorialScrollyDemo } from './tutorial-scrolly-demo';
-import { withBasePath } from '@/lib/base-path';
+import { useRemoteResource } from '@/components/tutorial/use-remote-resource';
+import { fetchTutorialPreviewPayload } from '@/components/tutorial/tutorial-client';
 
 import { Badge } from './ui/badge';
 import { Button } from './ui/button';
@@ -15,37 +15,11 @@ interface RemotePreviewPageProps {
 }
 
 export function RemotePreviewPage({ fetchUrl, title }: RemotePreviewPageProps) {
-  const [state, setState] = useState<
-    | { status: 'loading' }
-    | { status: 'success'; payload: any }
-    | { status: 'error'; message: string }
-  >({ status: 'loading' });
-  const requestVersionRef = useRef(0);
-
   const draftId = fetchUrl.split('/')[3];
-
-  async function loadPayload() {
-    const requestVersion = requestVersionRef.current + 1;
-    requestVersionRef.current = requestVersion;
-    setState({ status: 'loading' });
-    try {
-      const res = await fetch(withBasePath(fetchUrl));
-      if (!res.ok) throw new Error(`HTTP ${res.status}`);
-      const payload = await res.json();
-      if (requestVersion !== requestVersionRef.current) return;
-      setState({ status: 'success', payload });
-    } catch (err: any) {
-      if (requestVersion !== requestVersionRef.current) return;
-      setState({ status: 'error', message: err.message });
-    }
-  }
-
-  useEffect(() => {
-    loadPayload();
-    return () => {
-      requestVersionRef.current += 1;
-    };
-  }, [fetchUrl]);
+  const { state, reload } = useRemoteResource({
+    deps: [fetchUrl],
+    load: () => fetchTutorialPreviewPayload(fetchUrl),
+  });
 
   if (state.status === 'loading') {
     return (
@@ -78,7 +52,7 @@ export function RemotePreviewPage({ fetchUrl, title }: RemotePreviewPageProps) {
             <p className="mt-3 text-sm text-rose-100/60 leading-relaxed">{state.message}</p>
             <Button
               className="mt-8 bg-rose-500 text-white hover:bg-rose-600"
-              onClick={loadPayload}
+              onClick={() => void reload()}
             >
               重试
             </Button>
@@ -88,7 +62,7 @@ export function RemotePreviewPage({ fetchUrl, title }: RemotePreviewPageProps) {
     );
   }
 
-  const { payload } = state;
+  const payload = state.data;
 
   return (
     <main className="flex min-h-screen flex-col bg-[radial-gradient(circle_at_top,_rgba(14,165,233,0.18),_transparent_35%),linear-gradient(180deg,_#020617_0%,_#0f172a_42%,_#111827_100%)] text-slate-100">

@@ -1,162 +1,32 @@
 'use client';
 
-import { useState } from 'react';
-import { useRouter } from 'next/navigation';
-import { GenerationProgress, type GenerationContext } from './generation-progress';
+import { GenerationProgress } from './generation-progress';
 import { CodeMirrorEditor } from './code-mirror-editor';
-import type { SourceItem, TeachingBrief } from '@/lib/schemas/index';
-import { withBasePath } from '@/lib/base-path';
-import { createUuid } from '@/lib/utils/uuid';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Textarea } from '@/components/ui/textarea';
 import { Plus, Trash2 } from 'lucide-react';
-
-const audienceLabels: Record<TeachingBrief['audience_level'], string> = {
-  beginner: '初学者',
-  intermediate: '中级',
-  advanced: '高级',
-};
-
-const languageLabels: Record<string, string> = {
-  javascript: 'JavaScript',
-  typescript: 'TypeScript',
-  python: 'Python',
-  go: 'Go',
-  rust: 'Rust',
-  java: 'Java',
-};
-
-interface SourceItemDraft {
-  id: string;
-  label: string;
-  language: string;
-  content: string;
-}
-
-function createSourceItemDraft(): SourceItemDraft {
-  return {
-    id: createUuid(),
-    label: '',
-    language: 'javascript',
-    content: '',
-  };
-}
-
-function countLines(value: string) {
-  const normalized = value.replace(/\n$/, '');
-  return normalized ? normalized.split(/\r?\n/).length : 0;
-}
-
-function summarizeLanguages(items: SourceItemDraft[]) {
-  const unique = [...new Set(items.map((item) => languageLabels[item.language] || item.language))];
-
-  if (unique.length === 0) return '未知';
-  if (unique.length <= 2) return unique.join(' / ');
-  return `${unique[0]} +${unique.length - 1}`;
-}
+import type { TeachingBrief } from '@/lib/schemas/index';
+import { useCreateDraftFormController } from '@/components/drafts/use-create-draft-form-controller';
 
 export function CreateDraftForm() {
-  const router = useRouter();
-
-  const [sourceItems, setSourceItems] = useState<SourceItemDraft[]>(() => [createSourceItemDraft()]);
-  const [brief, setBrief] = useState<TeachingBrief>({
-    topic: '',
-    audience_level: 'beginner',
-    core_question: '',
-    ignore_scope: '',
-    output_language: '中文',
-  });
-
-  const [generating, setGenerating] = useState(false);
-  const [draftId, setDraftId] = useState<string | null>(null);
-  const [error, setError] = useState<string | null>(null);
-
-  async function handleSubmit(event: React.FormEvent) {
-    event.preventDefault();
-    setError(null);
-
-    const normalizedItems = sourceItems.filter((item) => item.content.trim());
-
-    if (normalizedItems.length === 0 || !brief.topic.trim() || !brief.core_question.trim()) {
-      setError('请至少填写一个源码文件，以及主题和核心问题');
-      return;
-    }
-
-    try {
-      setGenerating(true);
-
-      const payload: SourceItem[] = normalizedItems.map((item, index) => ({
-        id: item.id,
-        kind: 'snippet',
-        label: item.label.trim() || `file-${index + 1}`,
-        content: item.content,
-        language: item.language,
-      }));
-
-      const createRes = await fetch(withBasePath('/api/drafts'), {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ sourceItems: payload, teachingBrief: brief }),
-      });
-
-      if (!createRes.ok) {
-        const err = await createRes.json();
-        throw new Error(err.message || '创建失败');
-      }
-
-      const draft = await createRes.json();
-      setDraftId(draft.id);
-    } catch (err: any) {
-      setError(err.message || '发生错误');
-      setGenerating(false);
-    }
-  }
-
-  function handleGenerationComplete() {
-    if (draftId) {
-      router.push(`/drafts/${draftId}`);
-    }
-  }
-
-  function updateSourceItem(id: string, patch: Partial<SourceItemDraft>) {
-    setSourceItems((current) =>
-      current.map((item) => (item.id === id ? { ...item, ...patch } : item))
-    );
-  }
-
-  function addSourceItem() {
-    setSourceItems((current) => [...current, createSourceItemDraft()]);
-  }
-
-  function removeSourceItem(id: string) {
-    setSourceItems((current) => {
-      if (current.length <= 1) return current;
-      return current.filter((item) => item.id !== id);
-    });
-  }
-
-  const activeSourceItems = sourceItems.filter((item) => item.content.trim());
-  const totalLineCount = Math.max(
-    1,
-    activeSourceItems.reduce((sum, item) => sum + countLines(item.content), 0)
-  );
-
-  const generationContext: GenerationContext = {
-    topic: brief.topic.trim(),
-    sourceSummary:
-      activeSourceItems.length <= 1
-        ? activeSourceItems[0]?.label?.trim() || 'main'
-        : `${activeSourceItems.length} 个源码文件`,
-    sourceCount: Math.max(activeSourceItems.length, 1),
-    sourceLanguageSummary: summarizeLanguages(activeSourceItems.length > 0 ? activeSourceItems : sourceItems),
-    outputLanguage: brief.output_language,
-    audienceLabel: audienceLabels[brief.audience_level],
-    coreQuestion: brief.core_question.trim(),
-    codeLineCount: totalLineCount,
-  };
+  const {
+    sourceItems,
+    activeSourceItemId,
+    setActiveSourceItemId,
+    brief,
+    generating,
+    draftId,
+    error,
+    generationContext,
+    setBrief,
+    handleSubmit,
+    handleGenerationComplete,
+    updateSourceItem,
+    addSourceItem,
+    removeSourceItem,
+  } = useCreateDraftFormController();
 
   if (generating && draftId) {
     return (
@@ -168,12 +38,14 @@ export function CreateDraftForm() {
     );
   }
 
+  const activeItem = sourceItems.find((item) => item.id === activeSourceItemId) || sourceItems[0];
+
   return (
     <form
       onSubmit={handleSubmit}
-      className="mx-auto flex w-full max-w-4xl flex-col gap-8 rounded-xl border border-border bg-card p-6 shadow-sm md:p-8"
+      className="mx-auto flex w-full max-w-4xl flex-col gap-8"
     >
-      <section className="space-y-6">
+      <section className="space-y-4 rounded-xl border border-border bg-card p-6 shadow-sm md:p-8">
         <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
           <div className="space-y-1">
             <h2 className="text-base font-semibold tracking-tight text-foreground">源码内容</h2>
@@ -181,99 +53,99 @@ export function CreateDraftForm() {
               可以添加多个文件，比如主逻辑和配置文件。
             </p>
           </div>
-          <Button
-            type="button"
-            variant="outline"
-            size="sm"
-            onClick={addSourceItem}
-            className="w-fit gap-1.5"
-          >
-            <Plus className="h-4 w-4" />
-            添加源码文件
-          </Button>
         </div>
 
-        <div className="space-y-6">
-          {sourceItems.map((item, index) => (
-            <div
-              key={item.id}
-              className="group relative overflow-hidden rounded-xl border border-border bg-muted/30 transition-colors hover:bg-muted/50"
-            >
-              <div className="flex items-center justify-between border-b border-border bg-muted/50 px-5 py-3">
-                <div className="flex items-center gap-2">
-                  <span className="flex h-5 w-5 items-center justify-center rounded-full bg-primary/10 text-[10px] font-bold text-primary">
-                    {index + 1}
-                  </span>
-                  <span className="text-sm font-semibold text-foreground">
-                    源码文件
-                  </span>
-                </div>
-                <Button
-                  type="button"
-                  variant="ghost"
-                  size="icon"
-                  onClick={() => removeSourceItem(item.id)}
-                  disabled={sourceItems.length <= 1}
-                  className="h-8 w-8 text-muted-foreground hover:bg-destructive/10 hover:text-destructive disabled:opacity-30"
+        <div className="grid overflow-hidden rounded-xl border border-border bg-muted/30">
+          <div className="flex items-center border-b border-border bg-muted/50">
+            <div className="flex flex-1 flex-wrap items-center overflow-hidden">
+              {sourceItems.map((item, index) => (
+                <div
+                  key={item.id}
+                  className={`group relative flex h-10 items-center gap-2 border-r border-border px-4 transition-all cursor-pointer select-none ${
+                    activeSourceItemId === item.id
+                      ? 'bg-background text-foreground shadow-[inset_0_2px_0_0_theme(colors.primary)]'
+                      : 'text-muted-foreground hover:bg-background/50 hover:text-foreground'
+                  }`}
+                  onClick={() => setActiveSourceItemId(item.id)}
                 >
-                  <Trash2 className="h-4 w-4" />
-                </Button>
+                  <span className="text-xs font-medium truncate max-w-[120px]">
+                    {item.label || `文件 ${index + 1}`}
+                  </span>
+                  <button
+                    type="button"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      removeSourceItem(item.id);
+                    }}
+                    disabled={sourceItems.length <= 1}
+                    className="ml-1 rounded-sm p-0.5 opacity-0 group-hover:opacity-100 transition-opacity hover:bg-destructive/10 hover:text-destructive disabled:hidden"
+                  >
+                    <Trash2 className="h-3 w-3" />
+                  </button>
+                </div>
+              ))}
+              <button
+                type="button"
+                onClick={addSourceItem}
+                className="flex h-10 w-10 items-center justify-center text-muted-foreground hover:bg-background/50 hover:text-foreground transition-colors border-r border-border"
+                title="添加源码文件"
+              >
+                <Plus className="h-4 w-4" />
+              </button>
+            </div>
+          </div>
+
+          <div className="grid gap-6 p-5">
+            <div className="grid gap-4 md:grid-cols-2">
+              <div className="space-y-2">
+                <Label className="text-sm font-medium text-muted-foreground">文件标签</Label>
+                <Input
+                  type="text"
+                  className="rounded-md"
+                  value={activeItem?.label || ''}
+                  onChange={(event) =>
+                    updateSourceItem(activeItem.id, { label: event.target.value })
+                  }
+                  placeholder="例如: store.js"
+                />
               </div>
-
-              <div className="grid gap-6 p-5">
-                <div className="grid gap-4 md:grid-cols-2">
-                  <div className="space-y-2">
-                    <Label className="text-sm font-medium text-muted-foreground">文件标签</Label>
-                    <Input
-                      type="text"
-                      className="rounded-md"
-                      value={item.label}
-                      onChange={(event) =>
-                        updateSourceItem(item.id, { label: event.target.value })
-                      }
-                      placeholder="例如: store.js"
-                    />
-                  </div>
-                  <div className="space-y-2">
-                    <Label className="text-sm font-medium text-muted-foreground">语言</Label>
-                    <select
-                      className="flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-sm transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
-                      value={item.language}
-                      onChange={(event) =>
-                        updateSourceItem(item.id, { language: event.target.value })
-                      }
-                    >
-                      <option value="javascript">JavaScript</option>
-                      <option value="typescript">TypeScript</option>
-                      <option value="python">Python</option>
-                      <option value="go">Go</option>
-                      <option value="rust">Rust</option>
-                      <option value="java">Java</option>
-                    </select>
-                  </div>
-                </div>
-
-                <div className="space-y-2">
-                  <Label className="text-sm font-medium text-muted-foreground">代码</Label>
-                  <div className="overflow-hidden rounded-md border border-input">
-                    <CodeMirrorEditor
-                      value={item.content}
-                      onChange={(value) => updateSourceItem(item.id, { content: value })}
-                      language={item.language}
-                      height="300px"
-                      placeholder="在这里粘贴源码..."
-                    />
-                  </div>
-                </div>
+              <div className="space-y-2">
+                <Label className="text-sm font-medium text-muted-foreground">语言</Label>
+                <select
+                  className="flex h-9 w-full rounded-md border border-input bg-background px-3 py-1 text-sm shadow-sm transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+                  value={activeItem?.language || 'javascript'}
+                  onChange={(event) =>
+                    updateSourceItem(activeItem.id, { language: event.target.value })
+                  }
+                >
+                  <option value="javascript">JavaScript</option>
+                  <option value="typescript">TypeScript</option>
+                  <option value="python">Python</option>
+                  <option value="go">Go</option>
+                  <option value="rust">Rust</option>
+                  <option value="java">Java</option>
+                </select>
               </div>
             </div>
-          ))}
+
+            <div className="space-y-2">
+              <Label className="text-sm font-medium text-muted-foreground">代码</Label>
+              <div className="overflow-hidden rounded-md border border-input bg-background">
+                <CodeMirrorEditor
+                  key={activeItem?.id}
+                  value={activeItem?.content || ''}
+                  onChange={(value) => updateSourceItem(activeItem.id, { content: value })}
+                  language={activeItem?.language || 'javascript'}
+                  height="400px"
+                  placeholder="在这里粘贴源码..."
+                />
+              </div>
+            </div>
+          </div>
         </div>
       </section>
 
-      <div className="h-px bg-border" />
-
-      <section className="space-y-6">
+      <section className="space-y-6 rounded-xl border border-border bg-card p-6 shadow-sm md:p-8">
         <h2 className="text-base font-semibold tracking-tight text-foreground">你想教什么</h2>
         <div className="grid gap-6">
           <div className="space-y-2">

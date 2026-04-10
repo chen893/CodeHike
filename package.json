@@ -5,7 +5,8 @@
   "scripts": {
     "dev": "next dev --webpack",
     "build": "next build --webpack",
-    "start": "next start"
+    "start": "next start",
+    "test": "tsx --test ./tests/*.test.js"
   },
   "dependencies": {
     "@ai-sdk/openai": "^3.0.52",

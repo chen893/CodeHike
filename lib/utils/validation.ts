@@ -1,5 +1,5 @@
-import { buildTutorialSteps } from '../tutorial-assembler';
-import { findFirstInvalidStep } from '../tutorial-draft-code';
+import { buildTutorialSteps } from '../tutorial/assembler';
+import { findFirstInvalidStep } from '../tutorial/draft-code';
 import type { TutorialDraft } from '../schemas/tutorial-draft';
 
 export async function validateTutorialDraft(

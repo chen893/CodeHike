@@ -1,9 +1,8 @@
 import { NextResponse } from 'next/server';
 import { getRouteErrorMessage, isRouteValidationError } from '@/lib/api/route-errors';
-import * as draftRepo from '@/lib/repositories/draft-repository';
 import { deleteDraft } from '@/lib/services/delete-draft';
-import { updateDraftRequestSchema } from '@/lib/schemas/api';
-import { computeInputHash } from '@/lib/utils/hash';
+import { getDraftDetail } from '@/lib/services/draft-queries';
+import { updateDraft } from '@/lib/services/update-draft';
 
 export async function GET(
   req: Request,
@@ -11,7 +10,7 @@ export async function GET(
 ) {
   try {
     const { id } = await context.params;
-    const draft = await draftRepo.getDraftById(id);
+    const draft = await getDraftDetail(id);
 
     if (!draft) {
       return NextResponse.json(
@@ -47,47 +46,20 @@ export async function PATCH(
       );
     }
 
-    const parsed = updateDraftRequestSchema.parse(body);
-
-    const draft = await draftRepo.getDraftById(id);
-    if (!draft) {
-      return NextResponse.json(
-        { message: '草稿不存在', code: 'NOT_FOUND' },
-        { status: 404 }
-      );
-    }
-
-    if (parsed.teachingBrief) {
-      const newHash = computeInputHash(draft.sourceItems, parsed.teachingBrief);
-      const syncState =
-        draft.tutorialDraftInputHash && newHash !== draft.tutorialDraftInputHash
-          ? 'stale'
-          : draft.syncState;
-
-      await draftRepo.updateDraft(id, {
-        teachingBrief: parsed.teachingBrief,
-        inputHash: newHash,
-        syncState: syncState as any,
-      });
-    }
-
-    if (parsed.title || parsed.description || parsed.introParagraphs) {
-      await draftRepo.updateDraftMeta(id, {
-        title: parsed.title,
-        description: parsed.description,
-        introParagraphs: parsed.introParagraphs,
-      });
-    }
-
-    const updated = await draftRepo.getDraftById(id);
+    const updated = await updateDraft(id, body);
     return NextResponse.json(updated);
   } catch (err) {
     console.error('更新草稿失败:', err);
     const message = getRouteErrorMessage(err, '更新草稿失败');
-    const code = isRouteValidationError(err) ? 'VALIDATION_ERROR' : 'INTERNAL_ERROR';
+    const isNotFound = message.includes('not found');
+    const code = isNotFound
+      ? 'NOT_FOUND'
+      : isRouteValidationError(err)
+        ? 'VALIDATION_ERROR'
+        : 'INTERNAL_ERROR';
     return NextResponse.json(
       { message, code },
-      { status: code === 'VALIDATION_ERROR' ? 400 : 500 }
+      { status: code === 'NOT_FOUND' ? 404 : code === 'VALIDATION_ERROR' ? 400 : 500 }
     );
   }
 }

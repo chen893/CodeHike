@@ -1,6 +1,6 @@
 import { notFound } from 'next/navigation';
 import { RemotePreviewPage } from '../../../../../components/remote-preview-page';
-import * as draftRepo from '@/lib/repositories/draft-repository';
+import { getDraftRemotePreviewPageData } from '@/lib/services/draft-queries';
 
 export default async function DraftRemotePreviewPage({
   params,
@@ -8,14 +8,14 @@ export default async function DraftRemotePreviewPage({
   params: Promise<{ id: string }>;
 }) {
   const { id } = await params;
-  const draft = await draftRepo.getDraftById(id);
+  const preview = await getDraftRemotePreviewPageData(id);
 
-  if (!draft?.tutorialDraft) notFound();
+  if (!preview) notFound();
 
   return (
     <RemotePreviewPage
-      fetchUrl={`/api/drafts/${id}/payload`}
-      title={draft.tutorialDraft.meta.title}
+      fetchUrl={preview.fetchUrl}
+      title={preview.title}
     />
   );
 }

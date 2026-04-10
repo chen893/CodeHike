@@ -11,10 +11,11 @@ VibeDocs — AI 驱动的 scrollytelling 源码教学教程生成与渲染应用
 ```bash
 npm run dev     # next dev --webpack
 npm run build   # next build --webpack
+npm test        # node:test smoke checks for layering + core helpers
 npm start       # next start (production)
 ```
 
-无测试、无 lint 配置。
+无 lint 配置。已有最小 `node:test` 回归集，覆盖结构边界和几个核心纯函数。
 
 数据库需要 `DATABASE_URL` 环境变量（PostgreSQL），AI 生成需要 `DEEPSEEK_API_KEY`。
 
@@ -24,9 +25,9 @@ npm start       # next start (production)
 
 ```text
 TutorialDraft (DSL JSON)
-  → lib/tutorial-assembler.js   # patch 应用 + diff 计算 + CodeHike 高亮 + focus/marks/change 注入 → TutorialStep[]
-  → lib/tutorial-payload.js     # 包装为 TutorialPayload
-  → components/tutorial-scrolly-demo.jsx  # 客户端 scrollytelling 渲染（含 StepRail 导航 + MobileCodeFrame）
+  → lib/tutorial/assembler.js   # patch 应用 + diff 计算 + CodeHike 高亮 + focus/marks/change 注入 → TutorialStep[]
+  → lib/tutorial/payload.js     # 包装为 TutorialPayload
+  → components/tutorial/tutorial-scrolly-demo.jsx  # 客户端 scrollytelling 渲染（含 StepRail 导航 + MobileCodeFrame）
 ```
 
 ### 两条消费路径
@@ -63,9 +64,10 @@ lib/services/compute-generation-quality.ts # 质量指标计算
 | 服务 | `lib/services/` | 业务逻辑（创建、生成、发布、质量计算），被 API 路由调用 |
 | 数据 | `lib/repositories/` | Drizzle ORM 数据访问，返回类型化 domain 对象 |
 | Schema | `lib/schemas/` | Zod schema（AI 输出约束 + API 校验），`index.ts` 为 barrel |
+| 类型 | `lib/types/` | app-facing DTO、客户端响应类型、共享 domain type |
 | DB | `lib/db/` | Drizzle schema 定义 + 连接池 |
 | AI | `lib/ai/` | prompt 模板 + AI 调用封装（v1 单次生成 + v2 多阶段生成） |
-| 渲染 | `lib/tutorial-assembler.js` | patch 应用 + diff 计算 + 高亮 + change 注解注入（纯服务端） |
+| 渲染 | `lib/tutorial/` | patch 应用、payload 构建、registry、草稿 patch 工具（纯服务端） |
 
 ### 编辑器组件
 
@@ -75,7 +77,15 @@ lib/services/compute-generation-quality.ts # 质量指标计算
 | `components/markdown-editor.tsx` | Markdown 编辑器（工具栏 + 编辑/预览切换，含 XSS 安全过滤） |
 | `components/app-shell.tsx` | 应用外壳（桌面端侧边栏 + 移动端抽屉导航） |
 
-### 渲染器增强组件（tutorial-scrolly-demo.jsx 内）
+### Feature 目录
+
+| 目录 | 用途 |
+|------|------|
+| `components/drafts/` | 草稿列表、创建、编辑、发布相关 client hooks / feature clients / 子视图 |
+| `components/tutorial/` | 教程阅读、远程加载、生成进度协议解析、渲染器子模块 |
+| `components/ui/` | 共享 UI primitive |
+
+### 渲染器增强组件（`components/tutorial/*`）
 
 | 组件/Handler | 用途 |
 |------|------|
@@ -88,7 +98,7 @@ lib/services/compute-generation-quality.ts # 质量指标计算
 ### 数据源
 
 - `content/sample-tutorial.js` — 示例教程 DSL 数据（registry 回退）
-- `lib/tutorial-registry.js` — 静态 slug 注册表
+- `lib/tutorial/registry.js` — 静态 slug 注册表
 
 ### 关键约束
 
@@ -101,6 +111,40 @@ lib/services/compute-generation-quality.ts # 质量指标计算
 - 多阶段生成通过 SSE 流向客户端推送进度，前端 `GenerationProgress` 组件解析 v2 协议
 - 生成质量评估（`GenerationQuality`）不阻塞发布，仅作数据监控
 - DB schema 中 `generationOutline`、`generationQuality` 为可选 jsonb，向后兼容 v3.0 草稿
+- `app/*` 入口只允许直接依赖 `components/*` 和 `lib/services/*`；不要在页面或 route handler 中直接调用 `lib/repositories/*`、`lib/db/*`、`lib/tutorial/*`
+- client 侧 `fetch` 统一进入 feature client / hook / controller，不要散落在视图组件中
+
+### 后续新建代码建议
+
+#### 新页面 / 新 API
+
+- 新 page、layout、route handler 默认只做编排和协议转换；如果需要查库、组装 payload、调用 AI、拼接 tutorial pipeline，先新增 `lib/services/*`，再由 `app/*` 调用。
+- `app/*` 返回给 client component 的数据，优先先过 `lib/utils/client-data.ts` 这类 DTO 序列化层，不要在页面里继续写 `JSON.parse(JSON.stringify(...))`。
+- 新增动态数据页面时，先判断是否需要 `await connection()` 或其他动态渲染边界，避免误进 prerender。
+
+#### 新客户端交互
+
+- 任何新的客户端请求，默认先建 feature client：例如 `components/drafts/*-client.ts`、`components/tutorial/*-client.ts`。URL、`fetch`、响应解析、错误消息归一化都放这里。
+- 组件状态机、重试、竞态保护、轮询、SSE 解析放在 `use-*.ts` / `use-*-controller.ts`；视图组件只接收状态和回调，不直接 `fetch()`。
+- 如果一个客户端文件同时包含“协议解析 + 大量 JSX + 多个 mutation”，默认继续拆成 `client + hook/controller + view/subviews`，不要再堆回单个 500+ 行容器。
+
+#### 新组件 / 新目录
+
+- 草稿相关 UI 优先放 `components/drafts/`，教程阅读和渲染相关优先放 `components/tutorial/`，只有跨 feature 复用的纯展示组件才放 `components/ui/` 或根级共享组件。
+- 不要再新增新的根级 feature 大文件，优先新增 feature 子目录下的小模块；根级 `components/*.tsx` 更适合作为兼容导出或少量共享入口。
+- 新 tutorial 渲染链路相关逻辑统一放 `lib/tutorial/*`，不要再新增新的 `lib/tutorial-*.js` 根级文件。兼容 shim 只在迁移阶段需要，新增功能不要依赖它们。
+
+#### 新类型 / 新 schema / 新 helper
+
+- API 请求校验、AI 输出约束放 `lib/schemas/*`；client-facing DTO、轻量响应类型放 `lib/types/*`。
+- 纯 tutorial 领域 helper 放 `lib/tutorial/*`；纯通用 helper 放 `lib/utils/*`；如果 helper 只服务某个 feature，优先就近放在 feature 目录，而不是继续堆到 `lib/utils/*` 根下。
+- 新 client 响应如果会被多个组件消费，先补类型定义，再写调用方，避免继续依赖隐式 `response.json()` 结构。
+
+#### 新测试 / 新文档
+
+- 触及分层边界、请求竞态、patch 链、纯函数算法时，要同步补 `tests/*.test.js`；优先补结构约束测试和纯函数测试，不要求一开始就引入完整测试框架。
+- 新增顶层目录、修改默认分层模式、引入新的 feature folder 时，要同步更新 `AGENTS.md` 和 `docs/codebase-structure.md`。
+- 实施中如果出现新的结构性问题、竞态问题、框架约束坑，继续记录到 `docs/v3-implementation-issues.md`。
 
 ## Docs Index
 
@@ -112,6 +156,7 @@ lib/services/compute-generation-quality.ts # 质量指标计算
 | `docs/v3-implementation-issues.md` | v3.0 实施问题记录 — 技术决策和解决方案 |
 | `docs/vibe-docs-v3.1-prd.md` | v3.1 PRD — 多阶段生成、阅读交互增强 |
 | `docs/vibe-docs-v3.2-prd.md` | v3.2 PRD — 草稿 CRUD 闭环、步骤管理、多文件输入、Patch 编辑 |
+| `docs/codebase-structure.md` | 当前代码分层规则与目录落位约束 |
 | `docs/mini-redux.js` | Redux 核心源码实现（简化版），测试用文件 |
 | `docs/archive/` | 已归档的过时文档（v3.0 实施计划、旧渲染流程） |
 
