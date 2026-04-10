@@ -17,6 +17,7 @@
 9. [错误处理与校验](#9-错误处理与校验)
 10. [方案对比与选型依据](#10-方案对比与选型依据)
 11. [完整示例](#11-完整示例)
+12. [多文件支持](#12-多文件支持)
 
 ---
 
@@ -84,8 +85,13 @@ interface TutorialData {
   /** 滚动前的引言区 */
   intro: TutorialIntro
 
-  /** 第一步的完整代码（后续步骤在此基础上增量 patch） */
-  baseCode: string
+  /**
+   * 第一步的完整代码。支持两种格式：
+   * - 单文件：string — 传统格式，整个教程只涉及一个文件
+   * - 多文件：Record<string, string> — 文件名 → 代码内容
+   *   例如：{ "store.js": "...", "helpers.js": "..." }
+   */
+  baseCode: string | Record<string, string>
 
   /** 教程步骤序列 */
   steps: TutorialStep[]
@@ -99,16 +105,24 @@ interface TutorialMeta {
   /** 教程标题 */
   title: string
 
-  /** 语法高亮语言，如 "js", "python", "rust" */
-  lang: string
+  /**
+   * 语法高亮语言，如 "js", "python", "rust"。
+   * 单文件模式必填；多文件模式下可选（系统从 fileName 推导）。
+   */
+  lang?: string
 
-  /** 代码区右上角显示的文件名，如 "store.js" */
-  fileName: string
+  /**
+   * 主文件名，用于代码区右上角显示和单文件高亮。
+   * 单文件模式必填；多文件模式下可选（默认取 baseCode 第一个键）。
+   */
+  fileName?: string
 
-  /** 教程简介（可选，用于 SEO 或摘要） */
+  /** 教程简介 */
   description?: string
 }
 ```
+
+> **多文件约定**：当 `baseCode` 为 `Record` 时，`lang` 和 `fileName` 可省略。系统通过 `normalizeBaseCode()` 从文件名推导语言，并取第一个键作为主文件。AI 生成后由 `normalizeTutorialMeta()` 自动补全。
 
 ### 3.3 TutorialIntro
 
@@ -165,6 +179,13 @@ interface ContentPatch {
    * 为空字符串时等效于删除。
    */
   replace: string
+
+  /**
+   * 多文件模式下，指定此 patch 操作的目标文件名。
+   * 省略时默认操作主文件（primaryFile）。
+   * 单文件模式下忽略此字段。
+   */
+  file?: string
 }
 ```
 
@@ -178,6 +199,12 @@ interface ContentRange {
    * 自动计算起止行号。
    */
   find: string
+
+  /**
+   * 多文件模式下，指定此 focus 所属的文件名。
+   * 省略时默认指向主文件。
+   */
+  file?: string
 }
 ```
 
@@ -193,6 +220,12 @@ interface ContentMark {
 
   /** 标记颜色，CSS 合法颜色值 */
   color: string
+
+  /**
+   * 多文件模式下，指定此 mark 所属的文件名。
+   * 省略时默认指向主文件。
+   */
+  file?: string
 }
 ```
 
@@ -871,3 +904,211 @@ Step 3 (hit-miss):
 | 节省 | — | **58%** |
 
 代码越长、步骤越多，节省比例越高。
+
+---
+
+## 12. 多文件支持
+
+> v3.2 引入。允许教程跨多个源码文件（如 `store.js` + `helpers.js`），单文件格式完全向后兼容。
+
+### 12.1 baseCode 双模式
+
+| 模式 | baseCode 类型 | 示例 | 使用场景 |
+|------|--------------|------|---------|
+| **单文件** | `string` | `"const x = 1;"` | 教程只涉及一个文件（默认） |
+| **多文件** | `Record<string, string>` | `{ "store.js": "...", "helpers.js": "..." }` | 教程跨多个文件 |
+
+系统内部通过 `normalizeBaseCode()` 统一处理：单文件 string 自动包装为 `{ [fileName]: string }` Record，下游代码只需处理 Record 一种格式。
+
+### 12.2 主文件 (primaryFile)
+
+多文件模式下，系统从 `meta.fileName` 或 `baseCode` 的第一个键确定主文件。主文件的作用：
+
+- 作为 patch / focus / marks 中未指定 `file` 时的默认目标
+- 代码区首次显示时默认展示主文件
+
+### 12.3 多文件 Patch 路由
+
+patch 的 `file` 字段决定操作目标：
+
+```json
+{
+  "patches": [
+    { "find": "const x = 1", "replace": "const x = 2", "file": "store.js" },
+    { "find": "export const y = 2", "replace": "export const y = 20", "file": "helpers.js" }
+  ]
+}
+```
+
+规则：
+- `file` 省略 → 操作主文件
+- `file` 指定 → 精确匹配文件名（case-insensitive fallback）
+- 每个文件维护独立的 patch 链，互不干扰
+
+### 12.4 多文件 Focus / Marks
+
+与 patch 相同，`file` 字段指定所属文件。省略时默认指向主文件。
+
+```json
+{
+  "focus": { "find": "createStore(reducer)", "file": "store.js" },
+  "marks": [
+    { "find": "export function combineReducers", "color": "#4CAF50", "file": "helpers.js" }
+  ]
+}
+```
+
+### 12.5 多文件组装算法
+
+```
+输入: baseCode (Record), steps[]
+输出: steps[]（每步包含 highlightedFiles, activeFile）
+
+1. currentFiles = normalizeBaseCode(baseCode) → Record<string, string>
+2. 对每个 step:
+   a. prevFiles = currentFiles
+   b. 如果 step.patches 存在:
+      - 按 file 字段路由到目标文件
+      - 按顺序应用每个 patch
+      - 更新 currentFiles[targetFile]
+   c. 确定 activeFile:
+      - 有 patches → 取第一个 patch 的 file
+      - 有 focus.file → 取 focus.file
+      - 否则 → primaryFile
+   d. 对每个文件:
+      - 如未变化且非 activeFile 且无 focus/marks → 复用上步高亮（性能优化）
+      - 否则 → 计算行变化、注入注解、CodeHike highlight()
+   e. step.highlighted = highlightedFiles[primaryFile]  // 向后兼容
+      step.highlightedFiles = { ... }                    // 全文件高亮
+      step.activeFile = activeFile
+3. 返回组装后的 steps
+```
+
+### 12.6 多文件渲染
+
+前端渲染层（`CodeFrame` / `MobileCodeFrame`）接收 `highlightedFiles` 和 `activeFile`：
+
+- **文件 Tab 栏**：当 `highlightedFiles` 包含 >1 个文件时显示，可点击切换
+- **默认显示**：取 `activeFile` 对应的高亮结果
+- **向后兼容**：单文件教程只传 `code`（string），无 Tab 栏
+
+```
+┌─────────────────────────────┐
+│  STORE.JS │ HELPERS.JS      │  ← FileTabs（多文件时显示）
+├─────────────────────────────┤
+│  export function            │
+│  createStore(reducer) {     │  ← activeFile 的高亮代码
+│    ...                      │
+│  }                          │
+└─────────────────────────────┘
+```
+
+### 12.7 多文件 AI 生成 Prompt 差异
+
+当 `sourceItems` 包含多个文件时，prompt 自动调整：
+
+| 维度 | 单文件 | 多文件 |
+|------|--------|--------|
+| baseCode 格式 | `"最小可运行代码"` | `{ "file1.js": "代码", "utils.js": "代码" }` |
+| meta 格式 | 含 `lang` + `fileName` | 只需 `title` + `description` |
+| patch 格式 | `{ find, replace }` | `{ find, replace, file }` |
+| focus/marks | `{ find }` | `{ find, file }` |
+| 额外规则 | — | "patches/focus/marks 必须指定 file 字段" |
+
+### 12.8 完整多文件示例
+
+以下是一个 4 步 Redux 教程，涉及 `store.js` 和 `helpers.js` 两个文件：
+
+```json
+{
+  "meta": {
+    "title": "Redux 核心原理：createStore + combineReducers",
+    "description": "从零实现 Redux 的两个核心 API"
+  },
+  "intro": {
+    "paragraphs": [
+      "本教程将逐步构建 Redux 的 createStore 和 combineReducers。"
+    ]
+  },
+  "baseCode": {
+    "store.js": "export function createStore(reducer) {\n  return {}\n}",
+    "helpers.js": "// 初始为空，将在后续步骤引入"
+  },
+  "steps": [
+    {
+      "id": "add-dispatch",
+      "eyebrow": "Store",
+      "title": "添加 dispatch 方法",
+      "paragraphs": ["..."],
+      "patches": [
+        {
+          "find": "export function createStore(reducer) {\n  return {}\n}",
+          "replace": "export function createStore(reducer) {\n  let state\n  function dispatch(action) {\n    state = reducer(state, action)\n  }\n  return { dispatch }\n}",
+          "file": "store.js"
+        }
+      ],
+      "focus": { "find": "function dispatch(action)", "file": "store.js" }
+    },
+    {
+      "id": "add-getState",
+      "eyebrow": "Store",
+      "title": "添加 getState 方法",
+      "paragraphs": ["..."],
+      "patches": [
+        {
+          "find": "  let state\n  function dispatch",
+          "replace": "  let state\n  function getState() { return state }\n  function dispatch",
+          "file": "store.js"
+        },
+        {
+          "find": "return { dispatch }",
+          "replace": "return { getState, dispatch }",
+          "file": "store.js"
+        }
+      ],
+      "focus": { "find": "function getState()", "file": "store.js" }
+    },
+    {
+      "id": "combineReducers-skeleton",
+      "eyebrow": "Reducer",
+      "title": "创建 combineReducers 框架",
+      "paragraphs": ["..."],
+      "patches": [
+        {
+          "find": "// 初始为空，将在后续步骤引入",
+          "replace": "export function combineReducers(reducers) {\n  return function combination(state = {}, action) {\n    return state\n  }\n}",
+          "file": "helpers.js"
+        }
+      ],
+      "focus": { "find": "export function combineReducers", "file": "helpers.js" }
+    },
+    {
+      "id": "combineReducers-loop",
+      "eyebrow": "Reducer",
+      "title": "遍历并应用每个 reducer",
+      "paragraphs": ["..."],
+      "patches": [
+        {
+          "find": "    return state",
+          "replace": "    const nextState = {}\n    for (const key of Object.keys(reducers)) {\n      nextState[key] = reducers[key](state[key], action)\n    }\n    return nextState",
+          "file": "helpers.js"
+        }
+      ],
+      "focus": { "find": "for (const key of Object.keys(reducers))", "file": "helpers.js" }
+    }
+  ]
+}
+```
+
+### 12.9 归一化层 (normalize.js)
+
+所有 `baseCode` 格式差异在 `normalizeBaseCode()` 中统一处理：
+
+```
+输入 baseCode                    输出
+─────────────                    ────
+string "const x = 1"      →    { files: { "main.js": "const x = 1" }, primaryFile: "main.js", lang: "javascript" }
+{ "a.ts": "...", "b.ts": "..." } → { files: { ... }, primaryFile: "a.ts", lang: "typescript" }
+```
+
+语言从文件扩展名推导（`.ts` → typescript, `.py` → python 等）。`normalizeTutorialMeta()` 在 AI 输出解析后补充缺失的 `meta.lang` / `meta.fileName`。
