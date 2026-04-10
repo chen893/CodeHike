@@ -314,3 +314,105 @@
 **影响文件**：
 - `components/remote-tutorial-page.jsx`
 - `components/remote-preview-page.tsx`
+
+---
+
+## 问题 19：多文件 baseCode 导致 `applyContentPatches` 类型不安全
+
+**现象**：
+- `multi-phase-generator.ts` 中 `applyContentPatches(previousFiles, step.patches, primaryFile)` 返回类型被 TS 推断为 `string | Record<string, string>`，调用方需要 `as Record<string, string>` 强制断言。
+
+**根因**：
+- `applyContentPatches` 用联合参数 `codeOrFiles: string | Record<string, string>` 同时服务单文件和多文件模式，返回类型也是联合类型。
+- TS 无法从调用签名推断"传入 Record 必返回 Record"。
+
+**解决**：
+- 为 `applyContentPatches` 添加两组 JSDoc `@overload` 注释（单文件→string，多文件→Record），让 TS 在不同参数组合下推断出正确的返回类型。
+- 移除调用方的 `as Record<string, string>` 断言。
+
+**影响文件**：
+- `lib/tutorial/draft-code.js`
+- `lib/ai/multi-phase-generator.ts`
+
+---
+
+## 问题 20：`step-editor.tsx` 内重复实现了 `summarizeCodeDiff`，与 `draft-code.js` 逻辑冗余
+
+**现象**：
+- `step-editor.tsx` 内部定义了 `summarizeCodeDiffLocal`，逻辑与 `draft-code.js` 已有的 `summarizeCodeDiff` 几乎完全一致。
+
+**根因**：
+- 多文件改造时，编辑器需要 per-file diff 统计，开发者图方便就地重写了一个简化版，没有复用已有导出。
+
+**解决**：
+- 删除 `summarizeCodeDiffLocal`，改为从 `draft-code.js` 导入 `summarizeCodeDiff`。多文件场景下传入 per-file string 即可。
+
+**影响文件**：
+- `components/step-editor.tsx`
+
+---
+
+## 问题 21：生成完成后的轮询无上限，数据库卡住时前端永远轮询
+
+**现象**：
+- SSE 流结束后前端用指数退避轮询 DB 状态，但退避到 8s 上限后恒定轮询，无最大次数限制。如果 DB 持久化卡住，轮询会无限持续。
+
+**根因**：
+- 轮询逻辑只设了 `MAX_POLL_MS = 8000` 上限，没有 `MAX_POLL_ATTEMPTS`。
+
+**解决**：
+- 添加 `MAX_POLL_ATTEMPTS = 30`（约 3 分钟），超时后展示"保存确认超时"错误提示。
+
+**影响文件**：
+- `components/tutorial/use-generation-progress.ts`
+
+---
+
+## 问题 22：`normalizeBaseCode` 已经能推导 lang，但 AI 输出后 `meta.lang`/`meta.fileName` 仍可能缺失
+
+**现象**：
+- 多文件模式下 AI 生成的 outline 可能省略 `meta.lang` 和 `meta.fileName`，导致下游代码需要散落的 `meta.lang || ''` fallback。
+
+**根因**：
+- Schema 将 `lang`/`fileName` 设为 optional 是正确的（AI 不一定输出），但解析后没有集中补全。
+
+**解决**：
+- 在 `normalize.js` 新增 `normalizeTutorialMeta(meta, baseCode)` 函数，从 baseCode 推导 lang/fileName 填充缺失字段。
+- 在 AI outline 解析后和 assembler 入口统一调用此函数，消除散落 fallback。
+
+**影响文件**：
+- `lib/tutorial/normalize.js`
+- `lib/ai/multi-phase-generator.ts`
+- `lib/tutorial/assembler.js`
+
+---
+
+## 问题 23：AI 生成的 patch file 字段大小写可能与实际文件名不一致
+
+**现象**：
+- AI 输出的 patch 中 `file: "Store.js"`，但 baseCode record 的键是 `"store.js"`，导致 patch 直接 throw。
+
+**根因**：
+- `applyContentPatches` 多文件模式用精确字符串匹配 `targetFile in result`，对大小写不一致无容错。
+
+**解决**：
+- 在精确匹配失败后，增加 case-insensitive fallback 查找。匹配到则使用实际键名；仍匹配不到则 throw 并列出所有可用文件名，方便调试。
+
+**影响文件**：
+- `lib/tutorial/draft-code.js`
+
+---
+
+## 问题 24：assembler 每步全量高亮所有文件，多文件多步时性能浪费
+
+**现象**：
+- `buildTutorialSteps` 中每一步都对所有文件执行 CodeHike `highlight()`，即使某文件在本步骤没有任何变化。
+
+**根因**：
+- 多文件改造时为简单起见对每个文件都做高亮，没有跳过不变文件的优化逻辑。
+
+**解决**：
+- 在高亮循环中检测：如果文件内容未变且不是 activeFile 且没有 focus/marks 指向它，则复用上一步的高亮结果，跳过 `highlight()` 调用。
+
+**影响文件**：
+- `lib/tutorial/assembler.js`

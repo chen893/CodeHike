@@ -3,15 +3,18 @@ import { z } from 'zod';
 export const contentPatchSchema = z.object({
   find: z.string().min(1),
   replace: z.string(),
+  file: z.string().min(1).optional(),
 });
 
 export const contentRangeSchema = z.object({
   find: z.string().min(1),
+  file: z.string().min(1).optional(),
 });
 
 export const contentMarkSchema = z.object({
   find: z.string().min(1),
   color: z.string().min(1),
+  file: z.string().min(1).optional(),
 });
 
 export const tutorialStepSchema = z.object({
@@ -31,14 +34,14 @@ export const tutorialStepSchema = z.object({
 export const tutorialDraftSchema = z.object({
   meta: z.object({
     title: z.string().min(1),
-    lang: z.string().min(1),
-    fileName: z.string().min(1),
+    lang: z.string().min(1).optional(),
+    fileName: z.string().min(1).optional(),
     description: z.string().min(1),
   }),
   intro: z.object({
     paragraphs: z.array(z.string()),
   }),
-  baseCode: z.string().min(1),
+  baseCode: z.union([z.string().min(1), z.record(z.string(), z.string().min(1))]),
   steps: z.array(tutorialStepSchema).min(1),
 });
 

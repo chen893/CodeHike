@@ -5,13 +5,23 @@ export function buildOutlinePrompt(
   sourceItems: SourceItem[],
   teachingBrief: TeachingBrief
 ): { systemPrompt: string; userPrompt: string } {
+  const isMultiFile = sourceItems.length > 1;
+
+  const baseCodeExample = isMultiFile
+    ? '{ "file1.js": "最小可运行代码", "utils.js": "辅助模块代码" }'
+    : '"最小可运行代码"';
+
+  const metaExample = isMultiFile
+    ? '{ "title": "教程标题", "description": "简介" }'
+    : '{ "title": "教程标题", "lang": "代码语言", "fileName": "文件名", "description": "简介" }';
+
   const systemPrompt = `你是一个教学设计师。你的任务是设计一条教学路径，而不是写教程文案。
 
 你必须输出严格的 JSON 格式，遵循以下结构：
 {
-  "meta": { "title": "教程标题", "lang": "代码语言", "fileName": "文件名", "description": "简介" },
+  "meta": ${metaExample},
   "intro": { "paragraphs": ["简介段落1", "简介段落2"] },
-  "baseCode": "最小可运行代码",
+  "baseCode": ${baseCodeExample},
   "steps": [
     {
       "id": "step-1",
@@ -41,6 +51,8 @@ baseCode 必须是源码的**最小可运行子集**：
 - 不是骨架或占位符
 - 必须能实际运行并产生基本效果
 - 通常只包含核心数据结构和最基本的一个操作
+${isMultiFile ? `- 多文件输入时，baseCode 必须是对象格式，每个文件名对应该文件的最小子集
+- 选择一个主文件作为教学主线，其他文件只保留被主文件依赖的最小代码` : ''}
 
 ## 步骤粒度（严格遵守）
 

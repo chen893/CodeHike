@@ -47,8 +47,9 @@ export function GenerationProgressView({
           stepTitles={controller.stepTitles}
           progressValue={controller.progressValue}
           errorMessage={controller.errorMessage}
-          canRetryOutline={controller.canRetryOutline}
-          onRetryOutline={controller.onRetryOutline}
+          errorPhase={controller.errorPhase}
+          canRetry={controller.canRetry}
+          onRetry={controller.onRetry}
         />
       ) : (
         <V1ProgressUI
@@ -76,8 +77,9 @@ function V2ProgressUI({
   stepTitles,
   progressValue,
   errorMessage,
-  canRetryOutline,
-  onRetryOutline,
+  errorPhase,
+  canRetry,
+  onRetry,
 }: {
   context: GenerationContext;
   draftId: string;
@@ -89,8 +91,9 @@ function V2ProgressUI({
   stepTitles: GenerationProgressViewModel['stepTitles'];
   progressValue: number;
   errorMessage: string | null;
-  canRetryOutline: boolean;
-  onRetryOutline: () => void;
+  errorPhase: string | null;
+  canRetry: boolean;
+  onRetry: () => void;
 }) {
   const headline = getV2Headline(status, currentStepIndex, totalSteps);
   const displaySteps = getDisplaySteps(
@@ -293,9 +296,9 @@ function V2ProgressUI({
                     错误详情
                   </span>
                   <p className="mt-2 text-sm leading-6 text-rose-900">{errorMessage}</p>
-                  {canRetryOutline && (
-                    <button type="button" className={`${secondaryButton} mt-4`} onClick={onRetryOutline}>
-                      重新生成目录
+                  {canRetry && (
+                    <button type="button" className={`${secondaryButton} mt-4`} onClick={onRetry}>
+                      {errorPhase === 'step-fill' ? '从当前进度重新生成' : '重新生成目录'}
                     </button>
                   )}
                 </div>

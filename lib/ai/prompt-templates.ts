@@ -112,7 +112,7 @@ export function buildRegenerateStepPrompt(
   teachingBrief: TeachingBrief,
   currentDraft: {
     meta: { title: string };
-    baseCode: string;
+    baseCode: string | Record<string, string>;
     steps: any[];
   },
   stepIndex: number,

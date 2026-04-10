@@ -29,7 +29,7 @@ export async function POST(req: Request) {
     }
 
     const draft = await createDraft(body as Parameters<typeof createDraft>[0]);
-    return NextResponse.json(draft, { status: 201 });
+    return NextResponse.json({ id: draft.id }, { status: 201 });
   } catch (err) {
     console.error('创建草稿失败:', err);
     const message = getRouteErrorMessage(err, '创建草稿失败');

@@ -4,9 +4,10 @@ import { useEffect, useState } from 'react';
 import { CodeMirrorEditor } from './code-mirror-editor';
 import { MarkdownEditor } from './markdown-editor';
 import {
-  getCodeBeforeStep,
   getStepCodePreview,
+  summarizeCodeDiff,
 } from '@/lib/tutorial/draft-code';
+import { normalizeBaseCode } from '@/lib/tutorial/normalize';
 import { createUuid } from '@/lib/utils/uuid';
 import type {
   ContentMark,
@@ -26,22 +27,32 @@ interface StepEditorProps {
 
 interface PatchDraft extends ContentPatch {
   localId: string;
+  file?: string;
 }
 
 interface MarkDraft extends ContentMark {
   localId: string;
+  file?: string;
 }
 
-function normalizePatches(items: PatchDraft[]): ContentPatch[] {
+function normalizePatches(items: PatchDraft[], isMultiFile: boolean): ContentPatch[] {
   return items
     .filter((item) => item.find.trim() || item.replace.trim())
-    .map(({ find, replace }) => ({ find, replace }));
+    .map(({ find, replace, file }) => {
+      const patch: ContentPatch = { find, replace };
+      if (isMultiFile && file) patch.file = file;
+      return patch;
+    });
 }
 
-function normalizeMarks(items: MarkDraft[]): ContentMark[] {
+function normalizeMarks(items: MarkDraft[], isMultiFile: boolean): ContentMark[] {
   return items
     .filter((item) => item.find.trim())
-    .map(({ find, color }) => ({ find, color: color || '#2563eb' }));
+    .map(({ find, color, file }) => {
+      const mark: ContentMark = { find, color: color || '#2563eb' };
+      if (isMultiFile && file) mark.file = file;
+      return mark;
+    });
 }
 
 function toPatchDrafts(items?: ContentPatch[]): PatchDraft[] {
@@ -49,6 +60,7 @@ function toPatchDrafts(items?: ContentPatch[]): PatchDraft[] {
     localId: createUuid(),
     find: item.find,
     replace: item.replace,
+    file: item.file,
   }));
 }
 
@@ -57,17 +69,19 @@ function toMarkDrafts(items?: ContentMark[]): MarkDraft[] {
     localId: createUuid(),
     find: item.find,
     color: item.color,
+    file: item.file,
   }));
 }
 
 function getStructureSignature(step: {
   patches?: ContentPatch[];
-  focus?: { find: string } | null;
+  focus?: { find: string; file?: string } | null;
   marks?: ContentMark[];
 }) {
   return JSON.stringify({
     patches: step.patches ?? [],
     focus: step.focus?.find ?? null,
+    focusFile: step.focus?.file ?? null,
     marks: step.marks ?? [],
   });
 }
@@ -87,7 +101,14 @@ export function StepEditor({
   const [regenMode, setRegenMode] = useState<'prose' | 'step'>('prose');
   const [patches, setPatches] = useState<PatchDraft[]>(() => toPatchDrafts(step.patches));
   const [focusFind, setFocusFind] = useState(step.focus?.find ?? '');
+  const [focusFile, setFocusFile] = useState(step.focus?.file ?? '');
   const [marks, setMarks] = useState<MarkDraft[]>(() => toMarkDrafts(step.marks));
+
+  // Detect multi-file
+  const baseCodeMeta = normalizeBaseCode(tutorialDraft.baseCode, tutorialDraft.meta);
+  const isMultiFile = Object.keys(baseCodeMeta.files).length > 1;
+  const fileNames = Object.keys(baseCodeMeta.files);
+  const [previewFile, setPreviewFile] = useState(baseCodeMeta.primaryFile);
 
   useEffect(() => {
     setEyebrow(step.eyebrow ?? '');
@@ -96,6 +117,7 @@ export function StepEditor({
     setParagraphs(step.paragraphs.join('\n\n'));
     setPatches(toPatchDrafts(step.patches));
     setFocusFind(step.focus?.find ?? '');
+    setFocusFile(step.focus?.file ?? '');
     setMarks(toMarkDrafts(step.marks));
   }, [step]);
 
@@ -103,9 +125,11 @@ export function StepEditor({
     .split('\n\n')
     .map((item) => item.trim())
     .filter(Boolean);
-  const normalizedPatches = normalizePatches(patches);
-  const normalizedMarks = normalizeMarks(marks);
-  const focus = focusFind.trim() ? { find: focusFind } : null;
+  const normalizedPatches = normalizePatches(patches, isMultiFile);
+  const normalizedMarks = normalizeMarks(marks, isMultiFile);
+  const focus = focusFind.trim()
+    ? { find: focusFind, ...(isMultiFile && focusFile ? { file: focusFile } : {}) }
+    : null;
 
   const previewStep: TutorialStep = {
     ...step,
@@ -132,19 +156,17 @@ export function StepEditor({
 
   try {
     const preview = getStepCodePreview(draftForPreview, stepIndex, previewStep);
-    previousCode = preview.previousCode;
-    currentCode = preview.currentCode;
-    diffSummary = preview.diffSummary;
+    if (isMultiFile) {
+      previousCode = preview.previousFiles[previewFile] || '';
+      currentCode = preview.currentFiles[previewFile] || '';
+      diffSummary = summarizeCodeDiff(previousCode, currentCode);
+    } else {
+      previousCode = preview.previousCode;
+      currentCode = preview.currentCode;
+      diffSummary = preview.diffSummary;
+    }
   } catch (error) {
     previewError = error instanceof Error ? error.message : String(error);
-
-    try {
-      previousCode = getCodeBeforeStep(draftForPreview, stepIndex);
-      currentCode = previousCode;
-    } catch {
-      previousCode = '';
-      currentCode = '';
-    }
   }
 
   const originalStructureSignature = getStructureSignature(step);
@@ -235,6 +257,17 @@ export function StepEditor({
               <p className="text-[10px] text-slate-500">上一步 vs 当前步骤。</p>
             </div>
             <div className="flex items-center gap-2 text-[10px] font-bold">
+              {isMultiFile && (
+                <select
+                  className="h-7 rounded border border-slate-200 bg-white px-2 text-[10px] font-medium text-slate-600"
+                  value={previewFile}
+                  onChange={(e) => setPreviewFile(e.target.value)}
+                >
+                  {fileNames.map((f) => (
+                    <option key={f} value={f}>{f}</option>
+                  ))}
+                </select>
+              )}
               <span className="rounded bg-emerald-100 px-1.5 py-0.5 text-emerald-700 border border-emerald-200">
                 +{diffSummary.added}
               </span>
@@ -262,7 +295,7 @@ export function StepEditor({
               <div className="rounded-md border border-slate-200 bg-white overflow-hidden shadow-sm">
                 <CodeMirrorEditor
                   value={previousCode}
-                  language={tutorialDraft.meta.lang}
+                  language={isMultiFile ? previewFile.split('.').pop() || 'javascript' : tutorialDraft.meta.lang}
                   readOnly
                   height="220px"
                 />
@@ -275,7 +308,7 @@ export function StepEditor({
               <div className="rounded-md border border-slate-200 bg-white overflow-hidden shadow-sm">
                 <CodeMirrorEditor
                   value={currentCode}
-                  language={tutorialDraft.meta.lang}
+                  language={isMultiFile ? previewFile.split('.').pop() || 'javascript' : tutorialDraft.meta.lang}
                   readOnly
                   height="220px"
                 />
@@ -315,17 +348,39 @@ export function StepEditor({
               <div key={patch.localId} className="space-y-3 rounded-lg border border-slate-200 bg-white p-3 shadow-sm">
                 <div className="flex items-center justify-between gap-3">
                   <strong className="text-[10px] font-bold uppercase tracking-wider text-slate-400">Patch {index + 1}</strong>
-                  <button
-                    type="button"
-                    className="text-[10px] font-bold text-red-500 hover:text-red-700 transition-colors"
-                    onClick={() =>
-                      setPatches((current) =>
-                        current.filter((item) => item.localId !== patch.localId)
-                      )
-                    }
-                  >
-                    删除
-                  </button>
+                  <div className="flex items-center gap-2">
+                    {isMultiFile && (
+                      <select
+                        className="h-6 rounded border border-slate-200 bg-white px-1.5 text-[10px] text-slate-600"
+                        value={patch.file || ''}
+                        onChange={(e) =>
+                          setPatches((current) =>
+                            current.map((item) =>
+                              item.localId === patch.localId
+                                ? { ...item, file: e.target.value || undefined }
+                                : item
+                            )
+                          )
+                        }
+                      >
+                        <option value="">自动</option>
+                        {fileNames.map((f) => (
+                          <option key={f} value={f}>{f}</option>
+                        ))}
+                      </select>
+                    )}
+                    <button
+                      type="button"
+                      className="text-[10px] font-bold text-red-500 hover:text-red-700 transition-colors"
+                      onClick={() =>
+                        setPatches((current) =>
+                          current.filter((item) => item.localId !== patch.localId)
+                        )
+                      }
+                    >
+                      删除
+                    </button>
+                  </div>
                 </div>
 
                 <div className="grid gap-3">
@@ -372,13 +427,27 @@ export function StepEditor({
           <div className="space-y-3 rounded-lg border border-slate-200 bg-white p-3 shadow-sm">
             <div className="flex items-center justify-between gap-3">
               <h5 className="text-[10px] font-bold uppercase tracking-wider text-slate-900">Focus</h5>
-              <button
-                type="button"
-                className="text-[10px] font-bold text-slate-400 hover:text-slate-600 transition-colors"
-                onClick={() => setFocusFind('')}
-              >
-                清空
-              </button>
+              <div className="flex items-center gap-2">
+                {isMultiFile && (
+                  <select
+                    className="h-6 rounded border border-slate-200 bg-white px-1.5 text-[10px] text-slate-600"
+                    value={focusFile}
+                    onChange={(e) => setFocusFile(e.target.value)}
+                  >
+                    <option value="">自动</option>
+                    {fileNames.map((f) => (
+                      <option key={f} value={f}>{f}</option>
+                    ))}
+                  </select>
+                )}
+                <button
+                  type="button"
+                  className="text-[10px] font-bold text-slate-400 hover:text-slate-600 transition-colors"
+                  onClick={() => { setFocusFind(''); setFocusFile(''); }}
+                >
+                  清空
+                </button>
+              </div>
             </div>
             <textarea
               className="flex min-h-[60px] w-full rounded-md border border-slate-200 bg-slate-50 px-2 py-1.5 text-xs font-mono transition-colors focus:bg-white focus:outline-none focus:ring-1 focus:ring-slate-400"
@@ -417,17 +486,39 @@ export function StepEditor({
                 <div key={mark.localId} className="space-y-3 rounded-md border border-slate-100 bg-slate-50/50 p-3">
                   <div className="flex items-center justify-between gap-3">
                     <strong className="text-[10px] font-bold uppercase tracking-wider text-slate-400">Mark {index + 1}</strong>
-                    <button
-                      type="button"
-                      className="text-[10px] font-bold text-red-500 hover:text-red-700 transition-colors"
-                      onClick={() =>
-                        setMarks((current) =>
-                          current.filter((item) => item.localId !== mark.localId)
-                        )
-                      }
-                    >
-                      删除
-                    </button>
+                    <div className="flex items-center gap-2">
+                      {isMultiFile && (
+                        <select
+                          className="h-6 rounded border border-slate-200 bg-white px-1.5 text-[10px] text-slate-600"
+                          value={mark.file || ''}
+                          onChange={(e) =>
+                            setMarks((current) =>
+                              current.map((item) =>
+                                item.localId === mark.localId
+                                  ? { ...item, file: e.target.value || undefined }
+                                  : item
+                              )
+                            )
+                          }
+                        >
+                          <option value="">自动</option>
+                          {fileNames.map((f) => (
+                            <option key={f} value={f}>{f}</option>
+                          ))}
+                        </select>
+                      )}
+                      <button
+                        type="button"
+                        className="text-[10px] font-bold text-red-500 hover:text-red-700 transition-colors"
+                        onClick={() =>
+                          setMarks((current) =>
+                            current.filter((item) => item.localId !== mark.localId)
+                          )
+                        }
+                      >
+                        删除
+                      </button>
+                    </div>
                   </div>
 
                   <div className="grid gap-3">

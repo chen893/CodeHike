@@ -1,7 +1,8 @@
 import { createTutorialGenerationStream } from '../ai/tutorial-generator';
-import { createMultiPhaseGenerationStream, type MultiPhaseResult } from '../ai/multi-phase-generator';
+import { createMultiPhaseGenerationStream, type MultiPhaseResult, type CancelToken } from '../ai/multi-phase-generator';
 import { validateTutorialDraft } from '../utils/validation';
 import { computeGenerationQuality } from './compute-generation-quality';
+import { db } from '../db';
 import * as draftRepo from '../repositories/draft-repository';
 import type { TutorialDraft } from '../schemas/tutorial-draft';
 
@@ -92,10 +93,12 @@ async function initiateV2Generation(
   draft: any,
   model: string
 ): Promise<Response> {
+  const cancelToken: CancelToken = { value: false };
   const { stream, result } = createMultiPhaseGenerationStream(
     draft.sourceItems,
     draft.teachingBrief,
-    model
+    model,
+    cancelToken
   );
 
   // Persist asynchronously after generation completes
@@ -106,7 +109,30 @@ async function initiateV2Generation(
     );
   });
 
-  return new Response(stream, {
+  // Wrap the stream to detect client disconnect
+  const encoder = new TextEncoder();
+  const wrappedStream = new ReadableStream<Uint8Array>({
+    async start(controller) {
+      const reader = stream.getReader();
+      try {
+        while (true) {
+          const { done, value } = await reader.read();
+          if (done) break;
+          controller.enqueue(value);
+        }
+        controller.close();
+      } catch (err: any) {
+        controller.error(err);
+      } finally {
+        reader.releaseLock();
+      }
+    },
+    cancel() {
+      cancelToken.value = true;
+    },
+  });
+
+  return new Response(wrappedStream, {
     headers: {
       'Content-Type': 'text/event-stream',
       'Cache-Control': 'no-cache',
@@ -173,25 +199,30 @@ async function persistV2Content(
     const validation = await validateTutorialDraft(tutorialDraft);
     const totalMs = Date.now() - startTime;
 
-    // Compute and persist quality metrics
+    // Compute quality metrics
     const quality = computeGenerationQuality(tutorialDraft, outline, retryCount, totalMs);
 
-    await draftRepo.updateDraftTutorial(draftId, tutorialDraft, {
-      inputHash: validation.valid ? draft.inputHash : null,
-      model,
+    const finalState = validation.valid ? 'succeeded' : 'failed';
+    const errorMsg = validation.valid ? undefined : validation.errors.join('; ');
+
+    // Persist all updates atomically in a single transaction
+    await db.transaction(async (tx) => {
+      await draftRepo.updateDraftTutorial(
+        draftId,
+        tutorialDraft,
+        { inputHash: validation.valid ? draft.inputHash : null, model },
+        tx
+      );
+      await draftRepo.updateDraftGenerationOutline(draftId, outline, tx);
+      await draftRepo.updateDraftGenerationQuality(draftId, quality, tx);
+      await draftRepo.updateDraftValidation(
+        draftId,
+        validation.valid,
+        validation.valid ? [] : validation.errors,
+        tx
+      );
+      await draftRepo.updateDraftGenerationState(draftId, finalState, errorMsg, tx);
     });
-    await draftRepo.updateDraftGenerationOutline(draftId, outline);
-    await draftRepo.updateDraftGenerationQuality(draftId, quality);
-    await draftRepo.updateDraftValidation(
-      draftId,
-      validation.valid,
-      validation.valid ? [] : validation.errors
-    );
-    await draftRepo.updateDraftGenerationState(
-      draftId,
-      validation.valid ? 'succeeded' : 'failed',
-      validation.valid ? undefined : validation.errors.join('; ')
-    );
   } catch (err: any) {
     await draftRepo.updateDraftGenerationState(
       draftId,

@@ -7,10 +7,11 @@ export function buildStepFillPrompt(
   teachingBrief: TeachingBrief,
   outline: TutorialOutline,
   stepIndex: number,
-  previousCode: string,
+  previousCodeOrFiles: string | Record<string, string>,
   errorMessage?: string
 ): { systemPrompt: string; userPrompt: string } {
   const outlineStep = outline.steps[stepIndex];
+  const isMultiFile = typeof previousCodeOrFiles !== 'string';
 
   const systemPrompt = `你正在生成一篇逐步构建式教程的第 ${stepIndex + 1} 步。
 
@@ -22,11 +23,11 @@ export function buildStepFillPrompt(
   "lead": "步骤导语（可选）",
   "paragraphs": ["段落1", "段落2"],
   "patches": [
-    { "find": "精确的旧代码", "replace": "精确的新代码" }
+    { "find": "精确的旧代码", "replace": "精确的新代码"${isMultiFile ? ', "file": "目标文件名"' : ''} }
   ],
-  "focus": { "find": "要高亮的代码区域" },
+  "focus": { "find": "要高亮的代码区域"${isMultiFile ? ', "file": "目标文件名"' : ''} },
   "marks": [
-    { "find": "要标记的行", "color": "#颜色值" }
+    { "find": "要标记的行", "color": "#颜色值"${isMultiFile ? ', "file": "目标文件名"' : ''} }
   ]
 }
 
@@ -65,6 +66,12 @@ paragraphs 必须遵循"问题 → 解决 → 收束"三段结构：
     .map((item) => `### ${item.label}${item.language ? ` (${item.language})` : ''}\n\`\`\`\n${item.content}\n\`\`\``)
     .join('\n\n');
 
+  const currentCodeSection = typeof previousCodeOrFiles === 'string'
+    ? `\`\`\`${outline.meta.lang || ''}\n${previousCodeOrFiles}\n\`\`\``
+    : Object.entries(previousCodeOrFiles)
+        .map(([fileName, code]) => `### ${fileName}\n\`\`\`\n${code}\n\`\`\``)
+        .join('\n\n');
+
   const userPrompt = `## 教学目标
 ${outlineStep.teachingGoal}
 
@@ -72,9 +79,7 @@ ${outlineStep.teachingGoal}
 ${outlineStep.conceptIntroduced}
 
 ## 当前代码（上一步结束时的完整代码）
-\`\`\`${outline.meta.lang}
-${previousCode}
-\`\`\`
+${currentCodeSection}
 
 ## 步骤在教程中的位置
 - 教程标题：${outline.meta.title}
@@ -100,7 +105,7 @@ ${
 3. 最后用 1 段话解释"这段代码解决了什么问题"（收束）
 4. patch 的 find 必须从上面的"当前代码"中逐字复制
 5. focus 指向本次变化的核心区域
-6. 步骤 id 使用：${outlineStep.id}`;
+6. 步骤 id 使用：${outlineStep.id}${isMultiFile ? '\n7. patches/focus/marks 必须指定 "file" 字段来指明操作哪个文件' : ''}`;
 
   return { systemPrompt, userPrompt };
 }

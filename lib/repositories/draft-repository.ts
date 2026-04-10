@@ -1,6 +1,8 @@
 import { desc, eq, sql } from 'drizzle-orm';
 import { db } from '../db';
 import { drafts, type draftStatusEnum, type syncStateEnum, type generationStateEnum } from '../db/schema';
+
+type TransactionClient = Parameters<Parameters<typeof db.transaction>[0]>[0];
 import type { DraftRecord, DraftSummary } from '../types/api';
 import type { SourceItem } from '../schemas/source-item';
 import type { TeachingBrief } from '../schemas/teaching-brief';
@@ -183,9 +185,11 @@ export async function updateDraftMeta(
 export async function updateDraftTutorial(
   id: string,
   tutorialDraft: TutorialDraft,
-  meta: { inputHash: string | null; model: string }
+  meta: { inputHash: string | null; model: string },
+  tx?: TransactionClient
 ): Promise<DraftRecord | null> {
-  const [row] = await db
+  const executor = tx || db;
+  const [row] = await executor
     .update(drafts)
     .set({
       tutorialDraft: tutorialDraft as any,
@@ -203,8 +207,10 @@ export async function updateDraftTutorial(
 export async function updateDraftGenerationState(
   id: string,
   state: 'idle' | 'running' | 'succeeded' | 'failed',
-  errorMessage?: string
+  errorMessage?: string,
+  tx?: TransactionClient
 ): Promise<DraftRecord | null> {
+  const executor = tx || db;
   const updates: Partial<typeof drafts.$inferInsert> = {
     generationState: state as typeof drafts.generationState.enumValues[number],
     updatedAt: new Date(),
@@ -216,7 +222,7 @@ export async function updateDraftGenerationState(
     updates.generationErrorMessage = null;
   }
 
-  const [row] = await db
+  const [row] = await executor
     .update(drafts)
     .set(updates)
     .where(eq(drafts.id, id))
@@ -227,9 +233,11 @@ export async function updateDraftGenerationState(
 export async function updateDraftValidation(
   id: string,
   valid: boolean,
-  errors: string[]
+  errors: string[],
+  tx?: TransactionClient
 ): Promise<DraftRecord | null> {
-  const [row] = await db
+  const executor = tx || db;
+  const [row] = await executor
     .update(drafts)
     .set({
       validationValid: valid,
@@ -280,9 +288,11 @@ export async function updateDraftSteps(
 
 export async function updateDraftGenerationOutline(
   id: string,
-  outline: TutorialOutline
+  outline: TutorialOutline,
+  tx?: TransactionClient
 ): Promise<DraftRecord | null> {
-  const [row] = await db
+  const executor = tx || db;
+  const [row] = await executor
     .update(drafts)
     .set({
       generationOutline: outline as any,
@@ -295,9 +305,11 @@ export async function updateDraftGenerationOutline(
 
 export async function updateDraftGenerationQuality(
   id: string,
-  quality: GenerationQuality
+  quality: GenerationQuality,
+  tx?: TransactionClient
 ): Promise<DraftRecord | null> {
-  const [row] = await db
+  const executor = tx || db;
+  const [row] = await executor
     .update(drafts)
     .set({
       generationQuality: quality as any,

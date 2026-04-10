@@ -225,14 +225,20 @@ export function useGenerationProgress({
 
     if (!isComplete) return;
 
-    const interval = setInterval(async () => {
+    const BASE_POLL_MS = 1000;
+    const MAX_POLL_MS = 8000;
+    const MAX_POLL_ATTEMPTS = 30;
+    let pollAttempts = 0;
+    let pollTimeout: ReturnType<typeof setTimeout>;
+
+    async function poll() {
       try {
         const draft = await fetchDraft(draftId);
         if (draft.generationState === 'succeeded') {
-          clearInterval(interval);
           onCompleteRef.current();
-        } else if (draft.generationState === 'failed') {
-          clearInterval(interval);
+          return;
+        }
+        if (draft.generationState === 'failed') {
           const message = draft.generationErrorMessage || '保存失败';
           setErrorMessage(message);
           if (!draft.tutorialDraft && !draft.generationOutline) {
@@ -242,13 +248,25 @@ export function useGenerationProgress({
           if (protocol === 'v2') {
             setV2Status('error');
           }
+          return;
         }
       } catch {
+        // ignore fetch errors, retry
+      }
+
+      pollAttempts++;
+      if (pollAttempts >= MAX_POLL_ATTEMPTS) {
+        setErrorMessage('保存确认超时，请刷新页面查看状态');
+        setV2Status('error');
         return;
       }
-    }, 1500);
+      const delay = Math.min(BASE_POLL_MS * Math.pow(1.5, pollAttempts), MAX_POLL_MS);
+      pollTimeout = setTimeout(poll, delay);
+    }
 
-    return () => clearInterval(interval);
+    poll();
+
+    return () => clearTimeout(pollTimeout);
   }, [draftId, protocol, v1Status, v2Status]);
 
   const showV2 = protocol === 'v2' || (protocol === 'unknown' && v2Status !== 'connecting');
@@ -260,12 +278,12 @@ export function useGenerationProgress({
     completedSteps
   );
   const displayError = getErrorText(protocol, v2Status, v1Status, errorMessage);
-  const canRetryOutline =
+  const canRetry =
     showV2 &&
     v2Status === 'error' &&
-    (!outline || errorPhase === 'outline');
+    (!outline || errorPhase === 'outline' || errorPhase === 'step-fill');
 
-  function handleRetryOutline() {
+  function handleRetry() {
     setRunNonce((current) => current + 1);
   }
 
@@ -282,7 +300,8 @@ export function useGenerationProgress({
     stepTitles,
     progressValue,
     errorMessage: displayError,
-    canRetryOutline,
-    onRetryOutline: handleRetryOutline,
+    errorPhase,
+    canRetry,
+    onRetry: handleRetry,
   };
 }
