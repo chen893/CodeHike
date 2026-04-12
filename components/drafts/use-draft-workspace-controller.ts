@@ -14,6 +14,7 @@ import {
   publishDraftRequest,
   regenerateDraftStepRequest,
   replaceDraftStepsRequest,
+  unpublishDraftRequest,
   updateDraftRequest,
   updateDraftStepRequest,
 } from './draft-client';
@@ -266,6 +267,23 @@ export function useDraftWorkspaceController({
     }
   }
 
+  async function unpublishDraftAction() {
+    const title = draft.tutorialDraft?.meta.title || draft.teachingBrief.topic || '此教程';
+    const confirmed = window.confirm(`确认取消发布《${title}》？已发布的页面将被删除，草稿内容保留。`);
+    if (!confirmed) return;
+
+    setSaving(true);
+    try {
+      await unpublishDraftRequest(draft.id);
+      await reloadDraft();
+    } catch (error) {
+      console.error('取消发布失败:', error);
+      alert(error instanceof Error ? error.message : '取消发布失败，请重试');
+    } finally {
+      setSaving(false);
+    }
+  }
+
   function retryGeneration() {
     setShowGenerationProgress(true);
     setGenerationRunNonce((current) => current + 1);
@@ -322,6 +340,7 @@ export function useDraftWorkspaceController({
     deleteStep,
     deleteDraft,
     publishDraft,
+    unpublishDraft: unpublishDraftAction,
     retryGeneration,
     completeGeneration,
     openPreview,

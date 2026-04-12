@@ -28,6 +28,7 @@ interface DraftWorkspaceSidebarProps {
   onAppendStep: () => Promise<void>;
   onOpenPreview: () => void;
   onPublish: () => Promise<void>;
+  onUnpublish: () => Promise<void>;
   onOpenPublished: () => void;
   onToggleEditingMeta: () => void;
   onDeleteDraft: () => Promise<void>;
@@ -49,6 +50,7 @@ export function DraftWorkspaceSidebar({
   onAppendStep,
   onOpenPreview,
   onPublish,
+  onUnpublish,
   onOpenPublished,
   onToggleEditingMeta,
   onDeleteDraft,
@@ -114,6 +116,15 @@ export function DraftWorkspaceSidebar({
         {draft.publishedSlug && (
           <button className={secondaryButton} onClick={onOpenPublished}>
             阅读已发布
+          </button>
+        )}
+        {draft.status === 'published' && (
+          <button
+            className={dangerButton}
+            onClick={() => void onUnpublish()}
+            disabled={saving}
+          >
+            取消发布
           </button>
         )}
         <button className={secondaryButton} onClick={onToggleEditingMeta}>

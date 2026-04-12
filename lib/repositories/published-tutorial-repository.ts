@@ -51,6 +51,16 @@ export async function isSlugTaken(slug: string): Promise<boolean> {
   return !!row;
 }
 
+export async function getPublishedTutorialByDraftId(
+  draftRecordId: string
+): Promise<PublishedTutorial | null> {
+  const [row] = await db
+    .select()
+    .from(publishedTutorials)
+    .where(eq(publishedTutorials.draftRecordId, draftRecordId));
+  return row ? toPublishedTutorial(row) : null;
+}
+
 export async function listPublished(): Promise<PublishedTutorial[]> {
   const rows = await db
     .select()

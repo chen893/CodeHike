@@ -132,6 +132,16 @@ export async function publishDraftRequest(draftId: string, slug?: string) {
   return readJsonResponse<PublishDraftResponse>(response, '发布失败');
 }
 
+export async function unpublishDraftRequest(draftId: string) {
+  const response = await fetch(withBasePath(`/api/drafts/${draftId}/unpublish`), {
+    method: 'POST',
+  });
+
+  if (!response.ok) {
+    throw new Error(await readApiErrorMessage(response, '取消发布失败'));
+  }
+}
+
 export async function startDraftGenerationStream(draftId: string, signal: AbortSignal) {
   const response = await fetch(withBasePath(`/api/drafts/${draftId}/generate`), {
     method: 'POST',
