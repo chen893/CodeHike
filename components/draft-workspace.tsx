@@ -95,6 +95,7 @@ export function DraftWorkspace({ draft }: DraftWorkspaceProps) {
           onSaveStep={controller.saveStep}
           onRegenerateStep={controller.regenerateStep}
           onRetryGeneration={controller.retryGeneration}
+          onRetryFromStep={controller.retryFromFailedStep}
         />
       </main>
     </div>

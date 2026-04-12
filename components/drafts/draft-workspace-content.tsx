@@ -35,6 +35,7 @@ interface DraftWorkspaceContentProps {
   onSaveStep: (stepId: string, data: unknown) => Promise<void>;
   onRegenerateStep: (stepId: string, mode: 'prose' | 'step') => Promise<void>;
   onRetryGeneration: () => void;
+  onRetryFromStep: (stepIndex: number) => Promise<void>;
 }
 
 export function DraftWorkspaceContent({
@@ -55,6 +56,7 @@ export function DraftWorkspaceContent({
   onSaveStep,
   onRegenerateStep,
   onRetryGeneration,
+  onRetryFromStep,
 }: DraftWorkspaceContentProps) {
   return (
     <div className="mx-auto flex w-full max-w-6xl flex-col gap-6 px-4 py-6 sm:px-6 lg:px-8 lg:py-8">
@@ -65,6 +67,7 @@ export function DraftWorkspaceContent({
             draftId={draft.id}
             onComplete={() => void onGenerationComplete()}
             context={generationContext}
+            onRetryFromStep={(stepIndex) => void onRetryFromStep(stepIndex)}
           />
         </div>
       )}

@@ -6,6 +6,7 @@ import {
   fetchDraft,
   startDraftGenerationStream,
 } from '@/components/drafts/draft-client';
+import { classifyGenerationError } from '@/lib/errors/classify-error';
 import type {
   GenerationProgressViewModel,
   LegacyStatus,
@@ -40,6 +41,8 @@ export function useGenerationProgress({
   const [stepTitles, setStepTitles] = useState<StepTitles>({});
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [errorPhase, setErrorPhase] = useState<string | null>(null);
+  const [failedStepIndex, setFailedStepIndex] = useState<number | null>(null);
+  const [errorLabel, setErrorLabel] = useState<string | null>(null);
   const onCompleteRef = useRef(onComplete);
   onCompleteRef.current = onComplete;
 
@@ -56,6 +59,8 @@ export function useGenerationProgress({
     setStepTitles({});
     setErrorMessage(null);
     setErrorPhase(null);
+    setFailedStepIndex(null);
+    setErrorLabel(null);
 
     const controller = new AbortController();
     let v1Accumulated = '';
@@ -144,6 +149,22 @@ export function useGenerationProgress({
           setErrorPhase(typeof data.phase === 'string' ? data.phase : null);
           setV2Status('error');
           setV1Status(`error: ${data.message || '生成失败'}`);
+          {
+            const classified = classifyGenerationError(
+              data.message || '生成失败',
+              { phase: data.phase, stepIndex: data.stepIndex }
+            );
+            if (classified.type === 'generation_step_failed' && typeof data.stepIndex === 'number') {
+              setFailedStepIndex(data.stepIndex);
+              setErrorLabel(`步骤 ${data.stepIndex + 1} 填充失败`);
+            } else if (classified.type === 'generation_outline_failed') {
+              setFailedStepIndex(null);
+              setErrorLabel('大纲生成失败');
+            } else {
+              setFailedStepIndex(null);
+              setErrorLabel(null);
+            }
+          }
           break;
         default:
           break;
@@ -211,6 +232,14 @@ export function useGenerationProgress({
           setErrorPhase(null);
           setV1Status(`error: ${message}`);
           setV2Status('error');
+          const classified = classifyGenerationError(err);
+          if (classified.type === 'generation_step_failed' && classified.stepIndex != null) {
+            setFailedStepIndex(classified.stepIndex);
+            setErrorLabel(`步骤 ${classified.stepIndex + 1} 填充失败`);
+          } else {
+            setFailedStepIndex(null);
+            setErrorLabel(null);
+          }
         }
       }
     }
@@ -285,8 +314,22 @@ export function useGenerationProgress({
     v2Status === 'error' &&
     (!outline || errorPhase === 'outline' || errorPhase === 'step-fill');
 
+  const canRetryFromStep =
+    showV2 &&
+    v2Status === 'error' &&
+    errorPhase === 'step-fill' &&
+    failedStepIndex !== null &&
+    failedStepIndex >= 0;
+
   function handleRetry() {
     setRunNonce((current) => current + 1);
+  }
+
+  function handleRetryFromStep(stepIndex: number) {
+    setFailedStepIndex(null);
+    setErrorLabel(null);
+    setRunNonce((current) => current + 1);
+    void stepIndex;
   }
 
   return {
@@ -303,7 +346,11 @@ export function useGenerationProgress({
     progressValue,
     errorMessage: displayError,
     errorPhase,
+    errorLabel,
     canRetry,
+    canRetryFromStep,
+    failedStepIndex,
     onRetry: handleRetry,
+    onRetryFromStep: handleRetryFromStep,
   };
 }

@@ -48,8 +48,12 @@ export function GenerationProgressView({
           progressValue={controller.progressValue}
           errorMessage={controller.errorMessage}
           errorPhase={controller.errorPhase}
+          errorLabel={controller.errorLabel}
           canRetry={controller.canRetry}
+          canRetryFromStep={controller.canRetryFromStep}
+          failedStepIndex={controller.failedStepIndex}
           onRetry={controller.onRetry}
+          onRetryFromStep={controller.onRetryFromStep}
         />
       ) : (
         <V1ProgressUI
@@ -78,8 +82,12 @@ function V2ProgressUI({
   progressValue,
   errorMessage,
   errorPhase,
+  errorLabel,
   canRetry,
+  canRetryFromStep,
+  failedStepIndex,
   onRetry,
+  onRetryFromStep,
 }: {
   context: GenerationContext;
   draftId: string;
@@ -92,8 +100,12 @@ function V2ProgressUI({
   progressValue: number;
   errorMessage: string | null;
   errorPhase: string | null;
+  errorLabel: string | null;
   canRetry: boolean;
+  canRetryFromStep: boolean;
+  failedStepIndex: number | null;
   onRetry: () => void;
+  onRetryFromStep: (stepIndex: number) => void;
 }) {
   const headline = getV2Headline(status, currentStepIndex, totalSteps);
   const displaySteps = getDisplaySteps(
@@ -295,12 +307,26 @@ function V2ProgressUI({
                   <span className="text-xs font-semibold uppercase tracking-[0.18em] text-rose-600">
                     错误详情
                   </span>
-                  <p className="mt-2 text-sm leading-6 text-rose-900">{errorMessage}</p>
-                  {canRetry && (
-                    <button type="button" className={`${secondaryButton} mt-4`} onClick={onRetry}>
-                      {errorPhase === 'step-fill' ? '从当前进度重新生成' : '重新生成目录'}
-                    </button>
+                  {errorLabel && (
+                    <p className="mt-1 text-xs font-semibold text-rose-700">{errorLabel}</p>
                   )}
+                  <p className="mt-2 text-sm leading-6 text-rose-900">{errorMessage}</p>
+                  <div className="mt-4 flex flex-wrap gap-2">
+                    {canRetryFromStep && failedStepIndex !== null && (
+                      <button
+                        type="button"
+                        className={`${secondaryButton} border-rose-200 text-rose-800 hover:bg-rose-100`}
+                        onClick={() => onRetryFromStep(failedStepIndex)}
+                      >
+                        从第 {failedStepIndex + 1} 步重试
+                      </button>
+                    )}
+                    {canRetry && (
+                      <button type="button" className={secondaryButton} onClick={onRetry}>
+                        {errorPhase === 'step-fill' ? '从当前进度重新生成' : '重新生成目录'}
+                      </button>
+                    )}
+                  </div>
                 </div>
               )}
             </div>

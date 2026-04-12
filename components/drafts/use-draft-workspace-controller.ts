@@ -3,6 +3,7 @@
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { getDraftStatusInfo } from '@/lib/draft-status';
+import { classifyError } from '@/lib/errors/classify-error';
 import { findFirstInvalidStep } from '@/lib/tutorial/draft-code';
 import { createUuid } from '@/lib/utils/uuid';
 import type { ClientDraftRecord } from '@/lib/types/client';
@@ -289,6 +290,58 @@ export function useDraftWorkspaceController({
     setGenerationRunNonce((current) => current + 1);
   }
 
+  async function retryFromFailedStep(stepIndex: number) {
+    if (!draft.tutorialDraft) {
+      retryGeneration();
+      return;
+    }
+
+    const steps = draft.tutorialDraft.steps;
+    if (stepIndex < 0 || stepIndex >= steps.length) {
+      retryGeneration();
+      return;
+    }
+
+    const step = steps[stepIndex];
+    const confirmation = window.confirm(
+      `将从第 ${stepIndex + 1} 步《${step.title}》开始，重新生成该步骤及其后续步骤。继续吗？`
+    );
+    if (!confirmation) return;
+
+    setSaving(true);
+    setRepairingStartIndex(stepIndex);
+    setSelectedStepIndex(stepIndex);
+
+    try {
+      let latestDraft = draft;
+
+      for (
+        let currentIndex = stepIndex;
+        currentIndex < latestDraft.tutorialDraft!.steps.length;
+        currentIndex++
+      ) {
+        const currentStep = latestDraft.tutorialDraft!.steps[currentIndex];
+        const instruction =
+          currentIndex === stepIndex
+            ? '生成在当前步骤失败。请基于最新的前文代码，重新生成当前步骤及其代码变化，确保教程从这里继续衔接。'
+            : '前面的步骤已经重新生成。请基于最新前文代码继续生成当前步骤，确保 patches、focus 和 marks 都与当前代码精确匹配。';
+
+        latestDraft = await regenerateDraftStepRequest(draft.id, currentStep.id, {
+          mode: 'step',
+          instruction,
+        });
+        applyDraftUpdate(latestDraft, currentStep.id, currentIndex);
+      }
+    } catch (error) {
+      const classified = classifyError(error);
+      console.error('从失败步骤重试失败:', classified.message);
+      alert(classified.message || '从失败步骤重试失败，请重试');
+    } finally {
+      setRepairingStartIndex(null);
+      setSaving(false);
+    }
+  }
+
   async function completeGeneration() {
     try {
       await reloadDraft();
@@ -342,6 +395,7 @@ export function useDraftWorkspaceController({
     publishDraft,
     unpublishDraft: unpublishDraftAction,
     retryGeneration,
+    retryFromFailedStep,
     completeGeneration,
     openPreview,
     openPublishedTutorial,

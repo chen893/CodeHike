@@ -11,6 +11,7 @@ interface GenerationProgressProps {
   onComplete: () => void;
   context: GenerationContext;
   modelId?: string;
+  onRetryFromStep?: (stepIndex: number) => void;
 }
 
 export function GenerationProgress({
@@ -18,14 +19,19 @@ export function GenerationProgress({
   onComplete,
   context,
   modelId,
+  onRetryFromStep,
 }: GenerationProgressProps) {
   const controller = useGenerationProgress({ draftId, onComplete, modelId });
+
+  const mergedController = onRetryFromStep
+    ? { ...controller, onRetryFromStep }
+    : controller;
 
   return (
     <GenerationProgressView
       draftId={draftId}
       context={context}
-      controller={controller}
+      controller={mergedController}
     />
   );
 }

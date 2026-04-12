@@ -53,6 +53,10 @@ export interface GenerationProgressViewModel {
   progressValue: number;
   errorMessage: string | null;
   errorPhase: string | null;
+  errorLabel: string | null;
   canRetry: boolean;
+  canRetryFromStep: boolean;
+  failedStepIndex: number | null;
   onRetry: () => void;
+  onRetryFromStep: (stepIndex: number) => void;
 }
