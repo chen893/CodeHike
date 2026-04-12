@@ -10,14 +10,16 @@ interface GenerationProgressProps {
   draftId: string;
   onComplete: () => void;
   context: GenerationContext;
+  modelId?: string;
 }
 
 export function GenerationProgress({
   draftId,
   onComplete,
   context,
+  modelId,
 }: GenerationProgressProps) {
-  const controller = useGenerationProgress({ draftId, onComplete });
+  const controller = useGenerationProgress({ draftId, onComplete, modelId });
 
   return (
     <GenerationProgressView

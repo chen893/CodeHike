@@ -142,11 +142,11 @@ export async function unpublishDraftRequest(draftId: string) {
   }
 }
 
-export async function startDraftGenerationStream(draftId: string, signal: AbortSignal) {
+export async function startDraftGenerationStream(draftId: string, signal: AbortSignal, modelId?: string) {
   const response = await fetch(withBasePath(`/api/drafts/${draftId}/generate`), {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ generationVersion: 'v2' }),
+    body: JSON.stringify({ generationVersion: 'v2', modelId }),
     signal,
   });
 

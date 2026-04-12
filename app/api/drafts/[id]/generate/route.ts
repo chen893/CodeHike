@@ -11,16 +11,18 @@ export async function POST(
 
   try {
     let generationVersion: 'v1' | 'v2' = 'v2';
+    let modelId: string | undefined;
     try {
       const body = await req.json();
       if (body.generationVersion === 'v1') {
         generationVersion = 'v1';
       }
+      modelId = body.modelId || undefined;
     } catch {
       // Empty body or invalid JSON — use default v2
     }
 
-    return await initiateGeneration(id, undefined, generationVersion);
+    return await initiateGeneration(id, modelId, generationVersion);
   } catch (err: any) {
     console.error('生成教程失败:', err);
     return NextResponse.json(

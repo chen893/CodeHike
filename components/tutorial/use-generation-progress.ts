@@ -19,11 +19,13 @@ import { getErrorText, getProgressValue } from './generation-progress-utils';
 interface UseGenerationProgressOptions {
   draftId: string;
   onComplete: () => void;
+  modelId?: string;
 }
 
 export function useGenerationProgress({
   draftId,
   onComplete,
+  modelId,
 }: UseGenerationProgressOptions): GenerationProgressViewModel {
   const [runNonce, setRunNonce] = useState(0);
   const [protocol, setProtocol] = useState<ProtocolVersion>('unknown');
@@ -150,7 +152,7 @@ export function useGenerationProgress({
 
     async function run() {
       try {
-        const stream = await startDraftGenerationStream(draftId, controller.signal);
+        const stream = await startDraftGenerationStream(draftId, controller.signal, modelId);
         const reader = stream.getReader();
         const decoder = new TextDecoder();
         let lineBuffer = '';

@@ -3,6 +3,7 @@
 import { useState, type FormEvent } from 'react';
 import { useRouter } from 'next/navigation';
 import type { SourceItem, TeachingBrief } from '@/lib/schemas/index';
+import { AVAILABLE_MODELS } from '@/lib/schemas/model-config';
 import { createDraftRequest } from './draft-client';
 import {
   audienceLabels,
@@ -26,6 +27,7 @@ export function useCreateDraftFormController() {
     ignore_scope: '',
     output_language: '中文',
   });
+  const [modelId, setModelId] = useState<string>(AVAILABLE_MODELS[0]?.id ?? '');
   const [generating, setGenerating] = useState(false);
   const [draftId, setDraftId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -123,6 +125,8 @@ export function useCreateDraftFormController() {
     activeSourceItemId,
     setActiveSourceItemId,
     brief,
+    modelId,
+    setModelId,
     generating,
     draftId,
     error,

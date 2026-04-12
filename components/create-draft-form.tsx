@@ -8,6 +8,7 @@ import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { Plus, Trash2 } from 'lucide-react';
 import type { TeachingBrief } from '@/lib/schemas/index';
+import { AVAILABLE_MODELS } from '@/lib/schemas/model-config';
 import { useCreateDraftFormController } from '@/components/drafts/use-create-draft-form-controller';
 
 export function CreateDraftForm() {
@@ -16,6 +17,8 @@ export function CreateDraftForm() {
     activeSourceItemId,
     setActiveSourceItemId,
     brief,
+    modelId,
+    setModelId,
     generating,
     draftId,
     error,
@@ -34,6 +37,7 @@ export function CreateDraftForm() {
         draftId={draftId}
         onComplete={handleGenerationComplete}
         context={generationContext}
+        modelId={modelId}
       />
     );
   }
@@ -218,6 +222,21 @@ export function CreateDraftForm() {
               }
               placeholder="例如: 中间件、异步 action"
             />
+          </div>
+
+          <div className="space-y-2">
+            <Label className="text-sm font-medium text-muted-foreground">AI 模型</Label>
+            <select
+              className="flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-sm transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+              value={modelId}
+              onChange={(event) => setModelId(event.target.value)}
+            >
+              {AVAILABLE_MODELS.map((model) => (
+                <option key={model.id} value={model.id}>
+                  {model.label}
+                </option>
+              ))}
+            </select>
           </div>
         </div>
       </section>
