@@ -416,3 +416,24 @@
 
 **影响文件**：
 - `lib/tutorial/assembler.js`
+
+---
+
+## 问题 25：CodeDiffView 代码选择功能 — 技术验证通过
+
+**可行性评估**：完全可行。
+
+**技术分析**：
+- CodeDiffView 将代码渲染为普通 `<div>` 元素（`diff-line.tsx`），文本内容直接渲染为 `{line.content}`。
+- gutter 区域已设置 `select-none`，只有代码文本可选。
+- `window.getSelection().toString()` 可直接获取纯文本，不含行号或标记符号。
+- 无 CodeMirror、CodeHike inline editor 或 shadow DOM 干扰。
+
+**实现方案**：
+- `code-selection-menu.tsx`：浮动菜单组件，监听 `mouseup` 事件，通过 `getSelection().getRangeAt(0).getBoundingClientRect()` 定位。
+- 提供 "设为 Patch Find" / "设为 Focus" 两个快捷操作。
+- 集成到 step-editor.tsx 中，用 `useRef` 关联 CodeDiffView 容器。
+
+**影响文件**：
+- `components/step-editor/code-selection-menu.tsx`
+- `components/step-editor.tsx`

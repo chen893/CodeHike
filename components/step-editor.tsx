@@ -1,8 +1,9 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { MarkdownEditor } from './markdown-editor';
 import { CodeDiffView } from './step-editor/code-diff-view';
+import { CodeSelectionMenu } from './step-editor/code-selection-menu';
 import { IntermediatePatchPreview } from './step-editor/intermediate-preview';
 import { computeDiffLines, formatUnifiedDiff } from './step-editor/diff-utils';
 import { usePatchValidation } from './step-editor/use-patch-validation';
@@ -106,6 +107,7 @@ export function StepEditor({
   const [focusFind, setFocusFind] = useState(step.focus?.find ?? '');
   const [focusFile, setFocusFile] = useState(step.focus?.file ?? '');
   const [marks, setMarks] = useState<MarkDraft[]>(() => toMarkDrafts(step.marks));
+  const diffViewRef = useRef<HTMLDivElement>(null);
 
   // Detect multi-file
   const baseCodeMeta = normalizeBaseCode(tutorialDraft.baseCode, tutorialDraft.meta);
@@ -309,17 +311,35 @@ export function StepEditor({
             </div>
           ) : null}
 
-          {!previewError && previousCode !== currentCode ? (
-            <CodeDiffView
-              diffLines={formatUnifiedDiff(computeDiffLines(previousCode, currentCode), 5)}
-              language={isMultiFile ? previewFile.split('.').pop() || 'javascript' : tutorialDraft.meta.lang}
-              height="280px"
-            />
-          ) : !previewError ? (
-            <div className="rounded-md border border-slate-200 bg-slate-50 px-3 py-4 text-center text-xs text-slate-400">
-              当前步骤无代码变更
-            </div>
-          ) : null}
+          <div ref={diffViewRef}>
+            {!previewError && previousCode !== currentCode ? (
+              <CodeDiffView
+                diffLines={formatUnifiedDiff(computeDiffLines(previousCode, currentCode), 5)}
+                language={isMultiFile ? previewFile.split('.').pop() || 'javascript' : tutorialDraft.meta.lang}
+                height="280px"
+              />
+            ) : !previewError ? (
+              <div className="rounded-md border border-slate-200 bg-slate-50 px-3 py-4 text-center text-xs text-slate-400">
+                当前步骤无代码变更
+              </div>
+            ) : null}
+          </div>
+
+          <CodeSelectionMenu
+            containerRef={diffViewRef}
+            onSetPatchFind={(text) => {
+              // If no patches, add one with the selected text as find
+              if (patches.length === 0) {
+                setPatches([{ localId: createUuid(), find: text, replace: '' }])
+              } else {
+                // Set the find of the first patch
+                setPatches((current) =>
+                  current.map((item, i) => i === 0 ? { ...item, find: text } : item)
+                )
+              }
+            }}
+            onSetFocus={(text) => setFocusFind(text)}
+          />
         </section>
 
         <section className="space-y-4 rounded-xl border border-slate-200 bg-slate-50 p-4">
