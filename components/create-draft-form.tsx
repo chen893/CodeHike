@@ -9,6 +9,7 @@ import { Textarea } from '@/components/ui/textarea';
 import { Plus, Trash2 } from 'lucide-react';
 import type { TeachingBrief } from '@/lib/schemas/index';
 import { AVAILABLE_MODELS } from '@/lib/schemas/model-config';
+import { STYLE_TEMPLATES } from '@/lib/ai/style-templates';
 import { useCreateDraftFormController } from '@/components/drafts/use-create-draft-form-controller';
 
 export function CreateDraftForm() {
@@ -234,6 +235,22 @@ export function CreateDraftForm() {
               {AVAILABLE_MODELS.map((model) => (
                 <option key={model.id} value={model.id}>
                   {model.label}
+                </option>
+              ))}
+            </select>
+          </div>
+
+          <div className="space-y-2">
+            <Label className="text-sm font-medium text-muted-foreground">教学风格</Label>
+            <select
+              className="flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-sm transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+              value={brief.preferred_style || ''}
+              onChange={(event) => setBrief({ ...brief, preferred_style: event.target.value || undefined })}
+            >
+              <option value="">默认</option>
+              {STYLE_TEMPLATES.map((style) => (
+                <option key={style.id} value={style.id}>
+                  {style.label} — {style.description}
                 </option>
               ))}
             </select>
