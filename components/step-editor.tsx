@@ -3,6 +3,7 @@
 import { useEffect, useState } from 'react';
 import { MarkdownEditor } from './markdown-editor';
 import { CodeDiffView } from './step-editor/code-diff-view';
+import { IntermediatePatchPreview } from './step-editor/intermediate-preview';
 import { computeDiffLines, formatUnifiedDiff } from './step-editor/diff-utils';
 import { usePatchValidation } from './step-editor/use-patch-validation';
 import {
@@ -444,6 +445,12 @@ export function StepEditor({
               </div>
             ))}
           </div>
+
+          <IntermediatePatchPreview
+            previousCode={previousCodeForValidation}
+            patches={normalizedPatches}
+            language={isMultiFile ? previewFile.split('.').pop() || 'javascript' : tutorialDraft.meta.lang}
+          />
 
           <div className="space-y-3 rounded-lg border border-slate-200 bg-white p-3 shadow-sm">
             <div className="flex items-center justify-between gap-3">
