@@ -11,6 +11,7 @@ import type { TeachingBrief } from '@/lib/schemas/index';
 import { AVAILABLE_MODELS } from '@/lib/schemas/model-config';
 import { STYLE_TEMPLATES } from '@/lib/ai/style-templates';
 import { useCreateDraftFormController } from '@/components/drafts/use-create-draft-form-controller';
+import { FIRST_EXPERIENCE_TEMPLATE } from '@/lib/first-experience-template';
 
 export function CreateDraftForm() {
   const {
@@ -50,6 +51,29 @@ export function CreateDraftForm() {
       onSubmit={handleSubmit}
       className="mx-auto flex w-full max-w-4xl flex-col gap-8"
     >
+      <div className="flex items-center gap-3">
+        <button
+          type="button"
+          className="inline-flex items-center gap-2 rounded-md border border-slate-200 bg-slate-50 px-3 py-1.5 text-xs font-medium text-slate-600 transition-colors hover:bg-slate-100"
+          onClick={() => {
+            const tmpl = FIRST_EXPERIENCE_TEMPLATE;
+            const src = tmpl.sourceItems[0];
+            updateSourceItem(activeSourceItemId, {
+              label: src.label,
+              language: src.language,
+              content: src.content,
+            });
+            setBrief({
+              ...brief,
+              ...tmpl.teachingBrief,
+            });
+          }}
+        >
+          用 Redux 示例试试
+        </button>
+        <span className="text-xs text-muted-foreground">一键填入示例代码和教学需求</span>
+      </div>
+
       <section className="space-y-4 rounded-xl border border-border bg-card p-6 shadow-sm md:p-8">
         <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
           <div className="space-y-1">
