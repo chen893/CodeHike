@@ -1,8 +1,10 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { CodeMirrorEditor } from './code-mirror-editor';
 import { MarkdownEditor } from './markdown-editor';
+import { CodeDiffView } from './step-editor/code-diff-view';
+import { computeDiffLines, formatUnifiedDiff } from './step-editor/diff-utils';
+import { usePatchValidation } from './step-editor/use-patch-validation';
 import {
   getStepCodePreview,
   summarizeCodeDiff,
@@ -127,6 +129,25 @@ export function StepEditor({
     .filter(Boolean);
   const normalizedPatches = normalizePatches(patches, isMultiFile);
   const normalizedMarks = normalizeMarks(marks, isMultiFile);
+
+  // Compute previousCode for patch validation (the code state before this step)
+  const previousFiles = (() => {
+    try {
+      const preview = getStepCodePreview(
+        { ...tutorialDraft, steps: tutorialDraft.steps },
+        stepIndex,
+        tutorialDraft.steps[stepIndex] // Use original step, not previewStep
+      );
+      return isMultiFile ? preview.previousFiles : { [baseCodeMeta.primaryFile]: preview.previousCode };
+    } catch {
+      return null;
+    }
+  })();
+  const previousCodeForValidation = previousFiles?.[previewFile] ?? '';
+  const patchValidationStates = usePatchValidation(
+    previousCodeForValidation,
+    normalizedPatches
+  );
   const focus = focusFind.trim()
     ? { find: focusFind, ...(isMultiFile && focusFile ? { file: focusFile } : {}) }
     : null;
@@ -287,34 +308,17 @@ export function StepEditor({
             </div>
           ) : null}
 
-          <div className="grid gap-4 lg:grid-cols-2">
-            <div className="space-y-1.5">
-              <span className="text-[10px] font-bold uppercase tracking-widest text-slate-400">
-                Before
-              </span>
-              <div className="rounded-md border border-slate-200 bg-white overflow-hidden shadow-sm">
-                <CodeMirrorEditor
-                  value={previousCode}
-                  language={isMultiFile ? previewFile.split('.').pop() || 'javascript' : tutorialDraft.meta.lang}
-                  readOnly
-                  height="220px"
-                />
-              </div>
+          {!previewError && previousCode !== currentCode ? (
+            <CodeDiffView
+              diffLines={formatUnifiedDiff(computeDiffLines(previousCode, currentCode), 5)}
+              language={isMultiFile ? previewFile.split('.').pop() || 'javascript' : tutorialDraft.meta.lang}
+              height="280px"
+            />
+          ) : !previewError ? (
+            <div className="rounded-md border border-slate-200 bg-slate-50 px-3 py-4 text-center text-xs text-slate-400">
+              当前步骤无代码变更
             </div>
-            <div className="space-y-1.5">
-              <span className="text-[10px] font-bold uppercase tracking-widest text-slate-400">
-                After
-              </span>
-              <div className="rounded-md border border-slate-200 bg-white overflow-hidden shadow-sm">
-                <CodeMirrorEditor
-                  value={currentCode}
-                  language={isMultiFile ? previewFile.split('.').pop() || 'javascript' : tutorialDraft.meta.lang}
-                  readOnly
-                  height="220px"
-                />
-              </div>
-            </div>
-          </div>
+          ) : null}
         </section>
 
         <section className="space-y-4 rounded-xl border border-slate-200 bg-slate-50 p-4">
@@ -385,7 +389,24 @@ export function StepEditor({
 
                 <div className="grid gap-3">
                   <label className="space-y-1">
-                    <span className="text-[10px] font-bold uppercase text-slate-500">find</span>
+                    <div className="flex items-center gap-2">
+                      <span className="text-[10px] font-bold uppercase text-slate-500">find</span>
+                      {patchValidationStates[index] && patch.find.trim() ? (
+                        patchValidationStates[index].isValid ? (
+                          <span className="inline-flex items-center gap-0.5 text-[10px] font-bold text-emerald-600">
+                            ✓ 唯一匹配{patchValidationStates[index].result.lineNumber ? ` (L${patchValidationStates[index].result.lineNumber})` : ''}
+                          </span>
+                        ) : patchValidationStates[index].result.status === 'ambiguous' ? (
+                          <span className="inline-flex items-center gap-0.5 text-[10px] font-bold text-amber-600">
+                            ⚠ {patchValidationStates[index].result.matchCount} 处匹配
+                          </span>
+                        ) : (
+                          <span className="inline-flex items-center gap-0.5 text-[10px] font-bold text-red-500">
+                            ✗ 未找到
+                          </span>
+                        )
+                      ) : null}
+                    </div>
                     <textarea
                       className="flex min-h-[80px] w-full rounded-md border border-slate-200 bg-slate-50 px-2 py-1.5 text-xs font-mono transition-colors focus:bg-white focus:outline-none focus:ring-1 focus:ring-slate-400"
                       value={patch.find}
