@@ -1,22 +1,14 @@
 import { streamText, generateText, Output } from 'ai';
-import { createOpenAICompatible } from '@ai-sdk/openai-compatible';
 import { tutorialDraftSchema, tutorialStepSchema } from '../schemas/tutorial-draft';
 import { buildGeneratePrompt, buildRegenerateStepPrompt } from './prompt-templates';
+import { createProvider, getMaxOutputTokens } from './provider-registry';
 import type { SourceItem } from '../schemas/source-item';
 import type { TeachingBrief } from '../schemas/teaching-brief';
-
-const deepseek = createOpenAICompatible({
-  name: 'deepseek',
-  baseURL: process.env.DEEPSEEK_BASE_URL || 'https://api.deepseek.com',
-  apiKey: process.env.DEEPSEEK_API_KEY,
-});
-
-const DEFAULT_MODEL = process.env.DEEPSEEK_MODEL || 'deepseek-chat';
 
 export function createTutorialGenerationStream(
   sourceItems: SourceItem[],
   teachingBrief: TeachingBrief,
-  modelId: string = DEFAULT_MODEL
+  modelId?: string
 ) {
   const { systemPrompt, userPrompt } = buildGeneratePrompt(
     sourceItems,
@@ -24,13 +16,13 @@ export function createTutorialGenerationStream(
   );
 
   const result = streamText({
-    model: deepseek(modelId),
+    model: createProvider(modelId),
     system: systemPrompt,
     prompt: userPrompt,
     output: Output.object({
       schema: tutorialDraftSchema,
     }),
-    maxOutputTokens: 8192,
+    maxOutputTokens: getMaxOutputTokens(modelId),
   });
 
   return result;
@@ -46,7 +38,7 @@ export async function regenerateStep(
   },
   stepIndex: number,
   mode: 'prose' | 'step',
-  modelId: string = DEFAULT_MODEL,
+  modelId?: string,
   instruction?: string
 ) {
   const { systemPrompt, userPrompt } = buildRegenerateStepPrompt(
@@ -59,13 +51,13 @@ export async function regenerateStep(
   );
 
   const result = await generateText({
-    model: deepseek(modelId),
+    model: createProvider(modelId),
     system: systemPrompt,
     prompt: userPrompt,
     output: Output.object({
       schema: tutorialStepSchema,
     }),
-    maxOutputTokens: 8192,
+    maxOutputTokens: getMaxOutputTokens(modelId),
   });
 
   return result.output;

@@ -1,5 +1,4 @@
 import { generateText, Output } from 'ai';
-import { createOpenAICompatible } from '@ai-sdk/openai-compatible';
 import { tutorialOutlineSchema } from '../schemas/tutorial-outline';
 import { tutorialStepSchema, type TutorialStep, type TutorialDraft } from '../schemas/tutorial-draft';
 import type { TutorialOutline } from '../schemas/tutorial-outline';
@@ -10,14 +9,7 @@ import { buildStepFillPrompt } from './step-fill-prompt';
 import { applyContentPatches } from '../tutorial/draft-code';
 import { normalizeBaseCode, normalizeTutorialMeta } from '../tutorial/normalize';
 import { validateTutorialDraft } from '../utils/validation';
-
-const deepseek = createOpenAICompatible({
-  name: 'deepseek',
-  baseURL: process.env.DEEPSEEK_BASE_URL || 'https://api.deepseek.com',
-  apiKey: process.env.DEEPSEEK_API_KEY,
-});
-
-const DEFAULT_MODEL = process.env.DEEPSEEK_MODEL || 'deepseek-chat';
+import { createProvider, getMaxOutputTokens } from './provider-registry';
 
 const MAX_STEP_RETRIES = 3;
 
@@ -60,11 +52,11 @@ export interface CancelToken {
 export function createMultiPhaseGenerationStream(
   sourceItems: SourceItem[],
   teachingBrief: TeachingBrief,
-  modelId: string = DEFAULT_MODEL,
+  modelId?: string,
   cancelToken?: CancelToken
 ): MultiPhaseStream {
   const encoder = new TextEncoder();
-  const model = deepseek(modelId);
+  const model = createProvider(modelId);
 
   let resolveResult: (value: MultiPhaseResult) => void;
   let rejectResult: (reason: any) => void;
@@ -91,7 +83,7 @@ export function createMultiPhaseGenerationStream(
             system: systemPrompt,
             prompt: userPrompt,
             output: Output.object({ schema: tutorialOutlineSchema }),
-            maxOutputTokens: 4096,
+            maxOutputTokens: getMaxOutputTokens(modelId),
           });
           outline = result.output;
           // Ensure meta.lang/fileName are populated from baseCode
@@ -162,7 +154,7 @@ export function createMultiPhaseGenerationStream(
                 system: systemPrompt,
                 prompt: userPrompt,
                 output: Output.object({ schema: tutorialStepSchema }),
-                maxOutputTokens: 4096,
+                maxOutputTokens: getMaxOutputTokens(modelId),
               });
 
               const step = result.output;
