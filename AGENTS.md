@@ -39,10 +39,15 @@ TutorialDraft (DSL JSON)
 
 ```text
 用户输入源码 + TeachingBrief
-  → app/new/page.tsx → 创建 DraftRecord
+  → app/new/page.tsx → 创建 DraftRecord（支持多文件源码输入）
   → app/drafts/[id]/page.tsx → 编辑工作区（AppShell 布局）
   → AI 生成（v2 多阶段：outline → step-fill → validate）
-  → 编辑 steps / meta（CodeMirror 代码编辑 + Markdown 富文本编辑）→ 预览 → 发布
+  → 编辑 steps / meta：
+      - 文案（eyebrow/title/lead/paragraphs）
+      - 代码变更（patches find/replace + 文件选择）
+      - 高亮区域（focus）+ 行标记（marks）
+      - 实时代码预览 + 结构变更检测
+  → 预览 → 发布
 ```
 
 ### 多阶段生成链路（v3.1 核心）
@@ -68,6 +73,7 @@ lib/services/compute-generation-quality.ts # 质量指标计算
 | DB | `lib/db/` | Drizzle schema 定义 + 连接池 |
 | AI | `lib/ai/` | prompt 模板 + AI 调用封装（v1 单次生成 + v2 多阶段生成） |
 | 渲染 | `lib/tutorial/` | patch 应用、payload 构建、registry、草稿 patch 工具（纯服务端） |
+| 工具 | `lib/utils/` | 校验、序列化、hash、slug、请求版本化 |
 
 ### 编辑器组件
 
@@ -106,12 +112,12 @@ lib/services/compute-generation-quality.ts # 质量指标计算
 - 客户端只消费渲染好的 payload，不反推 patch、不重建教学结构
 - 静态页和远程页共享同一个 `TutorialScrollyDemo` 渲染器
 - AI 输出用 `Output.object({ schema })` 结构化，Zod schema 同时约束 AI 输出 + API 校验
-- `app/[slug]/page.jsx` 用 `React.cache()` 避免重复 DB 查询和高亮计算
+- `app/[slug]/page.jsx` 通过 `lib/services/tutorial-queries.ts` 中的 `cache()` 包装函数避免重复 DB 查询和高亮计算
 - 混用 JS（`.js`/`.jsx`，渲染链路）和 TS（`.ts`/`.tsx`，新增功能），不要强行统一
 - 多阶段生成通过 SSE 流向客户端推送进度，前端 `GenerationProgress` 组件解析 v2 协议
 - 生成质量评估（`GenerationQuality`）不阻塞发布，仅作数据监控
 - DB schema 中 `generationOutline`、`generationQuality` 为可选 jsonb，向后兼容 v3.0 草稿
-- `app/*` 入口只允许直接依赖 `components/*` 和 `lib/services/*`；不要在页面或 route handler 中直接调用 `lib/repositories/*`、`lib/db/*`、`lib/tutorial/*`
+- `app/*` 入口主要依赖 `components/*` 和 `lib/services/*`；页面可额外依赖 `lib/utils/client-data.ts`（序列化）和 `lib/draft-status.ts`（状态 badge）；route handler 可额外依赖 `lib/api/route-errors.ts`（错误处理）；不要在页面或 route handler 中直接调用 `lib/repositories/*`、`lib/db/*`、`lib/tutorial/*`
 - client 侧 `fetch` 统一进入 feature client / hook / controller，不要散落在视图组件中
 
 ### 后续新建代码建议
@@ -143,24 +149,22 @@ lib/services/compute-generation-quality.ts # 质量指标计算
 #### 新测试 / 新文档
 
 - 触及分层边界、请求竞态、patch 链、纯函数算法时，要同步补 `tests/*.test.js`；优先补结构约束测试和纯函数测试，不要求一开始就引入完整测试框架。
-- 新增顶层目录、修改默认分层模式、引入新的 feature folder 时，要同步更新 `AGENTS.md` 和 `docs/codebase-structure.md`。
+- 新增顶层目录、修改默认分层模式、引入新的 feature folder 时，要同步更新 `AGENTS.md` 和 `docs/vibedocs-technical-handbook.md`。
 - 实施中如果出现新的结构性问题、竞态问题、框架约束坑，继续记录到 `docs/v3-implementation-issues.md`。
 
 ## Docs Index
 
 | 文件 | 内容 |
 |------|------|
-| `docs/tutorial-data-format.md` | 教程 DSL 完整定义 — JSON 结构、Patch 机制、代码组装算法 |
-| `docs/vibe-docs-prd.md` | VibeDocs v3.0 PRD — 产品定义、数据模型、P0 范围 |
-| `docs/vibe-docs-technical-design.md` | v3.0 技术方案 — 架构分层、API 设计、AI 生成链路 |
-| `docs/v3-implementation-issues.md` | v3.0 实施问题记录 — 技术决策和解决方案 |
-| `docs/vibe-docs-v3.1-prd.md` | v3.1 PRD — 多阶段生成、阅读交互增强 |
-| `docs/vibe-docs-v3.2-prd.md` | v3.2 PRD — 草稿 CRUD 闭环、步骤管理、多文件输入、Patch 编辑 |
-| `docs/codebase-structure.md` | 当前代码分层规则与目录落位约束 |
-| `docs/mini-redux.js` | Redux 核心源码实现（简化版），测试用文件 |
-| `docs/archive/` | 已归档的过时文档（v3.0 实施计划、旧渲染流程） |
+| `docs/vibedocs-technical-handbook.md` | **主文档** — 产品、架构、数据、API、UI、AI 生成的技术手册 |
+| `docs/tutorial-data-format.md` | 教程 DSL 权威规范 — JSON 结构、Patch 机制、代码组装算法、校验规则 |
+| `docs/v3.3-patch-editor-ux-plan.md` | v3.3 计划 — Patch 编辑器体验升级（可视化 diff、实时校验、代码选区操作） |
+| `docs/v3-implementation-issues.md` | 实施问题记录 — 技术决策和解决方案（活跃维护） |
+| `docs/ui-review-workflow.md` | UI 审查流程 — 截图规范、模型审查、修复验证 |
+| `docs/mini-redux.js` | Redux 核心源码实现（简化版），测试用样本源码 |
+| `docs/archive/` | 已归档的 PRD、技术设计、实施计划等历史文档 |
 
-**修改代码前务必先阅读相关文档。** 数据结构变更对照 `tutorial-data-format.md`，新增功能对照 `vibe-docs-technical-design.md`。
+**修改代码前先阅读 `vibedocs-technical-handbook.md`。** 数据结构细节对照 `tutorial-data-format.md`。
 **实施过程中如遇到问题，必须将问题现象、根因分析和解决方案补充记录到 `docs/v3-implementation-issues.md`。**
 
 ## AGENTS.md
