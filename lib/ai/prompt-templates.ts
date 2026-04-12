@@ -102,7 +102,7 @@ ${sourceCodeSection}
 1. baseCode 必须是源码的一个真实可运行的简化版（比如只包含最基础的功能）
 2. 每个 patch 的 find 字段必须从上一步的完整代码中精确复制
 3. 建议按功能模块分步：先写核心骨架，再逐步添加功能
-4. 每步代码变化不超过 15 行，保持精确`;
+4. 每步代码变化不超过 {LOC_BUDGET} 行，保持精确`;
 
   return { systemPrompt, userPrompt };
 }

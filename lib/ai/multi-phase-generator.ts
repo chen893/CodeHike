@@ -6,6 +6,7 @@ import type { SourceItem } from '../schemas/source-item';
 import type { TeachingBrief } from '../schemas/teaching-brief';
 import { buildOutlinePrompt } from './outline-prompt';
 import { buildStepFillPrompt } from './step-fill-prompt';
+import { adaptPromptForModel } from './prompt-adapters';
 import { applyContentPatches } from '../tutorial/draft-code';
 import { normalizeBaseCode, normalizeTutorialMeta } from '../tutorial/normalize';
 import { validateTutorialDraft } from '../utils/validation';
@@ -80,8 +81,8 @@ export function createMultiPhaseGenerationStream(
           const { systemPrompt, userPrompt } = buildOutlinePrompt(sourceItems, teachingBrief);
           const result = await generateText({
             model,
-            system: systemPrompt,
-            prompt: userPrompt,
+            system: adaptPromptForModel(systemPrompt, modelId),
+            prompt: adaptPromptForModel(userPrompt, modelId),
             output: Output.object({ schema: tutorialOutlineSchema }),
             maxOutputTokens: getMaxOutputTokens(modelId),
           });
@@ -151,8 +152,8 @@ export function createMultiPhaseGenerationStream(
 
               const result = await generateText({
                 model,
-                system: systemPrompt,
-                prompt: userPrompt,
+                system: adaptPromptForModel(systemPrompt, modelId),
+                prompt: adaptPromptForModel(userPrompt, modelId),
                 output: Output.object({ schema: tutorialStepSchema }),
                 maxOutputTokens: getMaxOutputTokens(modelId),
               });

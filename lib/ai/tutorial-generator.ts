@@ -1,6 +1,7 @@
 import { streamText, generateText, Output } from 'ai';
 import { tutorialDraftSchema, tutorialStepSchema } from '../schemas/tutorial-draft';
 import { buildGeneratePrompt, buildRegenerateStepPrompt } from './prompt-templates';
+import { adaptPromptForModel } from './prompt-adapters';
 import { createProvider, getMaxOutputTokens } from './provider-registry';
 import type { SourceItem } from '../schemas/source-item';
 import type { TeachingBrief } from '../schemas/teaching-brief';
@@ -17,8 +18,8 @@ export function createTutorialGenerationStream(
 
   const result = streamText({
     model: createProvider(modelId),
-    system: systemPrompt,
-    prompt: userPrompt,
+    system: adaptPromptForModel(systemPrompt, modelId),
+    prompt: adaptPromptForModel(userPrompt, modelId),
     output: Output.object({
       schema: tutorialDraftSchema,
     }),
@@ -52,8 +53,8 @@ export async function regenerateStep(
 
   const result = await generateText({
     model: createProvider(modelId),
-    system: systemPrompt,
-    prompt: userPrompt,
+    system: adaptPromptForModel(systemPrompt, modelId),
+    prompt: adaptPromptForModel(userPrompt, modelId),
     output: Output.object({
       schema: tutorialStepSchema,
     }),
