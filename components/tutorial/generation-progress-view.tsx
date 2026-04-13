@@ -54,6 +54,8 @@ export function GenerationProgressView({
           failedStepIndex={controller.failedStepIndex}
           onRetry={controller.onRetry}
           onRetryFromStep={controller.onRetryFromStep}
+          onCancel={controller.onCancel}
+          isGenerating={controller.isGenerating}
         />
       ) : (
         <V1ProgressUI
@@ -64,6 +66,8 @@ export function GenerationProgressView({
           parsedDraft={controller.parsedDraft}
           progressValue={controller.progressValue}
           errorMessage={controller.errorMessage}
+          onCancel={controller.onCancel}
+          isGenerating={controller.isGenerating}
         />
       )}
     </div>
@@ -88,6 +92,8 @@ function V2ProgressUI({
   failedStepIndex,
   onRetry,
   onRetryFromStep,
+  onCancel,
+  isGenerating,
 }: {
   context: GenerationContext;
   draftId: string;
@@ -106,6 +112,8 @@ function V2ProgressUI({
   failedStepIndex: number | null;
   onRetry: () => void;
   onRetryFromStep: (stepIndex: number) => void;
+  onCancel: () => void;
+  isGenerating: boolean;
 }) {
   const headline = getV2Headline(status, currentStepIndex, totalSteps);
   const displaySteps = getDisplaySteps(
@@ -157,7 +165,18 @@ function V2ProgressUI({
                   )}
                   <span>{headline.title}</span>
                 </div>
-                <span>{totalSteps > 0 ? `${completedCount} / ${totalSteps} 步` : '排队中'}</span>
+                <div className="flex items-center gap-2">
+                  <span>{totalSteps > 0 ? `${completedCount} / ${totalSteps} 步` : '排队中'}</span>
+                  {isGenerating && (
+                    <button
+                      type="button"
+                      className="inline-flex items-center justify-center rounded-md border border-slate-200 bg-white px-2.5 py-1 text-[10px] font-medium text-slate-500 transition-colors hover:bg-slate-50 hover:text-slate-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-slate-400 focus-visible:ring-offset-2"
+                      onClick={onCancel}
+                    >
+                      取消生成
+                    </button>
+                  )}
+                </div>
               </div>
             </div>
           </div>
@@ -344,6 +363,8 @@ function V1ProgressUI({
   parsedDraft,
   progressValue,
   errorMessage,
+  onCancel,
+  isGenerating,
 }: {
   context: GenerationContext;
   draftId: string;
@@ -352,6 +373,8 @@ function V1ProgressUI({
   parsedDraft: Partial<TutorialDraft> | null;
   progressValue: number;
   errorMessage: string | null;
+  onCancel: () => void;
+  isGenerating: boolean;
 }) {
   const headline = getV1Headline(status);
   const stepCount = parsedDraft?.steps?.length ?? 0;
@@ -391,7 +414,18 @@ function V1ProgressUI({
                   )}
                   <span>{headline.title}</span>
                 </div>
-                <span>{stepCount > 0 ? `${stepCount} 步` : '等待中'}</span>
+                <div className="flex items-center gap-2">
+                  <span>{stepCount > 0 ? `${stepCount} 步` : '等待中'}</span>
+                  {isGenerating && (
+                    <button
+                      type="button"
+                      className="inline-flex items-center justify-center rounded-md border border-slate-200 bg-white px-2.5 py-1 text-[10px] font-medium text-slate-500 transition-colors hover:bg-slate-50 hover:text-slate-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-slate-400 focus-visible:ring-offset-2"
+                      onClick={onCancel}
+                    >
+                      取消生成
+                    </button>
+                  )}
+                </div>
               </div>
             </div>
           </div>

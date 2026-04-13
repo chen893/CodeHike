@@ -59,4 +59,6 @@ export interface GenerationProgressViewModel {
   failedStepIndex: number | null;
   onRetry: () => void;
   onRetryFromStep: (stepIndex: number) => void;
+  onCancel: () => void;
+  isGenerating: boolean;
 }

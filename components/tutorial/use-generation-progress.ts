@@ -46,6 +46,11 @@ export function useGenerationProgress({
   const onCompleteRef = useRef(onComplete);
   onCompleteRef.current = onComplete;
 
+  // AbortController lives in a ref so the cancel() function can reach it
+  const controllerRef = useRef<AbortController | null>(null);
+  // Distinguishes user-initiated cancel from unmount cleanup
+  const isCancelledRef = useRef(false);
+
   useEffect(() => {
     setProtocol('unknown');
     setV1Status('connecting');
@@ -61,8 +66,10 @@ export function useGenerationProgress({
     setErrorPhase(null);
     setFailedStepIndex(null);
     setErrorLabel(null);
+    isCancelledRef.current = false;
 
     const controller = new AbortController();
+    controllerRef.current = controller;
     let v1Accumulated = '';
     let localProtocol: ProtocolVersion = 'unknown';
     let currentEvent = '';
@@ -226,7 +233,18 @@ export function useGenerationProgress({
           }
         }
       } catch (err: any) {
-        if (err.name !== 'AbortError') {
+        if (err.name === 'AbortError') {
+          // If the user explicitly cancelled (not just unmount cleanup), show a message
+          if (isCancelledRef.current) {
+            setErrorMessage('生成已取消');
+            setErrorPhase(null);
+            setFailedStepIndex(null);
+            setErrorLabel(null);
+            setV1Status('error: 生成已取消');
+            setV2Status('error');
+          }
+          // Otherwise it was an unmount cleanup — silently ignore
+        } else {
           const message = err instanceof Error ? err.message : '生成请求失败';
           setErrorMessage(message);
           setErrorPhase(null);
@@ -245,7 +263,10 @@ export function useGenerationProgress({
     }
 
     void run();
-    return () => controller.abort();
+    return () => {
+      controller.abort();
+      controllerRef.current = null;
+    };
   }, [draftId, runNonce]);
 
   useEffect(() => {
@@ -332,6 +353,20 @@ export function useGenerationProgress({
     void stepIndex;
   }
 
+  function handleCancel() {
+    isCancelledRef.current = true;
+    controllerRef.current?.abort();
+  }
+
+  const isGenerating =
+    v2Status === 'connecting' ||
+    v2Status === 'generating-outline' ||
+    v2Status === 'outline-received' ||
+    v2Status === 'filling-step' ||
+    v2Status === 'validating' ||
+    v1Status === 'connecting' ||
+    v1Status === 'generating';
+
   return {
     showV2,
     v1Status,
@@ -352,5 +387,7 @@ export function useGenerationProgress({
     failedStepIndex,
     onRetry: handleRetry,
     onRetryFromStep: handleRetryFromStep,
+    onCancel: handleCancel,
+    isGenerating,
   };
 }
