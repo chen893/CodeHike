@@ -13,3 +13,9 @@ tsconfig.tsbuildinfo
 
 # Next.js auto-generated
 next-env.d.ts
+
+# OS
+.DS_Store
+
+# Test artifacts
+test-results/
