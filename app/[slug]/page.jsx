@@ -48,6 +48,7 @@ export default async function TutorialPage({ params }) {
         intro={tutorial.intro}
         title={tutorial.title}
         fileName={tutorial.fileName}
+        slug={slug}
       />
     </main>
   )
