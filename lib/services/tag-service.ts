@@ -41,14 +41,21 @@ export async function getTutorialTags(
 
 /**
  * Manually set tags for a tutorial by tag names.
- * Used by the tag editor UI.
+ * Used by the tag editor UI. Normalizes names before lookup.
  */
 export async function setTutorialTagsByName(
   tutorialId: string,
   tagNames: string[],
 ): Promise<TutorialTag[]> {
+  // Normalize: trim, remove empty, deduplicate
+  const normalized = [...new Set(
+    tagNames
+      .map((n) => n.trim())
+      .filter((n) => n.length > 0 && n.length <= 64),
+  )];
+
   // Resolve each tag name to a tag record (create if needed)
-  const tagPromises = tagNames.map((name) => tagRepo.getOrCreateTag(name));
+  const tagPromises = normalized.map((name) => tagRepo.getOrCreateTag(name));
   const tags = await Promise.all(tagPromises);
 
   // Associate all tags with the tutorial

@@ -1,4 +1,4 @@
-import { eq, desc, inArray } from 'drizzle-orm';
+import { eq, desc, sql } from 'drizzle-orm';
 import { db } from '../db';
 import { users, drafts, publishedTutorials } from '../db/schema';
 import type { UserPublicProfile, PublishedTutorial } from '../types/api';
@@ -29,23 +29,13 @@ export async function getUserByUsername(
 
   if (!userRow) return null;
 
-  // Count published tutorials: find all drafts for user, then published tutorials
-  const userDrafts = await db
-    .select({ id: drafts.id })
+  // Count published tutorials via a single COUNT query
+  const [countRow] = await db
+    .select({ count: sql<number>`count(*)::int` })
     .from(drafts)
+    .innerJoin(publishedTutorials, eq(drafts.id, publishedTutorials.draftRecordId))
     .where(eq(drafts.userId, userRow.id));
-
-  const draftIds = userDrafts.map((d) => d.id);
-  let tutorialCount = 0;
-
-  if (draftIds.length > 0) {
-    const countResult = await db
-      .select({ count: drafts.id })
-      .from(drafts)
-      .innerJoin(publishedTutorials, eq(drafts.id, publishedTutorials.draftRecordId))
-      .where(eq(drafts.userId, userRow.id));
-    tutorialCount = countResult.length;
-  }
+  const tutorialCount = countRow?.count ?? 0;
 
   return {
     id: userRow.id,

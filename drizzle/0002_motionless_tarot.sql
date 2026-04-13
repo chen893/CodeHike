@@ -9,7 +9,8 @@ CREATE TABLE "tutorial_tags" (
 --> statement-breakpoint
 CREATE TABLE "tutorial_tag_relations" (
 	"tutorial_id" uuid NOT NULL,
-	"tag_id" uuid NOT NULL
+	"tag_id" uuid NOT NULL,
+	CONSTRAINT "tutorial_tag_relations_pk" PRIMARY KEY("tutorial_id", "tag_id")
 );
 --> statement-breakpoint
 ALTER TABLE "users" ADD COLUMN "username" varchar(64);--> statement-breakpoint

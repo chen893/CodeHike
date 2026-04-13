@@ -25,7 +25,7 @@ function generateSlug(name: string): string {
 }
 
 export async function createTag(name: string): Promise<TutorialTag> {
-  const slug = generateSlug(name);
+  const slug = generateSlug(name) || 'tag';
   const [row] = await db
     .insert(tutorialTags)
     .values({ name, slug })
@@ -34,14 +34,39 @@ export async function createTag(name: string): Promise<TutorialTag> {
 }
 
 export async function getOrCreateTag(name: string): Promise<TutorialTag> {
-  const [existing] = await db
+  const [byName] = await db
     .select()
     .from(tutorialTags)
     .where(eq(tutorialTags.name, name));
-  if (existing) {
-    return toTutorialTag(existing);
+  if (byName) {
+    return toTutorialTag(byName);
   }
-  return createTag(name);
+
+  // Check by slug in case of collision (e.g., "React" vs "react")
+  const slug = generateSlug(name);
+  if (slug) {
+    const [bySlug] = await db
+      .select()
+      .from(tutorialTags)
+      .where(eq(tutorialTags.slug, slug));
+    if (bySlug) {
+      return toTutorialTag(bySlug);
+    }
+  }
+
+  try {
+    return await createTag(name);
+  } catch (err: any) {
+    // Handle unique constraint violation from race condition
+    if (err?.code === '23505') {
+      const [row] = await db
+        .select()
+        .from(tutorialTags)
+        .where(eq(tutorialTags.name, name));
+      if (row) return toTutorialTag(row);
+    }
+    throw err;
+  }
 }
 
 export async function getTagBySlug(slug: string): Promise<TutorialTag | null> {

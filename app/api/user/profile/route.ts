@@ -65,10 +65,24 @@ export async function PATCH(req: Request) {
     const updates: { name?: string; bio?: string } = {};
 
     if (typeof data.name === 'string') {
-      updates.name = data.name.trim();
+      const name = data.name.trim();
+      if (name.length > 100) {
+        return NextResponse.json(
+          { message: '名称最多 100 个字符', code: 'VALIDATION_ERROR' },
+          { status: 400 },
+        );
+      }
+      updates.name = name;
     }
     if (typeof data.bio === 'string') {
-      updates.bio = data.bio.trim();
+      const bio = data.bio.trim();
+      if (bio.length > 500) {
+        return NextResponse.json(
+          { message: '简介最多 500 个字符', code: 'VALIDATION_ERROR' },
+          { status: 400 },
+        );
+      }
+      updates.bio = bio;
     }
 
     if (Object.keys(updates).length === 0) {

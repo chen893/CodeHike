@@ -33,7 +33,7 @@ export default async function ExplorePage({
   const tag = typeof params.tag === 'string' ? params.tag : undefined;
   const lang = typeof params.lang === 'string' ? params.lang : undefined;
   const sort = typeof params.sort === 'string' ? params.sort : undefined;
-  const page = typeof params.page === 'string' ? Number(params.page) : 1;
+  const page = typeof params.page === 'string' ? Math.max(1, parseInt(params.page, 10) || 1) : 1;
 
   const user = await getCurrentUser();
   const { tutorials, total, tags } = await getExploreData({

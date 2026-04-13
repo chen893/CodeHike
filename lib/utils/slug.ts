@@ -6,6 +6,13 @@ const RESERVED_SLUGS = new Set([
   'sample',
   'request',
   'preview',
+  'explore',
+  'tags',
+  'u',
+  'admin',
+  'dashboard',
+  'settings',
+  'notifications',
 ]);
 
 export function generateSlug(title: string): string {

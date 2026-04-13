@@ -1,4 +1,5 @@
 import { NextResponse } from 'next/server';
+import { auth } from '@/auth';
 import { getTutorialTags, setTutorialTagsByName } from '@/lib/services/tag-service';
 import { getRouteErrorMessage } from '@/lib/api/route-errors';
 
@@ -24,6 +25,14 @@ export async function PUT(
   { params }: { params: Promise<{ tutorialId: string }> },
 ) {
   try {
+    const session = await auth();
+    if (!session?.user?.id) {
+      return NextResponse.json(
+        { message: '请先登录', code: 'UNAUTHORIZED' },
+        { status: 401 },
+      );
+    }
+
     const { tutorialId } = await params;
     let body: unknown;
     try {
@@ -45,7 +54,13 @@ export async function PUT(
       );
     }
 
-    const tags = await setTutorialTagsByName(tutorialId, tagNames as string[]);
+    // Validate tag names: max 64 chars, non-empty, no special content
+    const validNames = (tagNames as string[]).filter((n) => {
+      const trimmed = n.trim();
+      return trimmed.length > 0 && trimmed.length <= 64;
+    });
+
+    const tags = await setTutorialTagsByName(tutorialId, validNames);
     return NextResponse.json(tags);
   } catch (err) {
     console.error('[api/tutorials/tutorialId/tags] PUT failed:', err);

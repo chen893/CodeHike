@@ -30,6 +30,12 @@ export async function setUsername(
     throw new Error('This username is reserved');
   }
 
+  // Check if username is already taken
+  const existing = await userRepo.getUserByUsername(username);
+  if (existing && existing.id !== userId) {
+    throw new Error('用户名已被占用');
+  }
+
   await userRepo.setUsername(userId, username);
 }
 

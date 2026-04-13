@@ -6,8 +6,10 @@ export const runtime = 'nodejs';
 export async function GET(req: Request) {
   try {
     const { searchParams } = new URL(req.url);
+    const rawSearch = searchParams.get('q') || undefined;
+    const search = rawSearch && rawSearch.length <= 200 ? rawSearch : undefined;
     const result = await getExploreData({
-      search: searchParams.get('q') || undefined,
+      search,
       tag: searchParams.get('tag') || undefined,
       lang: searchParams.get('lang') || undefined,
       sort: searchParams.get('sort') || undefined,
