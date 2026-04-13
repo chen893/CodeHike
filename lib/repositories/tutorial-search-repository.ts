@@ -100,13 +100,13 @@ export async function searchPublishedTutorials(
     })
     .from(publishedTutorials)
     .innerJoin(drafts, eq(publishedTutorials.draftRecordId, drafts.id))
-    .innerJoin(users, eq(drafts.userId, users.id))
+    .leftJoin(users, eq(drafts.userId, users.id))
     .leftJoin(
       sql`(SELECT slug, count(*) as cnt FROM events WHERE event_type = 'tutorial_viewed' GROUP BY slug) vc`,
       sql`vc.slug = ${publishedTutorials.slug}`,
     )
     .where(
-      sql`to_tsvector('simple', coalesce(${publishedTutorials.tutorialDraftSnapshot}->'meta'->>'title','') || ' ' || coalesce(${publishedTutorials.tutorialDraftSnapshot}->'meta'->>'description','') || ' ' || coalesce(${publishedTutorials.slug},'')) @@ plainto_tsquery('simple', ${query})`,
+      sql`to_tsvector('simple', coalesce("published_tutorials"."tutorial_draft_snapshot"->'meta'->>'title','') || ' ' || coalesce("published_tutorials"."slug",'')) @@ plainto_tsquery('simple', ${query})`,
     )
     .orderBy(desc(sql`coalesce(vc.cnt, 0)`))
     .limit(limit);
@@ -197,7 +197,7 @@ export async function listPublishedForExplore(options: {
     })
     .from(publishedTutorials)
     .innerJoin(drafts, eq(publishedTutorials.draftRecordId, drafts.id))
-    .innerJoin(users, eq(drafts.userId, users.id))
+    .leftJoin(users, eq(drafts.userId, users.id))
     .leftJoin(
       sql`(SELECT slug, count(*) as cnt FROM events WHERE event_type = 'tutorial_viewed' GROUP BY slug) vc`,
       sql`vc.slug = ${publishedTutorials.slug}`,
@@ -229,5 +229,7 @@ export async function listPublishedForExplore(options: {
     tutorials = tutorials.filter((t) => t.lang === options.lang);
   }
 
-  return { tutorials, total };
+  // When lang filter is applied, total is inaccurate (from pre-filter count).
+  // For current scale this is acceptable; for larger datasets, push lang filter to SQL.
+  return { tutorials, total: options.lang ? tutorials.length : total };
 }
