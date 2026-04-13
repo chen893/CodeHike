@@ -66,13 +66,14 @@ lib/services/compute-generation-quality.ts # 质量指标计算
 |----|------|------|
 | 路由 | `app/` | Next.js App Router 页面和 API route handlers |
 | 组件 | `components/` | 客户端交互组件（编辑器、表单、渲染器、AppShell） |
-| 服务 | `lib/services/` | 业务逻辑（创建、生成、发布、质量计算），被 API 路由调用 |
+| 服务 | `lib/services/` | 业务逻辑（创建、生成、发布、质量计算、搜索、标签、用户档案），被 API 路由和页面调用 |
 | 数据 | `lib/repositories/` | Drizzle ORM 数据访问，返回类型化 domain 对象 |
 | Schema | `lib/schemas/` | Zod schema（AI 输出约束 + API 校验），`index.ts` 为 barrel |
 | 类型 | `lib/types/` | app-facing DTO、客户端响应类型、共享 domain type |
 | DB | `lib/db/` | Drizzle schema 定义 + 连接池 |
-| AI | `lib/ai/` | prompt 模板 + AI 调用封装（v1 单次生成 + v2 多阶段生成） |
+| AI | `lib/ai/` | prompt 模板 + AI 调用封装（v1 单次生成 + v2 多阶段生成 + AI 标签生成） |
 | 渲染 | `lib/tutorial/` | patch 应用、payload 构建、registry、草稿 patch 工具（纯服务端） |
+| 监控 | `lib/monitoring/` | 事件类型定义、埋点 helpers、指标收集（analytics, metrics, event-types） |
 | 工具 | `lib/utils/` | 校验、序列化、hash、slug、请求版本化 |
 
 ### 编辑器组件
@@ -88,7 +89,9 @@ lib/services/compute-generation-quality.ts # 质量指标计算
 | 目录 | 用途 |
 |------|------|
 | `components/drafts/` | 草稿列表、创建、编辑、发布相关 client hooks / feature clients / 子视图 |
-| `components/tutorial/` | 教程阅读、远程加载、生成进度协议解析、渲染器子模块 |
+| `components/tutorial/` | 教程阅读、远程加载、生成进度协议解析、渲染器子模块、标签编辑 |
+| `components/explore/` | 探索页面客户端交互（搜索输入、标签筛选、排序切换） |
+| `components/profile/` | 用户档案编辑、用户名设置、profile feature client |
 | `components/ui/` | 共享 UI primitive |
 
 ### 渲染器增强组件（`components/tutorial/*`）
@@ -106,6 +109,36 @@ lib/services/compute-generation-quality.ts # 质量指标计算
 - `content/sample-tutorial.js` — 示例教程 DSL 数据（registry 回退）
 - `lib/tutorial/registry.js` — 静态 slug 注册表
 
+### v3.7 发现与标签系统
+
+```text
+用户浏览路径：
+  /explore          → 搜索 + 标签筛选 + 排序 + 分页
+  /tags             → 所有标签 + 教程计数
+  /u/[username]     → 公开用户档案 + 已发布教程列表
+
+数据流：
+  app/explore/page.tsx       → lib/services/explore-service.ts  → lib/repositories/tutorial-search-repository.ts
+  app/tags/page.tsx          → lib/services/explore-service.ts  → lib/repositories/tag-repository.ts
+  app/u/[username]/page.tsx  → lib/services/user-profile-service.ts → lib/repositories/user-repository.ts
+
+标签生命周期：
+  教程发布 → lib/services/publish-draft.ts (fire-and-forget)
+           → lib/services/tag-service.ts
+           → lib/ai/tag-generator.ts (AI 生成，语言回退)
+           → lib/repositories/tag-repository.ts (getOrCreateTag + setTagsForTutorial 事务)
+
+搜索实现：
+  PostgreSQL full-text search（simple config）
+  ts_vector 索引 tutorialDraftSnapshot->meta->title + slug
+  ⚠️ Drizzle sql 模板不支持 JSONB -> 操作符与插值列引用混用，需使用原始 SQL 列名
+
+用户档案：
+  users 表增加 username (unique, nullable)、bio (text)
+  首次设置 username 后不可更改（username 路由返回 409）
+  username 自动加入 RESERVED_SLUGS 防止路由冲突
+```
+
 ### 关键约束
 
 - 所有 patch 应用、高亮、focus/marks/change 注入都在**服务端**完成
@@ -119,6 +152,9 @@ lib/services/compute-generation-quality.ts # 质量指标计算
 - DB schema 中 `generationOutline`、`generationQuality` 为可选 jsonb，向后兼容 v3.0 草稿
 - `app/*` 入口主要依赖 `components/*` 和 `lib/services/*`；页面可额外依赖 `lib/utils/client-data.ts`（序列化）和 `lib/draft-status.ts`（状态 badge）；route handler 可额外依赖 `lib/api/route-errors.ts`（错误处理）；不要在页面或 route handler 中直接调用 `lib/repositories/*`、`lib/db/*`、`lib/tutorial/*`
 - client 侧 `fetch` 统一进入 feature client / hook / controller，不要散落在视图组件中
+- 探索/搜索查询中用户表必须使用 `leftJoin(users)`，因为 `drafts.userId` 可能为 NULL（未关联用户的教程）
+- AI 标签生成（`lib/ai/tag-generator.ts`）为 fire-and-forget，发布失败不阻塞主流程
+- 监控埋点（`lib/monitoring/analytics.ts`）为 fire-and-forget，不得阻塞页面渲染
 
 ### 后续新建代码建议
 
@@ -146,6 +182,19 @@ lib/services/compute-generation-quality.ts # 质量指标计算
 - 纯 tutorial 领域 helper 放 `lib/tutorial/*`；纯通用 helper 放 `lib/utils/*`；如果 helper 只服务某个 feature，优先就近放在 feature 目录，而不是继续堆到 `lib/utils/*` 根下。
 - 新 client 响应如果会被多个组件消费，先补类型定义，再写调用方，避免继续依赖隐式 `response.json()` 结构。
 
+#### 新监控 / 新埋点
+
+- 新事件类型先在 `lib/monitoring/event-types.ts` 的 `ALLOWED_EVENT_TYPES` 中注册，再写 convenience helper。
+- 埋点调用统一走 `lib/monitoring/analytics.ts` 中的 helper，保持 fire-and-forget 模式。
+- 不要在 Server Component 渲染关键路径中 `await` 埋点结果。
+
+#### 新搜索 / 新筛选
+
+- PostgreSQL 全文搜索使用 `simple` 配置（不分词、不词干化），适合中英混合场景。
+- 涉及 JSONB 字段查询时，Drizzle `sql` 模板不支持 `->` / `->>` 操作符与 `${columnRef}` 插值混用，需使用原始 SQL 列名（如 `"published_tutorials"."tutorial_draft_snapshot"`）。
+- 需要过滤 JSONB 内嵌字段的场景（如 lang），优先在 SQL 层实现；当前应用层过滤可接受但 total 计数不准确，数据量增长后应迁移至 SQL。
+- 任何关联 `users` 表的教程查询，使用 `leftJoin` 而非 `innerJoin`，确保未关联用户的教程不被过滤。
+
 #### 新测试 / 新文档
 
 - 触及分层边界、请求竞态、patch 链、纯函数算法时，要同步补 `tests/*.test.js`；优先补结构约束测试和纯函数测试，不要求一开始就引入完整测试框架。
@@ -158,6 +207,7 @@ lib/services/compute-generation-quality.ts # 质量指标计算
 |------|------|
 | `docs/vibedocs-technical-handbook.md` | **主文档** — 产品、架构、数据、API、UI、AI 生成的技术手册 |
 | `docs/tutorial-data-format.md` | 教程 DSL 权威规范 — JSON 结构、Patch 机制、代码组装算法、校验规则 |
+| `docs/post-v3.5-roadmap.md` | v3.5+ 迭代路线图 — v3.6/v3.7/v3.8 功能规划 |
 | `docs/v3-implementation-issues.md` | 实施问题记录 — 技术决策和解决方案（活跃维护） |
 | `docs/ui-review-workflow.md` | UI 审查流程 — 截图规范、模型审查、修复验证 |
 | `docs/mini-redux.js` | Redux 核心源码实现（简化版），测试用样本源码 |
