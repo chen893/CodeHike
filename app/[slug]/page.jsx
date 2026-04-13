@@ -5,6 +5,7 @@ import {
   getTutorialPageData,
   listStaticTutorialParams,
 } from "@/lib/services/tutorial-queries"
+import { generateOgMetadata } from "@/lib/utils/seo"
 
 export function generateStaticParams() {
   return listStaticTutorialParams()
@@ -24,6 +25,11 @@ export async function generateMetadata({ params }) {
   return {
     title: tutorial.title,
     description: tutorial.description,
+    ...generateOgMetadata({
+      title: tutorial.title,
+      description: tutorial.description,
+      slug,
+    }),
   }
 }
 

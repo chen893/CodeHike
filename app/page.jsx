@@ -10,11 +10,17 @@ import {
   CardTitle,
 } from "@/components/ui/card"
 import { getHomePageData } from "@/lib/services/tutorial-queries"
+import { generateOgMetadata } from "@/lib/utils/seo"
 import { getCurrentUser } from "@/auth"
 
 export const metadata = {
   title: "VibeDocs",
   description: "把源码变成逐步构建的交互式教程。",
+  ...generateOgMetadata({
+    title: "VibeDocs",
+    description: "把源码变成逐步构建的交互式教程。",
+    slug: "",
+  }),
 }
 
 export default async function Page() {
@@ -79,7 +85,20 @@ export default async function Page() {
                       {pub.tutorialDraftSnapshot.meta.description}
                     </CardDescription>
                   </CardHeader>
-                  <CardContent className="border-t border-slate-50 p-5 pt-4">
+                  <CardContent className="space-y-3 border-t border-slate-50 p-5 pt-4">
+                    <div className="flex flex-wrap gap-1.5">
+                      {pub.lang && (
+                        <Badge variant="outline" className="text-[11px] border-slate-200 text-slate-500">
+                          {pub.lang}
+                        </Badge>
+                      )}
+                      <Badge variant="outline" className="text-[11px] border-slate-200 text-slate-500">
+                        {pub.stepCount} 步
+                      </Badge>
+                      <Badge variant="outline" className="text-[11px] border-slate-200 text-slate-500">
+                        约 {pub.readingTime} 分钟
+                      </Badge>
+                    </div>
                     <Button asChild className="w-full bg-slate-900 text-white hover:bg-slate-800">
                       <Link href={`/${pub.slug}`}>阅读全文</Link>
                     </Button>
@@ -114,6 +133,19 @@ export default async function Page() {
                   </CardDescription>
                 </CardHeader>
                 <CardContent className="space-y-3 border-t border-slate-50 p-5 pt-4">
+                  <div className="flex flex-wrap gap-1.5">
+                    {tutorial.lang && (
+                      <Badge variant="outline" className="text-[11px] border-slate-200 text-slate-500">
+                        {tutorial.lang}
+                      </Badge>
+                    )}
+                    <Badge variant="outline" className="text-[11px] border-slate-200 text-slate-500">
+                      {tutorial.stepCount} 步
+                    </Badge>
+                    <Badge variant="outline" className="text-[11px] border-slate-200 text-slate-500">
+                      约 {tutorial.readingTime} 分钟
+                    </Badge>
+                  </div>
                   <div className="flex gap-2">
                     <Button asChild variant="secondary" size="sm" className="flex-1 bg-slate-100 text-slate-700 hover:bg-slate-200">
                       <Link href={`/${tutorial.slug}`}>静态</Link>

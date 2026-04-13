@@ -8,6 +8,7 @@ import {
   listTutorials,
   tutorialSlugs,
 } from '../tutorial/registry';
+import { estimateReadingTime } from '../utils/seo';
 
 const loadTutorialSourceBySlug = cache(async (slug: string) => {
   try {
@@ -47,6 +48,9 @@ export async function getTutorialMetadata(slug: string) {
     source: record.source,
     title: record.tutorial.meta.title,
     description: record.tutorial.meta.description,
+    lang: record.tutorial.meta.lang || '',
+    fileName: record.tutorial.meta.fileName || '',
+    stepCount: record.tutorial.steps.length,
   };
 }
 
@@ -103,8 +107,22 @@ export async function getHomePageData() {
     console.error('加载已发布教程列表失败:', err);
   }
 
+  const publishedWithMeta = publishedTutorials.map((pub) => {
+    const draft = pub.tutorialDraftSnapshot;
+    const stepCount = draft.steps.length;
+    return {
+      ...pub,
+      stepCount,
+      lang: draft.meta.lang || '',
+      readingTime: estimateReadingTime(stepCount),
+    };
+  });
+
   return {
-    publishedTutorials,
-    tutorials: listTutorials(),
+    publishedTutorials: publishedWithMeta,
+    tutorials: listTutorials().filter((t): t is NonNullable<typeof t> => !!t).map((t) => ({
+      ...t,
+      readingTime: estimateReadingTime(t.stepCount),
+    })),
   };
 }
