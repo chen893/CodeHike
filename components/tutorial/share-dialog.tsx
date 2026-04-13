@@ -2,7 +2,7 @@
 
 import { useState, useCallback } from "react"
 import { Dialog, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog"
-import { Share2, Copy, Check } from "lucide-react"
+import { Share2, Copy, Check, Download } from "lucide-react"
 
 interface ShareDialogProps {
   slug: string
@@ -141,6 +141,29 @@ export function ShareDialog({ slug, title, isOpen, onClose }: ShareDialogProps) 
                 </>
               )}
             </button>
+          </div>
+        </div>
+
+        {/* Export */}
+        <div>
+          <label className="mb-1.5 block text-sm font-medium">导出</label>
+          <div className="flex gap-2">
+            <a
+              href={`/api/tutorials/${slug}/export-markdown`}
+              download
+              className="inline-flex items-center gap-2 rounded-md border border-border/50 px-4 py-2 text-sm font-medium transition-colors hover:bg-accent"
+            >
+              <Download className="h-4 w-4" />
+              导出 Markdown
+            </a>
+            <a
+              href={`/api/tutorials/${slug}/export-html`}
+              download
+              className="inline-flex items-center gap-2 rounded-md border border-border/50 px-4 py-2 text-sm font-medium transition-colors hover:bg-accent"
+            >
+              <Download className="h-4 w-4" />
+              导出 HTML
+            </a>
           </div>
         </div>
       </div>
