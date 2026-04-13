@@ -369,6 +369,13 @@ DraftSnapshot {
 | GET | `/api/og/[slug]` | OG 图片生成（1200x630，nodejs runtime） |
 | POST | `/api/models/probe` | 模型能力探测（可达性、延迟、response_format 支持） |
 | GET/POST | `/api/auth/[...nextauth]` | NextAuth 路由处理器（GitHub OAuth） |
+| GET | `/api/search?q=` | 全文搜索教程（PostgreSQL ts_vector，limit 50） |
+| GET | `/api/tags` | 标签列表（含教程计数） |
+| GET | `/api/tutorials/[slug]/tags` | 获取教程标签 |
+| PUT | `/api/tutorials/[slug]/tags` | 设置教程标签（需认证，tags 字符串数组） |
+| GET | `/api/user/profile` | 获取当前用户档案（需认证） |
+| PATCH | `/api/user/profile` | 更新用户档案（name/bio，需认证） |
+| POST | `/api/user/username` | 设置用户名（首次设置，已设置返回 409，需认证） |
 
 **关键设计决策：**
 - 只用 Route Handlers，不用 tRPC、不用 Server Actions
@@ -414,7 +421,7 @@ DraftSnapshot {
 │  通用工具（校验、序列化、hash、slug、请求版本） │
 ├─────────────────────────────────────────────┤
 │  lib/monitoring/         (监控层)            │
-│  计时、计数工具                              │
+│  事件类型定义、埋点 helpers、计时计数工具      │
 ├─────────────────────────────────────────────┤
 │  lib/api/                (路由工具层)        │
 │  Route Handler 共用的错误处理工具             │
@@ -458,8 +465,10 @@ DraftSnapshot {
 | `lib/base-path.js` | base path 规范化 |
 | `lib/utils/seo.ts` | OG 元数据生成、JSON-LD 结构化数据、阅读时间估算 |
 | `lib/monitoring/metrics.ts` | 计时工具（`startTimer`）、事件计数器（`EventCounter`） |
-| `lib/types/api.ts` | API 响应类型定义 |
-| `lib/types/client.ts` | 客户端 DTO 类型定义 |
+| `lib/monitoring/analytics.ts` | 埋点 convenience helpers（`trackExploreViewed`、`trackProfileViewed` 等），fire-and-forget |
+| `lib/monitoring/event-types.ts` | 事件类型注册表（`ALLOWED_EVENT_TYPES`），新增事件必须先在此注册 |
+| `lib/types/api.ts` | API 响应类型定义（`TutorialTag`、`UserPublicProfile`、`ExploreTutorial` 等） |
+| `lib/types/client.ts` | 客户端 DTO 类型定义（`ClientTutorialTag`、`ClientExploreTutorial` 等） |
 
 ---
 
@@ -472,7 +481,7 @@ DraftSnapshot {
 | `/` | 首页 |
 | `/[slug]` | 服务端渲染教程（优先 DB published → 回退 registry） |
 | `/[slug]/request` | 客户端 fetch 教程 |
-| `/api/tutorials/[slug]` | 教程 payload JSON API（`app/api/tutorials/[slug]/route.js`） |
+| `/api/tutorials/[slug]` | 教程 payload JSON API（`route.js`） |
 
 ### 9.2 草稿创建与管理
 
@@ -484,22 +493,32 @@ DraftSnapshot {
 | `/drafts/[id]/preview` | 本地预览 |
 | `/drafts/[id]/preview/request` | 远程预览 |
 
-### 9.3 路由特殊处理
+### 9.3 发现与用户档案（v3.7 新增）
+
+| 路由 | 说明 |
+|------|------|
+| `/explore` | 探索页面（搜索 + 标签筛选 + 排序 + 分页，Server Component） |
+| `/tags` | 标签页面（所有标签 + 教程计数卡片） |
+| `/u/[username]` | 公开用户档案（头像、名称、简介、已发布教程列表） |
+
+### 9.4 路由特殊处理
 
 - `/drafts` 页面需要 `await connection()` 强制动态渲染（否则构建时冻结列表）
 - `app/[slug]/page.jsx` 通过 `lib/services/tutorial-queries.ts` 中的 `cache()` 包装函数避免重复 DB 查询
 
-### 9.4 认证与路由保护
+### 9.5 认证与路由保护
 
 中间件 (`middleware.ts`) 对路由实施认证保护：
 
 **公开路由（无需登录）：**
 - `/`（首页）、`/[slug]`（教程阅读）、`/[slug]/request`
+- `/explore`（探索）、`/tags`（标签）、`u/`（用户档案）
 - `/api/auth/*`、`/api/tutorials/*`、`/api/models/*`、`/api/og/*`
+- `/api/search`、`/api/tags`
 
 **受保护路由（需要登录）：**
 - `/drafts/*`、`/new` — 页面路由 redirect 到登录页
-- `/api/drafts/*` — API 路由返回 `401 JSON`
+- `/api/drafts/*`、`/api/user/*` — API 路由返回 `401 JSON`
 
 中间件使用轻量级 NextAuth 实例（无 DB adapter，仅验证 JWT cookie），在 Edge Runtime 下运行。页面和服务端组件通过 `getCurrentUser()` 获取当前用户，API 路由通过 `auth()` 获取 session。
 
@@ -552,6 +571,22 @@ DraftSnapshot {
 |------|------|
 | `components/tutorial/share-dialog.tsx` | 分享对话框（公开 URL + embed snippet + 社交分享） |
 
+### 10.6 发现与标签组件（v3.7 新增）
+
+| 组件 | 说明 |
+|------|------|
+| `components/explore/explore-client.tsx` | 探索页客户端交互（搜索输入、标签筛选 chips、排序切换） |
+| `components/tutorial/tag-editor.tsx` | 标签编辑器（添加/删除标签 + 自动补全） |
+| `components/tutorial/tags-client.ts` | 标签 API 调用封装 |
+
+### 10.7 用户档案组件（v3.7 新增）
+
+| 组件 | 说明 |
+|------|------|
+| `components/profile/profile-editor.tsx` | 档案编辑器（name + bio） |
+| `components/profile/username-setup.tsx` | 首次用户名设置（带可用性验证） |
+| `components/profile/profile-client.ts` | 档案 API 调用封装 |
+
 ### 10.6 Feature 分解
 
 草稿相关：
@@ -571,8 +606,16 @@ DraftSnapshot {
 - `components/tutorial/generation-progress-utils.ts` — 生成进度工具函数
 - `components/tutorial/generation-progress-view.tsx` — 生成进度视图组件
 - `components/tutorial/use-remote-resource.ts` — 远程加载 + 请求版本化
+- `components/tutorial/tag-editor.tsx` — 标签编辑器（添加/删除 + 自动补全）
+- `components/tutorial/tags-client.ts` — 标签 API 调用封装
 
-### 10.7 仓储层
+探索相关（v3.7 新增）：
+- `components/explore/explore-client.tsx` — 搜索输入 + 标签筛选 chips + 排序切换
+
+用户档案相关（v3.7 新增）：
+- `components/profile/profile-client.ts` — 档案 API 调用封装
+- `components/profile/profile-editor.tsx` — 档案编辑器
+- `components/profile/username-setup.tsx` — 用户名设置
 
 | 文件 | 用途 |
 |------|------|
@@ -617,12 +660,14 @@ DraftSnapshot {
 - `publishedAt` timestamp
 - `createdAt` timestamp
 
-**`users` 表（NextAuth）：**
+**`users` 表（NextAuth + v3.7 用户档案）：**
 - `id` text PK（auto UUID）
 - `name` text
 - `email` text (unique)
 - `emailVerified` timestamp
 - `image` text
+- `username` varchar(64) (unique, nullable) — v3.7 用户名（首次设置后不可更改）
+- `bio` text — v3.7 个人简介
 
 **`accounts` 表（NextAuth OAuth）：**
 - `userId` text FK → users.id (cascade)
@@ -647,13 +692,32 @@ DraftSnapshot {
 - `stepCount` integer (default 0)
 - `createdAt` timestamp
 
+**`tutorial_tags` 表（v3.7 教程标签）：**
+- `id` uuid PK (auto gen_random_uuid)
+- `name` varchar(64) (unique)
+- `slug` varchar(64) (unique)
+- `createdAt` timestamp with time zone (default now)
+
+**`tutorial_tag_relations` 表（v3.7 标签关联）：**
+- `tutorialId` uuid FK → published_tutorials.id (cascade)
+- `tagId` uuid FK → tutorial_tags.id (cascade)
+- PK: compound(tutorialId, tagId)
+
+**`events` 表（v3.6 事件追踪）：**
+- `id` uuid PK
+- `eventType` varchar(64)
+- `userId` text (nullable)
+- `slug` text (nullable)
+- `metadata` jsonb (nullable)
+- `createdAt` timestamp with time zone
+
 ### 11.2 设计决策
 
 - 用 Drizzle 不用 Prisma（Drizzle schema 直接写 TS）
 - 用 PostgreSQL 不用 SQLite（兼容 serverless 部署如 Vercel）
 - 生成状态用**扁平字段**而非嵌套 JSON 对象
 - slug 通过 unique index 保证唯一性
-- 保留 slug 路径：`new`、`drafts`、`api`、`_next` 等
+- 保留 slug 路径：`new`、`drafts`、`api`、`_next`、`explore`、`tags`、`u`、`admin`、`dashboard`、`settings`、`notifications` 等
 
 ---
 
@@ -771,6 +835,9 @@ DraftSnapshot {
 | `lib/services/unpublish-draft.ts` | 取消发布（事务：删除 PublishedTutorial + 重置 draft） |
 | `lib/services/draft-snapshots.ts` | 版本快照创建/恢复/列表/删除（含所有权验证和自动备份） |
 | `lib/services/incremental-regenerate.ts` | 增量重新生成（比对大纲差异，只重生成受影响步骤） |
+| `lib/services/explore-service.ts` | 探索页数据查询（搜索 + 标签筛选 + 排序 + 分页） |
+| `lib/services/tag-service.ts` | 标签管理（AI 生成 + 手动设置 + 名称规范化） |
+| `lib/services/user-profile-service.ts` | 用户档案（公开 profile + username 设置 + profile 更新） |
 
 ---
 
@@ -783,6 +850,7 @@ DraftSnapshot {
 | `lib/ai/step-fill-prompt.ts` | 阶段二：单步内容填充 prompt |
 | `lib/ai/tutorial-generator.ts` | v1 生成器封装 |
 | `lib/ai/multi-phase-generator.ts` | v2 多阶段生成 SSE 流编排 |
+| `lib/ai/tag-generator.ts` | AI 标签生成（generateText + 语言回退 fallback map） |
 
 ---
 
@@ -818,6 +886,10 @@ DraftSnapshot {
 12. **Edge Runtime 限制：** middleware 必须使用轻量级 NextAuth 实例（`providers: []`，无 adapter），因为 Edge Runtime 不支持 Node.js `crypto` 和 `pg` 模块。主 `auth.ts` 带 Drizzle adapter 只能在 Node.js runtime 使用
 13. **OG 图片 runtime：** `/api/og/[slug]` 必须声明 `runtime = 'nodejs'`，因为 `getTutorialMetadata()` 依赖 Drizzle（Node.js only）。`next/og` 的 `ImageResponse` 在 nodejs runtime 下工作
 14. **Auth middleware 路由区分：** API 路由返回 401 JSON（`{ message: "请先登录" }`），页面路由 redirect 到 `/api/auth/signin`，避免 API 请求被重定向到 HTML 登录页
+15. **Drizzle JSONB 查询陷阱：** `sql` 模板不支持 `->` / `->>` JSONB 操作符与 `${columnRef}` 插值混用。全文搜索等需要 JSONB 字段访问的场景，必须使用原始 SQL 列名（如 `"published_tutorials"."tutorial_draft_snapshot"`）
+16. **leftJoin(users) 必须：** 探索/搜索查询中 `drafts.userId` 可能为 NULL（未关联用户的草稿），必须用 `leftJoin(users)` 而非 `innerJoin`，否则会过滤掉无作者的教程
+17. **全文搜索配置：** 使用 PostgreSQL `simple` 配置（不分词、不词干化），适合中英混合场景。搜索 `ts_vector` 基于 `tutorialDraftSnapshot->meta->title` 和 `slug`
+18. **AI 标签生成 fire-and-forget：** `tag-generator.ts` 在教程发布后异步调用，失败不阻塞发布主流程。`getOrCreateTag` 处理并发竞争（unique constraint catch + fallback select）
 
 ### 16.2 发布前置条件
 
@@ -897,6 +969,21 @@ NEXT_PUBLIC_BASE_URL=https://...    # 公开访问基础 URL（SEO 生成用）
 - CI/CD 自动化（GitHub Actions）
 - 监控工具（计时 + 计数）
 
+### Phase 7：v3.6 分析与增长基础 ✅ 已完成
+- 事件追踪系统（events 表 + event_types 注册 + 埋点 helpers）
+- 监控工具完善（analytics.ts convenience helpers + metrics.ts 计时计数）
+- 测试覆盖率提升（分层边界 + 纯函数 smoke tests）
+- CI/CD 部署自动化（GitHub Actions）
+
+### Phase 8：v3.7 发现、标签与创作者身份 ✅ 已完成
+- 探索页面（/explore — 全文搜索 + 标签筛选 + 排序 + 分页）
+- 标签系统（tutorial_tags + tutorial_tag_relations 表、AI 自动生成 + 手动编辑）
+- 用户档案（users 增加 username/bio、公开 profile 页面 /u/[username]）
+- 标签页面（/tags — 所有标签 + 教程计数）
+- API 扩展（/api/search、/api/tags、/api/tutorials/[slug]/tags、/api/user/*）
+- 导航更新（AppShell 新增"探索"和"标签"入口）
+- 保留 slug 扩展（explore、tags、u、admin、dashboard 等）
+
 
 
 ---
@@ -919,4 +1006,4 @@ NEXT_PUBLIC_BASE_URL=https://...    # 公开访问基础 URL（SEO 生成用）
 
 ---
 
-*本文档基于 VibeDocs v3.5 实现状态编写。v3.5 在 v3.2 基础上完成了用户认证、版本快照、SEO/OG、分享嵌入、取消生成、增量重新生成、CI/CD 和监控等全部产品化功能。*
+*本文档基于 VibeDocs v3.7 实现状态编写。v3.7 在 v3.6（分析监控基础）之上完成了发现系统（全文搜索 + 标签筛选）、标签管理（AI 生成 + 手动编辑）、创作者身份（公开档案 + 用户名）等全部发现与增长功能。*
