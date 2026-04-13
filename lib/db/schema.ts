@@ -154,6 +154,19 @@ export const publishedTutorials = pgTable('published_tutorials', {
     .notNull(),
 });
 
+// v3.6: Analytics events
+export const events = pgTable('events', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  eventType: varchar('event_type', { length: 64 }).notNull(),
+  payload: jsonb('payload').$type<Record<string, unknown>>().default({}),
+  userId: text('userId'),
+  sessionId: varchar('session_id', { length: 128 }),
+  slug: varchar('slug', { length: 256 }),
+  createdAt: timestamp('created_at', { withTimezone: true })
+    .defaultNow()
+    .notNull(),
+});
+
 export const draftSnapshots = pgTable('draft_snapshots', {
   id: uuid('id').primaryKey().defaultRandom(),
   draftId: uuid('draft_id')

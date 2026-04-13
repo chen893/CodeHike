@@ -9,6 +9,7 @@ import {
   tutorialSlugs,
 } from '../tutorial/registry';
 import { estimateReadingTime } from '../utils/seo';
+import { trackTutorialViewed } from '../monitoring/analytics';
 
 const loadTutorialSourceBySlug = cache(async (slug: string) => {
   try {
@@ -54,13 +55,16 @@ export async function getTutorialMetadata(slug: string) {
   };
 }
 
-export async function getTutorialPageData(slug: string) {
+export async function getTutorialPageData(slug: string, userId?: string) {
   const record = await loadTutorialSourceBySlug(slug);
   if (!record) {
     return null;
   }
 
   const steps = await buildTutorialSteps(record.tutorial);
+
+  // Fire-and-forget view tracking (does not block rendering)
+  trackTutorialViewed(slug, userId);
 
   return {
     source: record.source,
@@ -97,6 +101,14 @@ export async function getTutorialPayloadData(slug: string) {
     source: record.source,
     payload,
   };
+}
+
+export async function getTutorialDraftForExport(slug: string) {
+  const record = await loadTutorialSourceBySlug(slug);
+  if (!record) {
+    return null;
+  }
+  return record.tutorial;
 }
 
 export async function getHomePageData() {

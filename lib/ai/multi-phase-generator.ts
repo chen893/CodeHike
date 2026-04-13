@@ -11,6 +11,7 @@ import { applyContentPatches } from '../tutorial/draft-code';
 import { normalizeBaseCode, normalizeTutorialMeta } from '../tutorial/normalize';
 import { validateTutorialDraft } from '../utils/validation';
 import { createProvider, getMaxOutputTokens } from './provider-registry';
+import { tryAutoFixPatches } from './patch-auto-fix';
 
 const MAX_STEP_RETRIES = 3;
 
@@ -162,7 +163,20 @@ export function createMultiPhaseGenerationStream(
 
               // Validate patches can be applied
               if (step.patches && step.patches.length > 0) {
-                applyContentPatches(previousFiles, step.patches, primaryFile);
+                try {
+                  applyContentPatches(previousFiles, step.patches, primaryFile);
+                } catch (patchErr: any) {
+                  // Attempt auto-fix before giving up
+                  const fixResult = tryAutoFixPatches(previousFiles, step.patches, primaryFile);
+                  if (fixResult.success) {
+                    step.patches = fixResult.fixedPatches;
+                    console.log(`[multi-phase] Auto-fix applied for step ${i + 1}:`, fixResult.fixesApplied);
+                    // Re-validate the fixed patches
+                    applyContentPatches(previousFiles, step.patches, primaryFile);
+                  } else {
+                    throw patchErr;
+                  }
+                }
 
                 // Check LOC budget (soft — warn but don't block)
                 const locBudget = outline.steps[i]?.estimatedLocChange ?? 8;
