@@ -53,11 +53,12 @@ export async function updateDraftStep(
     patches?: TutorialStep['patches'];
     focus?: TutorialStep['focus'];
     marks?: TutorialStep['marks'];
-  }
+  },
+  userId: string
 ) {
   const parsed = updateStepRequestSchema.parse(data);
 
-  const draft = await draftRepo.getDraftById(id);
+  const draft = await draftRepo.getDraftById(id, userId);
   if (!draft || !draft.tutorialDraft) throw new Error('Draft not found');
 
   const stepIndex = draft.tutorialDraft.steps.findIndex((step) => step.id === stepId);

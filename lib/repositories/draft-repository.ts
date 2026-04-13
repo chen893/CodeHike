@@ -1,4 +1,4 @@
-import { desc, eq, sql } from 'drizzle-orm';
+import { and, desc, eq, sql } from 'drizzle-orm';
 import { db } from '../db';
 import { drafts, type draftStatusEnum, type syncStateEnum, type generationStateEnum } from '../db/schema';
 
@@ -78,10 +78,12 @@ export async function createDraft(data: {
   sourceItems: SourceItem[];
   teachingBrief: TeachingBrief;
   inputHash: string;
+  userId: string;
 }): Promise<DraftRecord> {
   const [row] = await db
     .insert(drafts)
     .values({
+      userId: data.userId,
       sourceItems: data.sourceItems as any,
       teachingBrief: data.teachingBrief as any,
       inputHash: data.inputHash,
@@ -90,21 +92,25 @@ export async function createDraft(data: {
   return toDraftRecord(row);
 }
 
-export async function getDraftById(id: string): Promise<DraftRecord | null> {
-  const [row] = await db.select().from(drafts).where(eq(drafts.id, id));
+export async function getDraftById(id: string, userId?: string): Promise<DraftRecord | null> {
+  const conditions = userId
+    ? and(eq(drafts.id, id), eq(drafts.userId, userId))
+    : eq(drafts.id, id);
+  const [row] = await db.select().from(drafts).where(conditions);
   return row ? toDraftRecord(row) : null;
 }
 
-export async function listDrafts(): Promise<DraftRecord[]> {
+export async function listDrafts(userId: string): Promise<DraftRecord[]> {
   const rows = await db
     .select()
     .from(drafts)
+    .where(eq(drafts.userId, userId))
     .orderBy(desc(drafts.updatedAt));
 
   return rows.map(toDraftRecord);
 }
 
-export async function listDraftSummaries(): Promise<DraftSummary[]> {
+export async function listDraftSummaries(userId: string): Promise<DraftSummary[]> {
   const rows = await db
     .select({
       id: drafts.id,
@@ -124,6 +130,7 @@ export async function listDraftSummaries(): Promise<DraftSummary[]> {
       teachingCoreQuestion: sql<string | null>`${drafts.teachingBrief} ->> 'core_question'`,
     })
     .from(drafts)
+    .where(eq(drafts.userId, userId))
     .orderBy(desc(drafts.updatedAt));
 
   return rows.map((row) => toDraftSummary(row as DraftSummaryRow));

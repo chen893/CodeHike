@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server'
 import { computeAffectedSteps, regenerateAffectedSteps } from '@/lib/services/incremental-regenerate'
+import { auth } from '@/auth'
 
 export async function POST(
   req: Request,
@@ -8,6 +9,15 @@ export async function POST(
   const { id } = await context.params
 
   try {
+    const session = await auth();
+    if (!session?.user?.id) {
+      return NextResponse.json(
+        { message: '请先登录', code: 'UNAUTHORIZED' },
+        { status: 401 }
+      );
+    }
+    const userId = session.user.id;
+
     const body = await req.json()
     const { oldOutline, newOutline, modelId } = body
 
@@ -24,7 +34,7 @@ export async function POST(
       return NextResponse.json({ affectedIndices: [], message: 'No changes detected' })
     }
 
-    const result = await regenerateAffectedSteps(id, affectedIndices, modelId)
+    const result = await regenerateAffectedSteps(id, affectedIndices, modelId, userId)
 
     return NextResponse.json({
       affectedIndices,

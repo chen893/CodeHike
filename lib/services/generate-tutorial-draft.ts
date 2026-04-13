@@ -8,10 +8,11 @@ import type { TutorialDraft } from '../schemas/tutorial-draft';
 
 export async function initiateGeneration(
   draftId: string,
-  modelId?: string,
-  generationVersion: 'v1' | 'v2' = 'v2'
+  modelId: string | undefined,
+  generationVersion: 'v1' | 'v2',
+  userId: string
 ): Promise<Response> {
-  const draft = await draftRepo.getDraftById(draftId);
+  const draft = await draftRepo.getDraftById(draftId, userId);
   if (!draft) throw new Error('Draft not found');
 
   if (draft.generationState === 'running') {

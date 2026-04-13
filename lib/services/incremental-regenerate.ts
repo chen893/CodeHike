@@ -1,6 +1,7 @@
 import type { TutorialOutline, OutlineStep } from '../schemas/tutorial-outline'
 import type { TutorialDraft } from '../schemas/tutorial-draft'
 import type { DraftRecord } from '../types/api'
+import * as draftRepo from '../repositories/draft-repository'
 
 interface OutlineStepDiff {
   stepIndex: number
@@ -62,8 +63,13 @@ export function computeAffectedSteps(
 export async function regenerateAffectedSteps(
   draftId: string,
   affectedIndices: number[],
-  modelId?: string
+  modelId: string | undefined,
+  userId: string
 ): Promise<{ regeneratedCount: number }> {
+  // Verify ownership
+  const draft = await draftRepo.getDraftById(draftId, userId);
+  if (!draft) throw new Error('Draft not found');
+
   // For now, this delegates to the existing single-step regeneration
   // A full implementation would use multi-phase generator to fill
   // only affected steps while preserving the outline

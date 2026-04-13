@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import { unpublishDraft } from '@/lib/services/unpublish-draft';
 import { getRouteErrorMessage } from '@/lib/api/route-errors';
+import { auth } from '@/auth';
 
 export async function POST(
   _req: Request,
@@ -9,7 +10,16 @@ export async function POST(
   const { id } = await context.params;
 
   try {
-    await unpublishDraft(id);
+    const session = await auth();
+    if (!session?.user?.id) {
+      return NextResponse.json(
+        { message: '请先登录', code: 'UNAUTHORIZED' },
+        { status: 401 }
+      );
+    }
+    const userId = session.user.id;
+
+    await unpublishDraft(id, userId);
     return NextResponse.json({ success: true });
   } catch (err: any) {
     console.error('取消发布失败:', err);

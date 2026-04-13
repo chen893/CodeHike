@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server';
 import { getRouteErrorMessage, isRouteValidationError } from '@/lib/api/route-errors';
 import { deleteDraftStep } from '@/lib/services/delete-draft-step';
 import { updateDraftStep } from '@/lib/services/update-draft-step';
+import { auth } from '@/auth';
 
 export async function PATCH(
   req: Request,
@@ -10,6 +11,15 @@ export async function PATCH(
   const { id, stepId } = await context.params;
 
   try {
+    const session = await auth();
+    if (!session?.user?.id) {
+      return NextResponse.json(
+        { message: '请先登录', code: 'UNAUTHORIZED' },
+        { status: 401 }
+      );
+    }
+    const userId = session.user.id;
+
     let body: unknown;
     try {
       body = await req.json();
@@ -20,7 +30,7 @@ export async function PATCH(
       );
     }
 
-    const draft = await updateDraftStep(id, stepId, body as any);
+    const draft = await updateDraftStep(id, stepId, body as any, userId);
     return NextResponse.json(draft);
   } catch (err) {
     console.error('更新步骤失败:', err);
@@ -40,7 +50,16 @@ export async function DELETE(
   const { id, stepId } = await context.params;
 
   try {
-    const draft = await deleteDraftStep(id, stepId);
+    const session = await auth();
+    if (!session?.user?.id) {
+      return NextResponse.json(
+        { message: '请先登录', code: 'UNAUTHORIZED' },
+        { status: 401 }
+      );
+    }
+    const userId = session.user.id;
+
+    const draft = await deleteDraftStep(id, stepId, userId);
     return NextResponse.json(draft);
   } catch (err) {
     console.error('删除步骤失败:', err);

@@ -2,10 +2,10 @@ import * as draftRepo from '../repositories/draft-repository';
 import { updateDraftRequestSchema } from '../schemas/api';
 import { computeInputHash } from '../utils/hash';
 
-export async function updateDraft(id: string, input: unknown) {
+export async function updateDraft(id: string, input: unknown, userId: string) {
   const parsed = updateDraftRequestSchema.parse(input);
 
-  const draft = await draftRepo.getDraftById(id);
+  const draft = await draftRepo.getDraftById(id, userId);
   if (!draft) {
     throw new Error('not found: Draft not found');
   }

@@ -12,11 +12,12 @@ function hasDuplicateIds(values: string[]) {
 
 export async function replaceDraftSteps(
   id: string,
-  data: { stepIds: unknown }
+  data: { stepIds: unknown },
+  userId: string
 ) {
   const parsed = replaceStepsRequestSchema.parse(data);
 
-  const draft = await draftRepo.getDraftById(id);
+  const draft = await draftRepo.getDraftById(id, userId);
   if (!draft || !draft.tutorialDraft) throw new Error('Draft not found');
 
   const existingIds = getSortedIds(draft.tutorialDraft.steps.map((step) => step.id));

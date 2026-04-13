@@ -9,11 +9,12 @@ import type { PublishedTutorial } from '../types/api';
 
 export async function publishDraft(
   draftId: string,
-  input?: { slug?: string }
+  input: { slug?: string } | undefined,
+  userId: string
 ): Promise<PublishedTutorial> {
   const parsed = publishRequestSchema.parse(input || {});
 
-  const draft = await draftRepo.getDraftById(draftId);
+  const draft = await draftRepo.getDraftById(draftId, userId);
   if (!draft) throw new Error('Draft not found');
   if (!draft.tutorialDraft) throw new Error('Draft has no tutorial content');
   if (draft.syncState !== 'fresh')

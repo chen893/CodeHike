@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server';
 import { getRouteErrorMessage, isRouteValidationError } from '@/lib/api/route-errors';
 import { appendDraftStep } from '@/lib/services/append-draft-step';
 import { replaceDraftSteps } from '@/lib/services/replace-draft-steps';
+import { auth } from '@/auth';
 
 export async function POST(
   req: Request,
@@ -10,6 +11,15 @@ export async function POST(
   const { id } = await context.params;
 
   try {
+    const session = await auth();
+    if (!session?.user?.id) {
+      return NextResponse.json(
+        { message: '请先登录', code: 'UNAUTHORIZED' },
+        { status: 401 }
+      );
+    }
+    const userId = session.user.id;
+
     let body: unknown;
     try {
       body = await req.json();
@@ -27,7 +37,7 @@ export async function POST(
       );
     }
 
-    const draft = await appendDraftStep(id, (body as { step: unknown }).step);
+    const draft = await appendDraftStep(id, (body as { step: unknown }).step, userId);
     return NextResponse.json(draft);
   } catch (err) {
     console.error('添加步骤失败:', err);
@@ -47,6 +57,15 @@ export async function PUT(
   const { id } = await context.params;
 
   try {
+    const session = await auth();
+    if (!session?.user?.id) {
+      return NextResponse.json(
+        { message: '请先登录', code: 'UNAUTHORIZED' },
+        { status: 401 }
+      );
+    }
+    const userId = session.user.id;
+
     let body: unknown;
     try {
       body = await req.json();
@@ -57,7 +76,7 @@ export async function PUT(
       );
     }
 
-    const draft = await replaceDraftSteps(id, body as { stepIds: unknown });
+    const draft = await replaceDraftSteps(id, body as { stepIds: unknown }, userId);
     return NextResponse.json(draft);
   } catch (err) {
     console.error('重排步骤失败:', err);

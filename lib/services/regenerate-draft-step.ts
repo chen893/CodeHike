@@ -6,11 +6,12 @@ import { regenerateStepRequestSchema } from '../schemas/api';
 export async function regenerateDraftStep(
   id: string,
   stepId: string,
-  data: { mode: 'prose' | 'step'; instruction?: string }
+  data: { mode: 'prose' | 'step'; instruction?: string },
+  userId: string
 ) {
   const parsed = regenerateStepRequestSchema.parse(data);
 
-  const draft = await draftRepo.getDraftById(id);
+  const draft = await draftRepo.getDraftById(id, userId);
   if (!draft || !draft.tutorialDraft) throw new Error('Draft not found');
 
   const stepIndex = draft.tutorialDraft.steps.findIndex((s) => s.id === stepId);

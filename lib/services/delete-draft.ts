@@ -1,7 +1,7 @@
 import * as draftRepo from '../repositories/draft-repository';
 
-export async function deleteDraft(id: string) {
-  const draft = await draftRepo.getDraftById(id);
+export async function deleteDraft(id: string, userId: string) {
+  const draft = await draftRepo.getDraftById(id, userId);
 
   if (!draft) {
     throw new Error('Draft not found');

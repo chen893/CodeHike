@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import { getRouteErrorMessage, isRouteValidationError } from '@/lib/api/route-errors';
 import { regenerateDraftStep } from '@/lib/services/regenerate-draft-step';
+import { auth } from '@/auth';
 
 export const maxDuration = 120;
 
@@ -11,6 +12,15 @@ export async function POST(
   const { id, stepId } = await context.params;
 
   try {
+    const session = await auth();
+    if (!session?.user?.id) {
+      return NextResponse.json(
+        { message: '请先登录', code: 'UNAUTHORIZED' },
+        { status: 401 }
+      );
+    }
+    const userId = session.user.id;
+
     let body: unknown;
     try {
       body = await req.json();
@@ -21,7 +31,7 @@ export async function POST(
       );
     }
 
-    const draft = await regenerateDraftStep(id, stepId, body as any);
+    const draft = await regenerateDraftStep(id, stepId, body as any, userId);
     return NextResponse.json(draft);
   } catch (err) {
     console.error('重新生成步骤失败:', err);

@@ -1,9 +1,14 @@
 import { db } from '../db';
 import { drafts, publishedTutorials } from '../db/schema';
 import { eq } from 'drizzle-orm';
+import * as draftRepo from '../repositories/draft-repository';
 import { getPublishedTutorialByDraftId } from '../repositories/published-tutorial-repository';
 
-export async function unpublishDraft(draftId: string): Promise<void> {
+export async function unpublishDraft(draftId: string, userId: string): Promise<void> {
+  // Verify ownership
+  const draft = await draftRepo.getDraftById(draftId, userId);
+  if (!draft) throw new Error('Draft not found');
+
   // Find the published tutorial for this draft
   const published = await getPublishedTutorialByDraftId(draftId);
   if (!published) {

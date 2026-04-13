@@ -8,6 +8,7 @@ import type { DraftRecord } from '../types/api';
 export async function createDraft(input: {
   sourceItems: SourceItem[];
   teachingBrief: TeachingBrief;
+  userId: string;
 }): Promise<DraftRecord> {
   const parsed = createDraftRequestSchema.parse(input);
 
@@ -17,6 +18,7 @@ export async function createDraft(input: {
     sourceItems: parsed.sourceItems,
     teachingBrief: parsed.teachingBrief,
     inputHash,
+    userId: input.userId,
   });
 
   return draft;

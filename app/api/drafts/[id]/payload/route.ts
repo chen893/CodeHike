@@ -1,13 +1,23 @@
 import { NextResponse } from 'next/server';
 import { getDraftPreviewPayloadData } from '@/lib/services/draft-queries';
+import { auth } from '@/auth';
 
 export async function GET(
   req: Request,
   context: { params: Promise<{ id: string }> }
 ) {
   try {
+    const session = await auth();
+    if (!session?.user?.id) {
+      return NextResponse.json(
+        { message: '请先登录', code: 'UNAUTHORIZED' },
+        { status: 401 }
+      );
+    }
+    const userId = session.user.id;
+
     const { id } = await context.params;
-    const result = await getDraftPreviewPayloadData(id);
+    const result = await getDraftPreviewPayloadData(id, userId);
 
     if (!result) {
       return NextResponse.json(

@@ -8,7 +8,14 @@ import { getCurrentUser } from '@/auth';
 export default async function DraftsIndexPage() {
   await connection();
   const user = await getCurrentUser();
-  const drafts = await listDraftSummariesForDashboard();
+  if (!user?.id) {
+    return (
+      <AppShell activePath="/drafts" user={null}>
+        <DraftsPage drafts={[]} />
+      </AppShell>
+    );
+  }
+  const drafts = await listDraftSummariesForDashboard(user.id);
 
   return (
     <AppShell activePath="/drafts" user={user}>

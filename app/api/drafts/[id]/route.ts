@@ -3,14 +3,24 @@ import { getRouteErrorMessage, isRouteValidationError } from '@/lib/api/route-er
 import { deleteDraft } from '@/lib/services/delete-draft';
 import { getDraftDetail } from '@/lib/services/draft-queries';
 import { updateDraft } from '@/lib/services/update-draft';
+import { auth } from '@/auth';
 
 export async function GET(
   req: Request,
   context: { params: Promise<{ id: string }> }
 ) {
   try {
+    const session = await auth();
+    if (!session?.user?.id) {
+      return NextResponse.json(
+        { message: '请先登录', code: 'UNAUTHORIZED' },
+        { status: 401 }
+      );
+    }
+    const userId = session.user.id;
+
     const { id } = await context.params;
-    const draft = await getDraftDetail(id);
+    const draft = await getDraftDetail(id, userId);
 
     if (!draft) {
       return NextResponse.json(
@@ -36,6 +46,15 @@ export async function PATCH(
   const { id } = await context.params;
 
   try {
+    const session = await auth();
+    if (!session?.user?.id) {
+      return NextResponse.json(
+        { message: '请先登录', code: 'UNAUTHORIZED' },
+        { status: 401 }
+      );
+    }
+    const userId = session.user.id;
+
     let body: unknown;
     try {
       body = await req.json();
@@ -46,7 +65,7 @@ export async function PATCH(
       );
     }
 
-    const updated = await updateDraft(id, body);
+    const updated = await updateDraft(id, body, userId);
     return NextResponse.json(updated);
   } catch (err) {
     console.error('更新草稿失败:', err);
@@ -71,7 +90,16 @@ export async function DELETE(
   const { id } = await context.params;
 
   try {
-    const result = await deleteDraft(id);
+    const session = await auth();
+    if (!session?.user?.id) {
+      return NextResponse.json(
+        { message: '请先登录', code: 'UNAUTHORIZED' },
+        { status: 401 }
+      );
+    }
+    const userId = session.user.id;
+
+    const result = await deleteDraft(id, userId);
     return NextResponse.json(result);
   } catch (err) {
     console.error('删除草稿失败:', err);

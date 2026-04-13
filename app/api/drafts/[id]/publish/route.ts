@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server';
 import { publishDraft } from '@/lib/services/publish-draft';
+import { auth } from '@/auth';
 
 export async function POST(
   req: Request,
@@ -8,8 +9,17 @@ export async function POST(
   const { id } = await context.params;
 
   try {
+    const session = await auth();
+    if (!session?.user?.id) {
+      return NextResponse.json(
+        { message: '请先登录', code: 'UNAUTHORIZED' },
+        { status: 401 }
+      );
+    }
+    const userId = session.user.id;
+
     const body = await req.json().catch(() => ({}));
-    const published = await publishDraft(id, body);
+    const published = await publishDraft(id, body, userId);
     return NextResponse.json(published, { status: 201 });
   } catch (err: any) {
     console.error('发布草稿失败:', err);

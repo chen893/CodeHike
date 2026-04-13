@@ -1,8 +1,8 @@
 import * as draftRepo from '../repositories/draft-repository';
 import { validateTutorialDraft } from '../utils/validation';
 
-export async function deleteDraftStep(id: string, stepId: string) {
-  const draft = await draftRepo.getDraftById(id);
+export async function deleteDraftStep(id: string, stepId: string, userId: string) {
+  const draft = await draftRepo.getDraftById(id, userId);
   if (!draft || !draft.tutorialDraft) throw new Error('Draft not found');
 
   const stepIndex = draft.tutorialDraft.steps.findIndex((step) => step.id === stepId);
