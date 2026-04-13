@@ -779,14 +779,7 @@ DEEPSEEK_API_KEY=...             # DeepSeek API Key
 - `/[slug]` 页面集成 DB 查询
 - 首页更新（已发布列表 + 创建入口）
 
-### Phase 6（规划中）：编辑体验打磨
-- 可视化 diff 视图（行级变更标注）
-- 实时 patch 校验反馈
-- 代码选区快捷创建 patch
-- 多 patch 中间态预览
-- 取消发布
 
-详见 `docs/v3.3-patch-editor-ux-plan.md`。
 
 ---
 

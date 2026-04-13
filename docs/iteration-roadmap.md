@@ -1,183 +1,380 @@
 # VibeDocs 迭代路线图
 
-**创建日期：** 2026-04-12
+**创建日期：** 2026-04-13
 **基线版本：** v3.2（源码输入 → 多阶段 AI 生成 → 全量编辑 → 预览 → 发布）
 **当前分支：** docs/iteration-roadmap
+**整合来源：** 6 个子 agent 的独立分析（现状解析、架构约束、用户价值、增长闭环、版本切分、风险依赖）
 
 ---
 
-## 版本总览
+## 当前系统所处阶段
+
+VibeDocs 已完成从 0 到 1 的核心链路建设。用户可以输入源码+教学意图，系统通过多阶段 AI（outline → step-fill → validate）生成结构化教程 DSL，用户在编辑工作区修改后预览、发布为 scrollytelling 教程页面。
+
+**已经跑通的能力：** 完整 DSL（含多文件）、Assembler 渲染链路、Scrollytelling 渲染器、PostgreSQL+Drizzle 持久化、多阶段 AI 生成、全量编辑工作区、预览发布流程、14 个 API 端点。
+
+**当前最大问题：** 编辑工作区的 patch 编辑体验粗糙（纯文本 find/replace，无校验无可视化），AI 生成受 DeepSeek 8192 token 硬天花板限制，首次生成失败后恢复手段单一。产品处于"技术验证通过，但用户日常使用有摩擦"的阶段。
+
+---
+
+## 路线图主线
 
 ```
-v3.3  Patch 编辑体验 + 取消发布        ← 产品可用性
-v3.4  AI 生成能力升级                   ← 技术突破
-v3.5  产品化 & 上线准备                 ← 对外可用
-v4.0  教程发现 & 平台化                 ← 规模化
+v3.3  编辑可用性 + 工程基础        ← 让工作区从"能用"变成"好用"
+v3.4  AI 生成升级 + 首次体验优化    ← 突破 token 天花板，降低首次失败率
+v3.5  产品化 & 对外可用            ← 从个人工具变成可部署可分享的产品
+后续   按用户反馈决定              ← 教程发现、高级创作等
 ```
 
-每个版本独立可交付：v3.3 完成后编辑体验完整，v3.4 完成后 AI 能力突破，v3.5 完成后可对外 demo。
+**排序逻辑：**
+
+1. v3.3 先做编辑可用性——这是产品价值的主干。Patch 编辑是用户与 DSL 交互的唯一方式，如果编辑体验做不好，后面 AI 再强、用户再多都没有意义。同时测试覆盖在这个版本就开始建设，不堆到后面。
+2. v3.4 解决 AI 生成硬约束——DeepSeek 8192 token 上限是跨不过去的墙，多模型支持解放生成能力上限。同时引入首次体验模板，降低新用户首次失败率，为后续增长打基础。
+3. v3.5 产品化上线——用户系统、公开首页、分享能力在这个版本集中建设，此前功能和体验已经稳定，加用户系统时不会同时修功能 bug。
 
 ---
 
-## v3.3 — Patch 编辑体验 + 取消发布
+## 共识与裁决
 
-> 让编辑工作区从"能用"变成"好用"。当前 patch 编辑是 raw textarea，修改代码变更的体验粗糙。
+### 全部 Agent 一致同意的观点
 
-### P0：可视化 Diff + 实时校验
+1. **Patch 编辑体验是当前最紧迫的问题。** Agent 1 指出 patch 是纯文本 find/replace 认知负担极重；Agent 3 认为这是用户阻碍的 Top 2；Agent 5 判断"如果 v3.3 的 patch 编辑体验做不好，后面所有版本都没有意义"；Agent 6 指出可视化 Diff 容易低估工作量（4-5 天 vs 预估 2-3 天）。
+2. **DeepSeek 8192 token 上限是硬约束，必须通过多模型支持解除。** 所有 Agent 都承认这是架构层面的天花板，不解决就无法支持大源码项目。
+3. **测试覆盖不应集中到某一个版本，应贯穿各版本。** Agent 2 和 Agent 6 都明确反对原方案把测试堆到 v3.5，建议前移。
+4. **用户系统是 v3.5 前置的基础设施，但不应提前到 v3.3/v3.4。** 涉及 10+ 文件横切变更，风险高，应在功能和体验稳定后再做。
+5. **v4.0 平台化功能（教程市场、评分收藏、学习者自适应等）应推迟。** 所有 Agent 认为这些是远期功能，当前没有用户基础验证。
 
-- [ ] **3.3.1** 行级 diff 计算 `computeDiffLines(before, after) → DiffLine[]`
-  - 复用 `diff` 库的 `diffArrays`（已安装）
-  - 新建 `components/step-editor/diff-utils.ts`
-- [ ] **3.3.2** `CodeDiffView` 组件 — unified diff 渲染（绿色 added、红色 removed、黄色 modified）
-  - 新建 `components/step-editor/code-diff-view.tsx` + `diff-line.tsx`
-- [ ] **3.3.3** 替换 step-editor 中的纯文本预览为 `CodeDiffView`
-  - 修改 `components/step-editor.tsx`
-  - 大文件（500+ 行）只渲染变更行 ± 10 行上下文
-- [ ] **3.3.4** 单 patch 校验函数 `validateSinglePatch(previousCode, findText) → { status, matchCount, lineNumber }`
-  - 新增到 `lib/tutorial/draft-code.js` 或 `diff-utils.ts`
-- [ ] **3.3.5** `usePatchValidation` 防抖 hook — 300ms 防抖，多 patch 时基于累积代码校验
-  - 新建 `components/step-editor/use-patch-validation.ts`
-- [ ] **3.3.6** Patch 输入框状态指示器 — 绿色 ✓ 唯一匹配 / 红色 ✗ 未找到 / 黄色 ⚠ 多次匹配
-  - 修改 `components/step-editor.tsx`
+### 冲突裁决
 
-### P1：代码选区操作 + 中间态预览
-
-- [ ] **3.3.7** 代码预览区文本选区捕获 + 浮动菜单
-  - 新建 `components/step-editor/code-selection-layer.tsx` + `selection-menu.tsx`
-  - 浏览器原生 `Selection` API
-- [ ] **3.3.8** "设为 Patch Find" / "设为 Focus 范围" / "设为 Mark 行" 快捷操作
-  - 修改 `components/step-editor.tsx`
-- [ ] **3.3.9** 中间态计算 `computePatchIntermediateStates(previousFiles, patches, primaryFile)`
-  - 逐个 patch 调用 `applyContentPatches`，记录每次应用后的代码
-- [ ] **3.3.10** Patch 折叠/展开 + mini 预览 — 每个中间态只展示变更行 ± 3 行上下文
-
-### P1：取消发布
-
-- [ ] **3.3.11** `unpublishDraft` 服务 — 删除 published_tutorial 记录 + 清除草稿发布字段
-  - 新建 `lib/services/unpublish-draft.ts`
-- [ ] **3.3.12** `POST /api/drafts/[id]/unpublish` 路由
-  - 新建 route handler
-- [ ] **3.3.13** 工作区 + 列表页 UI — "取消发布"按钮（红色，需二次确认）
-
-**约束：** 不引入新依赖，复用已有的 `diff`、CodeMirror、`getStepCodePreview()`。
+| 冲突点 | 不同意见 | 裁决 | 理由 |
+|--------|----------|------|------|
+| **增长功能（社交分享、SEO 首页）放在哪个版本** | Agent 4 建议 v3.3 加入社交分享；Agent 5 建议 v3.5 做产品化时一起做 | **v3.5** | 分享和首页依赖用户系统（或至少需要公开访问路由），放在 v3.3 阶段没有用户基数也没有分享落地的基础设施。v3.5 集中做产品化时一并处理更合理。但 Agent 4 的"首次体验模板"建议有价值，下沉到 v3.4。 |
+| **代码选区操作的优先级** | Agent 5 列为 P1；Agent 3 认为是最缺失的高价值能力之一；Agent 6 指出需要独立技术验证且容易低估工作量 | **P1 但需前置技术验证** | 独立技术验证（1-2 天）在 v3.3 初期做，如果 Selection API + CodeHike DOM 兼容性可行则继续推进，不可行则降级。 |
+| **大源码 chunking 的优先级** | 原路线图放在 v3.4 P1；Agent 6 标记为极高风险（鸡生蛋问题——需要大源码用户验证，但大源码用户正因为不支持而无法使用） | **降级为 v3.4 P2** | 多模型支持本身就能通过选择更大 context 的模型缓解 token 限制。Chunking 是复杂编排问题，在多模型跑通后再做更安全。 |
+| **生成风格模板的优先级** | 原路线图放在 v3.4 P2；Agent 2 认为在现有 prompt 模板上叠加即可，成本很低；Agent 6 建议优先于 chunking | **提升为 v3.4 P1** | 实现成本低（prompt 注入风格指令），用户可感知（生成风格可选），投入产出比高。 |
+| **取消发布的优先级** | Agent 3 认为价值不高；Agent 1 标为"尚未覆盖" | **v3.3 P1 但简化实现** | 功能简单（删除 published 记录），实现成本约 0.5 天，不影响主流程。保留但不过度投入。 |
+| **错误恢复框架的位置** | Agent 6 建议前移到 v3.3 结束时 | **采纳** | 错误分类框架是 patch 编辑体验的自然延伸——校验失败了需要告诉用户怎么修。在 v3.3 的可视化校验之后、v3.4 的 AI 升级之前建设，衔接顺畅。 |
 
 ---
 
-## v3.4 — AI 生成能力升级
+## v3.3 — 编辑可用性 + 工程基础
 
-> 突破 DeepSeek 8192 token 上限，支持多模型，提升生成质量。
+> 让编辑工作区从"技术验证"变成"日常可用"。
 
-### P0：多模型支持
+### 核心目标
 
-- [ ] **3.4.1** Provider 注册表 — 统一的 `createProvider(modelId)` 工厂函数
-  - DeepSeek（现有）、OpenAI、Claude 等按 provider 分发
-  - 修改 `lib/ai/` 层，保持 prompt 模板与 provider 解耦
-- [ ] **3.4.2** 模型配置 schema — `{ provider, modelId, maxOutputTokens, supportsJsonResponse }`
-  - 新增 `lib/schemas/model-config.ts`
-- [ ] **3.4.3** 创建草稿时选择模型 — UI 下拉 + 传递 `modelId` 到生成链路
-  - 修改 `components/create-draft-form.tsx` + `lib/services/generate-tutorial-draft.ts`
-- [ ] **3.4.4** 模型能力探测 — 自动检测 `maxOutputTokens`、`response_format` 支持情况
-  - 避免 MiniMax 式的静默失败（问题 #3）
+Patch 编辑是用户与教程 DSL 交互的核心操作。当前 patch 编辑是纯文本 find/replace，无实时校验、无可视化 diff、修改后不知道对不对。v3.3 的目标是让编辑工作区具备基本的日常可用性。
 
-### P1：智能生成
+### 为什么现在做这个
 
-- [ ] **3.4.5** 大源码 chunking — 大纲阶段只传函数签名 + 注释，填充阶段按需加载
-  - 修改 `lib/ai/outline-prompt.ts` + `lib/ai/step-fill-prompt.ts`
-- [ ] **3.4.6** 增量重新生成 — 修改大纲后只重新生成受影响步骤
-  - 新增 `lib/services/incremental-regenerate.ts`
-  - 比对 old outline vs new outline，定位差异步骤
-- [ ] **3.4.7** 生成风格模板 — 对话式 / 教科书式 / 渐进式，prompt 注入风格指令
-  - 新增 `TeachingBrief.preferred_style` 选项值约束
+Patch 编辑体验决定了用户是否能有效迭代教程内容。所有 Agent 一致认为这是当前最大的体验瓶颈。AI 生成再好，用户后续修改都要通过 patch 编辑完成。
 
-### P2：AI 辅助编辑
+### 关键能力
 
-- [ ] **3.4.8** AI patch 建议 — 编辑 patch 时"AI 推荐变更"入口
-- [ ] **3.4.9** AI 文案润色 — 单步 paragraphs 的"AI 润色"按钮（复用 `regenerate-draft-step` 的 prose 模式）
+#### P0：可视化 Diff + 实时校验
 
-**关键约束：**
+| 编号 | 功能 | 新建/修改文件 | 说明 |
+|------|------|---------------|------|
+| 3.3.1 | 行级 diff 计算 `computeDiffLines(before, after) → DiffLine[]` | `components/step-editor/diff-utils.ts` | 复用已有 `diff` 库的 `diffArrays` |
+| 3.3.2 | `CodeDiffView` 组件 — unified diff 渲染 | `components/step-editor/code-diff-view.tsx` + `diff-line.tsx` | 绿色 added、红色 removed、黄色 modified |
+| 3.3.3 | 替换 step-editor 纯文本预览为 CodeDiffView | 修改 `components/step-editor.tsx` | 大文件只渲染变更行 ± 10 行上下文 |
+| 3.3.4 | 单 patch 校验 `validateSinglePatch(previousCode, findText)` | 新增到 `lib/tutorial/draft-code.js` 或 `diff-utils.ts` | 返回 `{ status, matchCount, lineNumber }` |
+| 3.3.5 | `usePatchValidation` 防抖 hook | `components/step-editor/use-patch-validation.ts` | 300ms 防抖，多 patch 累积校验 |
+| 3.3.6 | Patch 输入框状态指示器 | 修改 `components/step-editor.tsx` | ✓ 唯一匹配 / ✗ 未找到 / ⚠ 多次匹配 |
+
+#### P1：代码选区操作 + 中间态预览
+
+| 编号 | 功能 | 说明 | 风险 |
+|------|------|------|------|
+| 3.3.7 | 代码预览区文本选区捕获 + 浮动菜单 | 浏览器原生 `Selection` API | 需前置技术验证（1-2 天），验证 Selection API 与 CodeHike DOM 的兼容性 |
+| 3.3.8 | "设为 Patch Find" / "设为 Focus 范围" / "设为 Mark 行" 快捷操作 | 修改 `step-editor.tsx` | 依赖 3.3.7 验证通过 |
+| 3.3.9 | 中间态计算 `computePatchIntermediateStates` | 逐个 patch 调用 `applyContentPatches` | — |
+| 3.3.10 | Patch 折叠/展开 + mini 预览 | 每个中间态只展示变更行 ± 3 行上下文 | — |
+
+#### P1：取消发布
+
+| 编号 | 功能 | 新建/修改文件 |
+|------|------|---------------|
+| 3.3.11 | `unpublishDraft` 服务 | `lib/services/unpublish-draft.ts` |
+| 3.3.12 | `POST /api/drafts/[id]/unpublish` 路由 | 新建 route handler |
+| 3.3.13 | 工作区 + 列表页 UI | "取消发布"按钮（需二次确认） |
+
+#### P1（横切）：测试覆盖 + 错误分类框架
+
+| 编号 | 功能 | 说明 |
+|------|------|------|
+| 3.3.14 | Patch 链正确性测试 | `tests/patch-chain.test.js` — 多步 patch 应用 + 边界情况 |
+| 3.3.15 | Assembler 核心算法测试 | `tests/assembler.test.js` — 高亮 + focus + marks 注入 |
+| 3.3.16 | 分层边界测试 | `tests/layer-boundary.test.js` — 导入规则约束 |
+| 3.3.17 | 错误分类框架 | 统一 patch 校验失败、生成失败的错误类型枚举，为后续错误恢复打基础 |
+
+### 不做什么
+
+- AI 辅助 patch 建议（v3.4 后续）
+- 多模型支持（v3.4）
+- 用户系统（v3.5）
+- 教程分享/embed（v3.5）
+- 版本快照（P2，不在此版本）
+- 首页/SEO（v3.5）
+- 社交分享（v3.5）
+
+### 技术架构要求
+
+- 不引入新依赖，复用已有的 `diff`、CodeMirror、`getStepCodePreview()`
+- 新组件遵循 feature 目录约定：`components/step-editor/` 下新建模块
+- diff 和校验逻辑作为纯函数，可独立测试
+
+### 主要风险
+
+| 风险 | 影响 | 缓解 |
+|------|------|------|
+| 可视化 Diff 工作量被低估（Agent 6: 4-5 天 vs 预估 2-3 天） | v3.3 周期拉长 | 预留足够时间，大文件用虚拟滚动或上下文截断 |
+| 代码选区操作与 CodeHike DOM 不兼容 | 3.3.7-3.3.8 无法交付 | v3.3 初期做技术验证，不兼容则降级为 P2 |
+| 测试覆盖与功能开发抢时间 | 测试被挤占 | 测试作为 P1 随功能一起提交，不堆到最后 |
+
+### 预期收益
+
+- Patch 编辑从"盲目修改"变成"有即时反馈"，显著降低编辑的认知负担
+- 取消发布补全发布流程的完整闭环
+- 测试覆盖为后续版本的重构提供安全网
+
+---
+
+## v3.4 — AI 生成升级 + 首次体验优化
+
+> 突破 DeepSeek 8192 token 硬天花板，提升生成质量和首次体验。
+
+### 核心目标
+
+DeepSeek 8192 token 上限是当前 AI 生成的硬天花板，限制了教程长度和源码规模。v3.4 的核心目标是引入多模型支持，解除这个天花板，同时通过生成风格模板和首次体验模板提升 AI 输出质量和新用户首次成功率。
+
+### 为什么在这个时间点做
+
+- v3.3 完成后编辑体验已就绪，用户可以有效迭代——此时 AI 生成质量的上限就直接决定了产品的价值上限
+- 多模型支持是后续所有 AI 增强（chunking、增量重生成、AI 辅助编辑）的前置依赖
+- Prompt 与 Provider 的解耦层越早建越好，避免在单 provider 上积累过多耦合代码
+
+### 前置依赖
+
+- v3.3 的错误分类框架（3.3.17）为本版本的错误恢复增强提供基础
+- v3.3 的测试覆盖为本版本的 AI 层重构提供安全网
+
+### 关键能力
+
+#### P0：多模型支持
+
+| 编号 | 功能 | 新建/修改文件 | 说明 |
+|------|------|---------------|------|
+| 3.4.1 | Provider 注册表 — `createProvider(modelId)` 工厂函数 | 修改 `lib/ai/` 层 | DeepSeek、OpenAI、Claude 等按 provider 分发 |
+| 3.4.2 | Prompt 与 Provider 解耦层 | 修改 `lib/ai/` prompt 模板 | 不同模型对 patch 规则遵循度不同，需要 prompt 适配 |
+| 3.4.3 | 模型配置 schema | `lib/schemas/model-config.ts` | `{ provider, modelId, maxOutputTokens, supportsJsonResponse }` |
+| 3.4.4 | 创建草稿时选择模型 | 修改 `components/create-draft-form.tsx` + `lib/services/generate-tutorial-draft.ts` | UI 下拉 + `modelId` 传入生成链路 |
+| 3.4.5 | 模型能力探测 | `lib/ai/model-probe.ts` | 自动检测 `maxOutputTokens`、`response_format` 支持，避免 MiniMax 式静默失败 |
+
+#### P1：生成质量优化
+
+| 编号 | 功能 | 说明 |
+|------|------|------|
+| 3.4.6 | 生成风格模板 — 对话式 / 教科书式 / 渐进式 | prompt 注入风格指令，`TeachingBrief.preferred_style` 选项值 |
+| 3.4.7 | 首次体验模板 — 预设 TeachingBrief + 示例源码 | 新用户可以选择"用示例源码试一次"，降低首次使用门槛 |
+| 3.4.8 | 增量重新生成 — 修改大纲后只重新生成受影响步骤 | 新增 `lib/services/incremental-regenerate.ts`，比对 outline 差异定位受影响步骤 |
+| 3.4.9 | 错误恢复增强 — "从失败步骤批量重试"入口 | 分析 patch 链，定位首个失效步骤，一键修复 |
+
+#### P2：高级 AI 能力
+
+| 编号 | 功能 | 说明 |
+|------|------|------|
+| 3.4.10 | 大源码 chunking — 大纲阶段传函数签名+注释，填充阶段按需加载 | 极高风险（Agent 6），依赖多模型先跑通验证 |
+| 3.4.11 | AI patch 建议 — 编辑 patch 时"AI 推荐变更"入口 | 依赖 v3.3 patch 编辑体验稳定后 |
+| 3.4.12 | AI 文案润色 — 单步 paragraphs 的"AI 润色"按钮 | 复用 `regenerate-draft-step` 的 prose 模式 |
+
+### 不做什么
+
+- 用户系统（v3.5）
+- 教程分享/embed（v3.5）
+- 首页/SEO（v3.5）
+- 教程系列/多章节（远期）
+- 交互式练习生成（远期）
+- 学习者自适应（远期）
+- 多语言教程生成（远期）
+
+### 技术架构要求
+
 - `@ai-sdk/openai-compatible` 兼容性最好，新模型优先通过它接入
 - `generationModel` 字段已在 DB schema 中预留
-- 不同模型对 patch 规则的遵循度不同，需要 prompt 适配层
+- Provider 注册表是 `lib/ai/` 层的内部重构，不改变上层调用接口
+- Prompt 模板与 Provider 解耦——每个 prompt 模板可声明对模型能力的要求（如需要 `response_format`）
+
+### 主要风险
+
+| 风险 | 影响 | 缓解 |
+|------|------|------|
+| 不同模型对 patch 规则遵循度差异大 | 生成质量不稳定 | Prompt 适配层按模型微调；保留 DeepSeek 作为基线 |
+| 增量重新生成的 patch 链顺序依赖 | 重生成中间步骤会导致后续步骤 patch 失效 | 仅重生成后续步骤，不单独重生成中间步骤 |
+| 大源码 chunking 的鸡生蛋问题 | 需要大源码用户验证，但大源码用户正因不支持而无法使用 | 降级为 P2，先通过大 context 模型缓解 |
+
+### 预期收益
+
+- 多模型支持解除 8192 token 天花板，支持更长教程和更大源码
+- 首次体验模板降低新用户首次失败率（Agent 4 识别的增长关键瓶颈）
+- 生成风格模板让用户可以选择适合自己教学场景的 AI 输出风格
+- 错误恢复增强减少生成失败后的用户流失
 
 ---
 
-## v3.5 — 产品化 & 上线准备
+## v3.5 — 产品化 & 对外可用
 
-> 从个人工具变成可部署的产品。
+> 从个人工具变成可部署、可分享、有用户的产品。
 
-### P0：用户系统 + 首页
+### 核心目标
 
-- [ ] **3.5.1** 用户认证接入 — NextAuth.js 或 Clerk
-  - GitHub OAuth 为主，邮箱登录为辅
-  - 草稿绑定用户 ID，数据隔离
-- [ ] **3.5.2** 教程展示首页 — `/` 展示已发布教程列表
-  - 卡片布局：标题、描述、标签、浏览量
-  - OG meta + SEO 友好的 slug URL
-- [ ] **3.5.3** DB schema 扩展 — `drafts.userId`、`users` 表（如用 NextAuth 自带表可省略）
+功能和体验在前两个版本已经稳定。v3.5 集中做三件事：用户系统（数据隔离）、公开首页（获客入口）、分享能力（传播渠道），让产品达到可对外展示和使用的状态。
 
-### P1：体验完善
+### 为什么在这个时间点做
 
-- [ ] **3.5.4** 教程分享 — 已发布教程的公开链接 + embed snippet（iframe）
-- [ ] **3.5.5** 错误恢复增强 — "从失败步骤批量重试"入口
-  - 分析 patch 链，定位首个失效步骤，提供一键修复
-- [ ] **3.5.6** 生成取消 — 前端"取消生成"按钮（后端 `CancelToken` 已实现）
-- [ ] **3.5.7** 草稿版本快照 — 每次保存前创建快照，支持回退
+- v3.3+v3.4 完成后，编辑体验和 AI 生成能力已稳定，此时加用户系统不会同时修功能 bug
+- 分享和首页依赖用户系统（或至少需要公开访问路由），放在 v3.5 前缺乏基础
+- Agent 4 识别出获客是最弱环节（1/10），v3.5 的公开首页和分享能力直接补这个缺口
 
-### P1：工程质量
+### 前置依赖
 
-- [ ] **3.5.8** 测试覆盖 — patch 链正确性、assembler 核心算法、分层边界
-  - `tests/patch-chain.test.js` — 多步 patch 应用 + 边界情况
-  - `tests/assembler.test.js` — 高亮 + focus + marks 注入
-  - `tests/layer-boundary.test.js` — 导入规则约束
-- [ ] **3.5.9** 部署自动化 — Vercel 部署 + CI/CD + DB migration 流程
-- [ ] **3.5.10** 性能监控 — 生成耗时、payload 大小、页面加载时间的简单埋点
+- v3.4 多模型支持完成，AI 生成质量稳定
+- v3.3+v3.4 的测试覆盖提供安全网
+- v3.3 的错误分类框架 + v3.4 的错误恢复增强已完善
 
-### P2：运营基础
+### 关键能力
 
-- [ ] **3.5.11** 使用统计 — 教程浏览量、生成次数、模型使用分布
-- [ ] **3.5.12** 错误追踪 — 生成失败率、patch 校验失败率、Sentry 接入
+#### P0：用户系统 + 公开首页
+
+| 编号 | 功能 | 说明 |
+|------|------|------|
+| 3.5.1 | 用户认证接入 | NextAuth.js 或 Clerk，GitHub OAuth 为主。涉及 14+ 文件横切变更：DB schema、API 中间件、页面权限、数据隔离 |
+| 3.5.2 | DB schema 扩展 | `drafts.userId`、`users` 表（如用 NextAuth 自带表可省略） |
+| 3.5.3 | API 认证中间件层 | 保护所有 API 端点，未登录用户只能访问公开教程 |
+| 3.5.4 | 教程展示首页 | `/` 展示已发布教程列表，卡片布局：标题、描述、标签、浏览量。OG meta + SEO 友好 slug URL |
+
+#### P1：分享 + 体验完善
+
+| 编号 | 功能 | 说明 |
+|------|------|------|
+| 3.5.5 | 教程公开链接 + embed snippet | 已发布教程的公开访问路由 + iframe embed 代码 |
+| 3.5.6 | 社交分享 OG Image | 教程页面的 Open Graph 图片，提升分享点击率 |
+| 3.5.7 | 生成取消按钮 | 前端"取消生成"按钮（后端 `CancelToken` 已实现，需要前端 UI 入口） |
+| 3.5.8 | 草稿版本快照 | 每次保存前创建快照，支持回退（Agent 6 降级为 P1，工作量 3-4 天） |
+
+#### P1：工程质量
+
+| 编号 | 功能 | 说明 |
+|------|------|------|
+| 3.5.9 | 部署自动化 | Vercel 部署 + CI/CD + DB migration 流程（工作量 3-5 天） |
+| 3.5.10 | 性能监控 | 生成耗时、payload 大小、页面加载时间的简单埋点 |
+| 3.5.11 | 测试覆盖延续 | v3.5 新增功能的测试覆盖，延续 v3.3 开始的测试策略 |
+
+#### P2：运营基础
+
+| 编号 | 功能 | 说明 |
+|------|------|------|
+| 3.5.12 | 使用统计 | 教程浏览量、生成次数、模型使用分布 |
+| 3.5.13 | 错误追踪 | 生成失败率、patch 校验失败率、Sentry 接入 |
+
+### 不做什么
+
+- 教程市场/平台化（远期）
+- 教程系列/多章节（远期）
+- 标签/评分/收藏（远期）
+- GitHub 批量导入（远期）
+- 深度 SEO 优化（后续版本按需）
+- 学习者自适应（远期）
+- 交互式练习（远期）
+
+### 技术架构要求
+
+- 用户系统是横切变更：涉及 DB schema、API 中间件、页面权限、数据隔离。需要提前规划文件影响清单。
+- 首页和分享页面遵循 Next.js App Router 的 Server Component 模式，不做客户端渲染
+- embed 功能需要考虑 CORS 和 CSP 策略
+
+### 主要风险
+
+| 风险 | 影响 | 缓解 |
+|------|------|------|
+| 用户系统横切变更量大（14+ 文件） | 回归风险高 | 前两个版本的测试覆盖提供安全网；用户系统作为 v3.5 第一个 PR 集中完成 |
+| 部署自动化 + DB migration 工作量被低估（3-5 天） | v3.5 周期拉长 | 提前规划，与用户系统并行准备 |
+| 草稿版本快照增加 DB 写入量 | 性能影响 | 按需快照而非每次操作都快照 |
+
+### 预期收益
+
+- 用户系统实现数据隔离，多用户可同时使用
+- 公开首页提供获客入口（Agent 4 识别的最弱环节）
+- 分享能力打开传播渠道
+- 部署自动化支持持续交付
+- 产品达到可对外展示和使用的状态
 
 ---
 
-## v4.0 — 教程发现 & 平台化
+## 后续版本 — 按用户反馈决定
 
-> 从单用户工具升级为教程平台。具体范围根据 v3.5 上线后的用户反馈决定。
+v3.5 上线后，根据实际用户数据和反馈决定后续方向。以下是可能的候选方向，**不做承诺，不排优先级**：
 
-### 教程市场
+### 教程发现 & 引流
 
-- [ ] **4.0.1** 公开教程浏览页 — 搜索 + 标签分类 + 排序（最新 / 最热 / 推荐）
-- [ ] **4.0.2** 教程标签系统 — AI 自动生成标签 + 用户手动编辑
-- [ ] **4.0.3** 教程评分 / 收藏
+- 公开教程浏览页（搜索 + 标签分类 + 排序）
+- 深度 SEO 优化
+- 教程标签系统（AI 自动生成 + 手动编辑）
 
 ### 高级创作
 
-- [ ] **4.0.4** 教程系列 — 多章节串联，支持"上一篇 / 下一篇"导航
-- [ ] **4.0.5** 草稿模板 — 预设 TeachingBrief 模板（React 教程 / Node.js 教程等）
-- [ ] **4.0.6** 批量源码导入 — GitHub repo URL → 自动解析文件结构
+- 教程系列（多章节串联）
+- GitHub repo URL 批量导入
+- 导出为 Markdown / PDF / 静态 HTML
+- 多语言教程生成
 
 ### 高级 AI
 
-- [ ] **4.0.7** 多语言教程生成 — 输入中文源码，输出英文教程（或反向）
-- [ ] **4.0.8** 交互式练习生成 — 在步骤间插入"试一试"练习题
-- [ ] **4.0.9** 学习者自适应 — 根据读者停留时间/滚动行为调整教学节奏（远期）
+- 交互式练习生成（"试一试"练习题）
+- 学习者自适应（根据读者行为调整教学节奏）
 
-### 导出能力
+### 平台化
 
-- [ ] **4.0.10** 导出为 Markdown — 保留代码高亮标记
-- [ ] **4.0.11** 导出为 PDF — 打印友好的排版
-- [ ] **4.0.12** 导出为静态 HTML — 嵌入式代码播放器
+- 教程评分 / 收藏
+- 教程市场
 
 ---
 
-## 版本间的衔接点
+## 版本间衔接点
 
 ```
 v3.3 完成
-  → Patch 编辑体验就绪，可引入 AI 辅助 patch 建议（v3.4 P2 的基础）
+  → Patch 编辑体验就绪，错误分类框架就绪
+  → 可以引入 AI 辅助 patch 建议（v3.4 P2 的基础）
+  → 测试覆盖建立安全网
+
 v3.4 完成
-  → 多模型支持解除 token 瓶颈，大项目也能高质量生成
+  → 多模型支持解除 token 瓶颈
+  → 首次体验模板降低新用户门槛
+  → 生成风格模板丰富 AI 输出
+  → Prompt 与 Provider 解耦完成
+
 v3.5 完成
-  → 用户系统 + 首页 + 测试，达到可对外展示的状态
-v4.0
-  → 按用户反馈决定平台化方向，优先做教程发现（引流）还是高级创作（留存）
+  → 用户系统 + 数据隔离
+  → 公开首页 + 分享能力
+  → 部署自动化
+  → 产品可对外展示和使用
+
+后续
+  → 按用户反馈决定优先级
+  → 教程发现（引流）vs 高级创作（留存）
 ```
+
+---
+
+## 附录：实施中的关键约束（提醒）
+
+- **渲染层不可重写** — `TutorialScrollytelling` 组件和 assembler 是固定基础设施
+- **AI SDK v6 参数差异** — `maxOutputTokens`（不是 `maxTokens`）
+- **DeepSeek 8192 token 上限** — v3.4 之前是硬天花板
+- **必须用 `@ai-sdk/openai-compatible`** — 不用 `@ai-sdk/openai`（走 `/responses` 端点不兼容 DeepSeek）
+- **混合 JS/TS** — 渲染链路是 JS，新增功能是 TS，不强行统一
+- **客户端不做 patch 计算** — 所有 patch 应用、高亮、focus/marks 注入在服务端
+- **新建代码遵循分层约定** — 页面/API 调用 services，services 调用 repositories，不跨层
+- **客户端请求收口 feature client** — 不在视图组件里直接 fetch
+- **生成耗时 30-60 秒** — 需要合理的进度反馈和超时处理
