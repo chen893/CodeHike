@@ -36,12 +36,15 @@
 | CodeMirror 6 | - | 草稿编辑器中的代码编辑 |
 | Tailwind CSS | v4 | 样式 |
 | Radix UI | - | 无障碍 UI primitive（Dialog、Select、Tabs 等） |
+| NextAuth | v5 beta | Authentication (GitHub OAuth + JWT sessions + Drizzle adapter) |
 
 **重要版本陷阱（已踩过）：**
 - AI SDK v6 的 `maxTokens` 已重命名为 `maxOutputTokens`
 - DeepSeek `maxOutputTokens` 上限为 **8192**（超出会被截断）
 - 不要用 `@ai-sdk/openai`（默认走 `/responses` 端点），必须用 `@ai-sdk/openai-compatible`
 - Tailwind v4 需要 `@tailwindcss/postcss` 和 `@import "tailwindcss"`，且需要显式 `@source` 指令
+- NextAuth v5 使用 `AUTH_SECRET` 环境变量（不是 `NEXTAUTH_SECRET`），不过 v5 同时接受两者
+- NextAuth v5 middleware 必须用轻量级实例（无 DB adapter），因为 Edge Runtime 不支持 Node.js crypto
 
 ---
 
@@ -242,6 +245,7 @@ GenerationQuality {
 DraftRecord {
   // 基本信息
   id: string (UUID)
+  userId: string?        // 所有者（FK → users.id，nullable 向后兼容）
   sourceItems: SourceItem[]         // 输入的源码文件
   teachingBrief: TeachingBrief      // 教学意图
 
@@ -305,7 +309,20 @@ PublishedTutorial {
 }
 ```
 
-### 6.4 同步状态规则
+### 6.4 DraftSnapshot（版本快照）
+
+```
+DraftSnapshot {
+  id: string (UUID)
+  draftId: string (FK → drafts, ON DELETE CASCADE)
+  label: string?         // 快照标签（如 "恢复前自动备份"）
+  tutorialDraftSnapshot: TutorialDraft  // 冻结的教程快照
+  stepCount: number      // 快照时的步骤数
+  createdAt: Date
+}
+```
+
+### 6.5 同步状态规则
 
 - `inputHash` = SHA-256(sourceItems + teachingBrief)
 - `tutorialDraftInputHash` = 成功生成时捕获的 inputHash
@@ -342,6 +359,16 @@ PublishedTutorial {
 | PUT | `/api/drafts/[id]/steps` | 步骤重排（只接受 stepIds 顺序数组） |
 | POST | `/api/drafts/[id]/steps/[stepId]/regenerate` | 重新生成单步 |
 | GET | `/api/tutorials/[slug]` | 已发布教程 payload API（`route.js`） |
+| POST | `/api/drafts/[id]/unpublish` | 取消发布（删除 PublishedTutorial + 重置 draft 状态） |
+| GET | `/api/drafts/[id]/snapshots` | 获取草稿快照列表 |
+| POST | `/api/drafts/[id]/snapshots` | 创建快照（body: `{ label? }`) |
+| POST | `/api/drafts/[id]/snapshots/[snapshotId]` | 恢复快照（自动备份当前状态） |
+| DELETE | `/api/drafts/[id]/snapshots/[snapshotId]` | 删除快照 |
+| POST | `/api/drafts/[id]/incremental-regenerate` | 增量重新生成（比对大纲差异，只重生成受影响步骤） |
+| GET | `/api/tutorials/[slug]/embed` | 嵌入式 HTML 页面（CORS header，无 AppShell） |
+| GET | `/api/og/[slug]` | OG 图片生成（1200x630，nodejs runtime） |
+| POST | `/api/models/probe` | 模型能力探测（可达性、延迟、response_format 支持） |
+| GET/POST | `/api/auth/[...nextauth]` | NextAuth 路由处理器（GitHub OAuth） |
 
 **关键设计决策：**
 - 只用 Route Handlers，不用 tRPC、不用 Server Actions
@@ -386,6 +413,9 @@ PublishedTutorial {
 │  lib/utils/              (工具层)            │
 │  通用工具（校验、序列化、hash、slug、请求版本） │
 ├─────────────────────────────────────────────┤
+│  lib/monitoring/         (监控层)            │
+│  计时、计数工具                              │
+├─────────────────────────────────────────────┤
 │  lib/api/                (路由工具层)        │
 │  Route Handler 共用的错误处理工具             │
 └─────────────────────────────────────────────┘
@@ -426,6 +456,8 @@ PublishedTutorial {
 | `lib/utils.ts` | shadcn/ui 的 `cn()` Tailwind 类名合并工具 |
 | `lib/draft-status.ts` | 草稿状态 badge 逻辑（`getDraftStatusInfo()`） |
 | `lib/base-path.js` | base path 规范化 |
+| `lib/utils/seo.ts` | OG 元数据生成、JSON-LD 结构化数据、阅读时间估算 |
+| `lib/monitoring/metrics.ts` | 计时工具（`startTimer`）、事件计数器（`EventCounter`） |
 | `lib/types/api.ts` | API 响应类型定义 |
 | `lib/types/client.ts` | 客户端 DTO 类型定义 |
 
@@ -456,6 +488,20 @@ PublishedTutorial {
 
 - `/drafts` 页面需要 `await connection()` 强制动态渲染（否则构建时冻结列表）
 - `app/[slug]/page.jsx` 通过 `lib/services/tutorial-queries.ts` 中的 `cache()` 包装函数避免重复 DB 查询
+
+### 9.4 认证与路由保护
+
+中间件 (`middleware.ts`) 对路由实施认证保护：
+
+**公开路由（无需登录）：**
+- `/`（首页）、`/[slug]`（教程阅读）、`/[slug]/request`
+- `/api/auth/*`、`/api/tutorials/*`、`/api/models/*`、`/api/og/*`
+
+**受保护路由（需要登录）：**
+- `/drafts/*`、`/new` — 页面路由 redirect 到登录页
+- `/api/drafts/*` — API 路由返回 `401 JSON`
+
+中间件使用轻量级 NextAuth 实例（无 DB adapter，仅验证 JWT cookie），在 Edge Runtime 下运行。页面和服务端组件通过 `getCurrentUser()` 获取当前用户，API 路由通过 `auth()` 获取 session。
 
 ---
 
@@ -493,7 +539,20 @@ PublishedTutorial {
 | `components/drafts-page.tsx` | 草稿列表页视图 |
 | `components/tutorial-scrolly-demo.jsx` | 渲染器兼容导出（re-export `components/tutorial/tutorial-scrolly-demo.jsx`） |
 
-### 10.4 Feature 分解
+### 10.4 认证组件
+
+| 组件 | 说明 |
+|------|------|
+| `components/auth/login-button.tsx` | GitHub OAuth 登录按钮 |
+| `components/auth/user-menu.tsx` | 用户头像 + 名称 + 登出菜单 |
+
+### 10.5 分享组件
+
+| 组件 | 说明 |
+|------|------|
+| `components/tutorial/share-dialog.tsx` | 分享对话框（公开 URL + embed snippet + 社交分享） |
+
+### 10.6 Feature 分解
 
 草稿相关：
 - `components/drafts/draft-client.ts` — API 调用封装
@@ -513,7 +572,7 @@ PublishedTutorial {
 - `components/tutorial/generation-progress-view.tsx` — 生成进度视图组件
 - `components/tutorial/use-remote-resource.ts` — 远程加载 + 请求版本化
 
-### 10.5 仓储层
+### 10.7 仓储层
 
 | 文件 | 用途 |
 |------|------|
@@ -528,6 +587,7 @@ PublishedTutorial {
 
 **`drafts` 表（核心表）：**
 - `id` uuid PK
+- `userId` text FK → users.id（草稿所有者）
 - `sourceItems` jsonb（源码文件数组）
 - `teachingBrief` jsonb（教学意图）
 - `tutorialDraft` jsonb (nullable)（AI 生成的教程 DSL）
@@ -555,6 +615,36 @@ PublishedTutorial {
 - `slug` varchar(256) (unique)
 - `tutorialDraftSnapshot` jsonb（冻结的教程 DSL 快照）
 - `publishedAt` timestamp
+- `createdAt` timestamp
+
+**`users` 表（NextAuth）：**
+- `id` text PK（auto UUID）
+- `name` text
+- `email` text (unique)
+- `emailVerified` timestamp
+- `image` text
+
+**`accounts` 表（NextAuth OAuth）：**
+- `userId` text FK → users.id (cascade)
+- `type` text、`provider` text、`providerAccountId` text
+- Token 字段：`refresh_token`、`access_token`、`expires_at`、`token_type`、`scope`、`id_token`、`session_state`
+- PK: compound(provider, providerAccountId)
+
+**`sessions` 表（NextAuth）：**
+- `sessionToken` text PK
+- `userId` text FK → users.id (cascade)
+- `expires` timestamp
+
+**`verification_tokens` 表（NextAuth）：**
+- `identifier` text、`token` text、`expires` timestamp
+- PK: compound(identifier, token)
+
+**`draft_snapshots` 表（v3.5 版本快照）：**
+- `id` uuid PK
+- `draftId` uuid FK → drafts.id (cascade)
+- `label` varchar(256)
+- `tutorialDraftSnapshot` jsonb（冻结的 TutorialDraft）
+- `stepCount` integer (default 0)
 - `createdAt` timestamp
 
 ### 11.2 设计决策
@@ -655,6 +745,7 @@ PublishedTutorial {
 - `components/ui/scroll-area.tsx`
 - `components/ui/separator.tsx`
 - `components/ui/sheet.tsx`（移动端抽屉）
+- `components/ui/dialog.tsx`（模态对话框，基于 React Portal）
 
 ---
 
@@ -677,6 +768,9 @@ PublishedTutorial {
 | `lib/services/draft-queries.ts` | 草稿查询 |
 | `lib/services/tutorial-queries.ts` | 教程查询 |
 | `lib/services/compute-generation-quality.ts` | 生成质量指标计算 |
+| `lib/services/unpublish-draft.ts` | 取消发布（事务：删除 PublishedTutorial + 重置 draft） |
+| `lib/services/draft-snapshots.ts` | 版本快照创建/恢复/列表/删除（含所有权验证和自动备份） |
+| `lib/services/incremental-regenerate.ts` | 增量重新生成（比对大纲差异，只重生成受影响步骤） |
 
 ---
 
@@ -721,6 +815,9 @@ PublishedTutorial {
 9. **Assembler 性能优化：** 跳过未变更且非 activeFile 且无 focus/marks 的文件的高亮计算
 10. **Tailwind v4 source 检测：** 必须在 globals.css 中显式声明 `@source` 指令
 11. **Patch 编辑保存策略：** step-editor 将文案字段和结构字段（patches/focus/marks）分开处理——文案变更直接保存，结构变更时才包含 patches/focus/marks 并触发级联校验，避免无变更时的冗余校验开销
+12. **Edge Runtime 限制：** middleware 必须使用轻量级 NextAuth 实例（`providers: []`，无 adapter），因为 Edge Runtime 不支持 Node.js `crypto` 和 `pg` 模块。主 `auth.ts` 带 Drizzle adapter 只能在 Node.js runtime 使用
+13. **OG 图片 runtime：** `/api/og/[slug]` 必须声明 `runtime = 'nodejs'`，因为 `getTutorialMetadata()` 依赖 Drizzle（Node.js only）。`next/og` 的 `ImageResponse` 在 nodejs runtime 下工作
+14. **Auth middleware 路由区分：** API 路由返回 401 JSON（`{ message: "请先登录" }`），页面路由 redirect 到 `/api/auth/signin`，避免 API 请求被重定向到 HTML 登录页
 
 ### 16.2 发布前置条件
 
@@ -738,8 +835,14 @@ PublishedTutorial {
 ### 16.4 环境变量
 
 ```
-DATABASE_URL=postgresql://...    # PostgreSQL 连接
-DEEPSEEK_API_KEY=...             # DeepSeek API Key
+DATABASE_URL=postgresql://...       # PostgreSQL 连接
+DEEPSEEK_API_KEY=...                # DeepSeek API Key
+DEEPSEEK_BASE_URL=https://api.deepseek.com  # DeepSeek API 端点
+DEEPSEEK_MODEL=deepseek-chat        # 默认模型
+AUTH_SECRET=...                     # NextAuth v5 密钥（生产环境必须更换）
+GITHUB_ID=...                       # GitHub OAuth App Client ID
+GITHUB_SECRET=...                   # GitHub OAuth App Client Secret
+NEXT_PUBLIC_BASE_URL=https://...    # 公开访问基础 URL（SEO 生成用）
 ```
 
 ---
@@ -779,6 +882,21 @@ DEEPSEEK_API_KEY=...             # DeepSeek API Key
 - `/[slug]` 页面集成 DB 查询
 - 首页更新（已发布列表 + 创建入口）
 
+### Phase 6：v3.5 产品化 ✅ 已完成
+- NextAuth v5 认证（GitHub OAuth + JWT sessions + Drizzle adapter）
+- 用户系统（users/accounts/sessions/verification_tokens 表 + userId 草稿所有权）
+- 中间件路由保护（公开 vs 受保护路由）
+- 取消发布流程
+- 版本快照（draft_snapshots 表 + 创建/恢复/删除 API）
+- SEO 工具（OG 元数据、JSON-LD 结构化数据、阅读时间估算）
+- OG 图片生成（`/api/og/[slug]`）
+- 教程分享（ShareDialog + embed 端点 + 社交分享）
+- 取消生成按钮（暴露 AbortController + 取消状态处理）
+- 增量重新生成服务
+- 模型能力探测端点
+- CI/CD 自动化（GitHub Actions）
+- 监控工具（计时 + 计数）
+
 
 
 ---
@@ -801,4 +919,4 @@ DEEPSEEK_API_KEY=...             # DeepSeek API Key
 
 ---
 
-*本文档基于 VibeDocs v3.2 实现状态编写，涵盖已实现的全部功能模块。v3.2 在 v3.1 基础上补全了草稿 CRUD 闭环、步骤删除/重排、多文件源码输入、完整 patch/focus/marks 编辑能力。*
+*本文档基于 VibeDocs v3.5 实现状态编写。v3.5 在 v3.2 基础上完成了用户认证、版本快照、SEO/OG、分享嵌入、取消生成、增量重新生成、CI/CD 和监控等全部产品化功能。*
