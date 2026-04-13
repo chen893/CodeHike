@@ -6,6 +6,7 @@ import * as publishedRepo from '../repositories/published-tutorial-repository';
 import { generateSlug, isReservedSlug } from '../utils/slug';
 import { publishRequestSchema } from '../schemas/api';
 import type { PublishedTutorial } from '../types/api';
+import { generateAndAssignTags } from './tag-service';
 
 export async function publishDraft(
   draftId: string,
@@ -64,6 +65,17 @@ export async function publishDraft(
       createdAt: publishedRow.createdAt,
       publishedAt: publishedRow.publishedAt,
     } as PublishedTutorial;
+  });
+
+  // Auto-generate tags for the published tutorial (fire-and-forget)
+  const meta = draft.tutorialDraft.meta;
+  generateAndAssignTags(
+    published.id,
+    meta.title,
+    meta.description || '',
+    meta.lang || '',
+  ).catch((err) => {
+    console.warn('[publish-draft] Auto-tagging failed (non-blocking):', err);
   });
 
   return published;

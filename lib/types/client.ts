@@ -1,4 +1,4 @@
-import type { ApiErrorResponse, DraftRecord, DraftSummary } from './api';
+import type { ApiErrorResponse, DraftRecord, DraftSummary, ExploreTutorial, TutorialTag } from './api';
 
 export interface ClientDraftRecord
   extends Omit<
@@ -14,6 +14,15 @@ export interface ClientDraftRecord
 
 export interface ClientDraftSummary extends Omit<DraftSummary, 'updatedAt'> {
   updatedAt: string;
+}
+
+export interface ClientTutorialTag extends Omit<TutorialTag, 'createdAt'> {
+  createdAt: string;
+}
+
+export interface ClientExploreTutorial extends Omit<ExploreTutorial, 'publishedAt' | 'tags'> {
+  publishedAt: string;
+  tags: ClientTutorialTag[];
 }
 
 export interface CreateDraftResponse {

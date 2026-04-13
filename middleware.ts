@@ -9,18 +9,24 @@ const { auth } = NextAuth({
 export default auth((req) => {
   const { pathname } = req.nextUrl
 
-  // Public routes: homepage, published tutorials, auth callbacks, model probe
+  // Public routes: homepage, published tutorials, explore, tags, profiles, auth callbacks, model probe, search
   const isPublicRoute =
     pathname === '/' ||
     pathname.startsWith('/api/auth') ||
     pathname.startsWith('/api/tutorials/') ||
-    pathname.startsWith('/api/models/')
+    pathname.startsWith('/api/models/') ||
+    pathname.startsWith('/api/tags') ||
+    pathname.startsWith('/api/search') ||
+    pathname.startsWith('/explore') ||
+    pathname.startsWith('/tags') ||
+    pathname.startsWith('/u/')
 
   // Protected routes that require authentication
   const isProtectedRoute =
     pathname.startsWith('/drafts') ||
     pathname.startsWith('/new') ||
-    pathname.startsWith('/api/drafts')
+    pathname.startsWith('/api/drafts') ||
+    pathname.startsWith('/api/user/')
 
   if (isProtectedRoute && !req.auth) {
     // API routes should return 401 JSON

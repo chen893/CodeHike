@@ -2,7 +2,7 @@
 
 import { useState } from 'react';
 import Link from 'next/link';
-import { Home, PlusCircle, Files, BookOpen, Terminal } from 'lucide-react';
+import { Home, PlusCircle, Files, BookOpen, Terminal, Compass, Tag } from 'lucide-react';
 import { LoginButton } from '@/components/auth/login-button';
 import { UserMenu } from '@/components/auth/user-menu';
 
@@ -10,6 +10,8 @@ interface AppShellUser {
   name?: string | null;
   email?: string | null;
   image?: string | null;
+  id?: string | null;
+  username?: string | null;
 }
 
 interface AppShellProps {
@@ -20,6 +22,8 @@ interface AppShellProps {
 
 const navItems = [
   { href: '/', label: '首页', icon: BookOpen },
+  { href: '/explore', label: '探索', icon: Compass },
+  { href: '/tags', label: '标签', icon: Tag },
   { href: '/drafts', label: '草稿箱', icon: Files },
   { href: '/new', label: '新建', icon: PlusCircle },
 ] as const;

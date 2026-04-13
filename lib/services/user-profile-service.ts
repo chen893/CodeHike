@@ -2,6 +2,10 @@ import * as userRepo from '../repositories/user-repository';
 import { isReservedSlug } from '../utils/slug';
 import type { UserPublicProfile, PublishedTutorial } from '../types/api';
 
+export async function getUserById(id: string) {
+  return userRepo.getUserById(id);
+}
+
 export async function getPublicProfile(
   username: string,
 ): Promise<UserPublicProfile | null> {

@@ -54,6 +54,14 @@ export default async function Page() {
               >
                 <Link href="/drafts">草稿箱</Link>
               </Button>
+              <Button
+                asChild
+                size="lg"
+                variant="outline"
+                className="border-white/10 bg-white/5 font-semibold text-white hover:bg-white/10"
+              >
+                <Link href="/explore">浏览教程</Link>
+              </Button>
             </div>
           </div>
         </div>
