@@ -5,14 +5,15 @@ import { getRouteErrorMessage } from '@/lib/api/route-errors';
 
 export async function GET(
   _req: Request,
-  { params }: { params: Promise<{ tutorialId: string }> },
+  { params }: { params: Promise<{ slug: string }> },
 ) {
   try {
-    const { tutorialId } = await params;
-    const tags = await getTutorialTags(tutorialId);
+    const { slug } = await params;
+    // slug here is the tutorial ID (published_tutorials.id)
+    const tags = await getTutorialTags(slug);
     return NextResponse.json(tags);
   } catch (err) {
-    console.error('[api/tutorials/tutorialId/tags] GET failed:', err);
+    console.error('[api/tutorials/slug/tags] GET failed:', err);
     return NextResponse.json(
       { message: getRouteErrorMessage(err, '获取标签失败'), code: 'FETCH_ERROR' },
       { status: 500 },
@@ -22,7 +23,7 @@ export async function GET(
 
 export async function PUT(
   req: Request,
-  { params }: { params: Promise<{ tutorialId: string }> },
+  { params }: { params: Promise<{ slug: string }> },
 ) {
   try {
     const session = await auth();
@@ -33,7 +34,7 @@ export async function PUT(
       );
     }
 
-    const { tutorialId } = await params;
+    const { slug } = await params;
     let body: unknown;
     try {
       body = await req.json();
@@ -54,16 +55,16 @@ export async function PUT(
       );
     }
 
-    // Validate tag names: max 64 chars, non-empty, no special content
+    // Validate tag names: max 64 chars, non-empty
     const validNames = (tagNames as string[]).filter((n) => {
       const trimmed = n.trim();
       return trimmed.length > 0 && trimmed.length <= 64;
     });
 
-    const tags = await setTutorialTagsByName(tutorialId, validNames);
+    const tags = await setTutorialTagsByName(slug, validNames);
     return NextResponse.json(tags);
   } catch (err) {
-    console.error('[api/tutorials/tutorialId/tags] PUT failed:', err);
+    console.error('[api/tutorials/slug/tags] PUT failed:', err);
     return NextResponse.json(
       { message: getRouteErrorMessage(err, '更新标签失败'), code: 'INTERNAL_ERROR' },
       { status: 500 },
