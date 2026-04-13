@@ -153,3 +153,18 @@ export const publishedTutorials = pgTable('published_tutorials', {
     .defaultNow()
     .notNull(),
 });
+
+export const draftSnapshots = pgTable('draft_snapshots', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  draftId: uuid('draft_id')
+    .notNull()
+    .references(() => drafts.id, { onDelete: 'cascade' }),
+  label: varchar('label', { length: 256 }),
+  tutorialDraftSnapshot: jsonb('tutorial_draft_snapshot')
+    .$type<unknown>()
+    .notNull(),
+  stepCount: integer('step_count').notNull().default(0),
+  createdAt: timestamp('created_at', { withTimezone: true })
+    .defaultNow()
+    .notNull(),
+});
