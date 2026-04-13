@@ -437,3 +437,32 @@
 **影响文件**：
 - `components/step-editor/code-selection-menu.tsx`
 - `components/step-editor.tsx`
+
+## v3.5.A 用户认证实施问题
+
+### 问题 1: Edge Runtime 不兼容 Node.js crypto 模块
+
+**现象**: 部署 middleware.ts 后，所有页面返回 500 错误。错误信息: "The edge runtime does not support Node.js 'crypto' module"。
+
+**根因**: Next.js middleware 运行在 Edge Runtime，但 `auth.ts` 导入了 `@auth/drizzle-adapter` + `pg`，后者依赖 Node.js `crypto` 模块。即使 middleware 只是 `export { auth as middleware }`，import 链也会将 `pg` 拉入 Edge Runtime。
+
+**解决方案**:
+1. 主 `auth.ts` 使用 JWT session strategy（而非 database sessions）
+2. `middleware.ts` 创建轻量级 NextAuth 实例（`providers: []`，无 adapter），仅验证 JWT cookie
+3. 中间件对 API 路由返回 401 JSON，对页面路由 redirect 到登录页
+
+### 问题 2: proxy.ts 文件名不被 Next.js 识别
+
+**现象**: 存在 `proxy.ts`（含 middleware 逻辑）但不被 Next.js 执行。
+
+**根因**: Next.js 要求 middleware 文件必须命名为 `middleware.ts` 或 `middleware.js`（根目录或 `src/` 下）。`proxy.ts` 不会被自动加载。
+
+**解决方案**: 删除 `proxy.ts`，创建正确的 `middleware.ts`，并使用 `export default` 而非 `export { auth as proxy }`。
+
+### 问题 3: DB 缺少 userId 列导致查询失败
+
+**现象**: 草稿编辑器页面加载 500 错误。SQL 查询包含 `userId` 列但数据库表中不存在。
+
+**根因**: Drizzle schema 已定义 `userId` 列和 NextAuth 表，但 `drizzle-kit push` 未执行（仅生成了 migration 文件但未应用）。
+
+**解决方案**: 执行 `drizzle-kit push` 将 schema 同步到数据库。
