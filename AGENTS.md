@@ -207,11 +207,10 @@ lib/services/compute-generation-quality.ts # 质量指标计算
 |------|------|
 | `docs/vibedocs-technical-handbook.md` | **主文档** — 产品、架构、数据、API、UI、AI 生成的技术手册 |
 | `docs/tutorial-data-format.md` | 教程 DSL 权威规范 — JSON 结构、Patch 机制、代码组装算法、校验规则 |
-| `docs/post-v3.5-roadmap.md` | v3.5+ 迭代路线图 — v3.6/v3.7/v3.8 功能规划 |
 | `docs/v3-implementation-issues.md` | 实施问题记录 — 技术决策和解决方案（活跃维护） |
 | `docs/ui-review-workflow.md` | UI 审查流程 — 截图规范、模型审查、修复验证 |
 | `docs/mini-redux.js` | Redux 核心源码实现（简化版），测试用样本源码 |
-| `docs/archive/` | 已归档的 PRD、技术设计、实施计划等历史文档 |
+| `docs/archive/` | 已归档的 PRD、技术设计、实施计划、版本任务分解等历史文档 |
 
 **修改代码前先阅读 `vibedocs-technical-handbook.md`。** 数据结构细节对照 `tutorial-data-format.md`。
 **实施过程中如遇到问题，必须将问题现象、根因分析和解决方案补充记录到 `docs/v3-implementation-issues.md`。**
