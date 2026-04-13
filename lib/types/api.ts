@@ -59,3 +59,37 @@ export interface ApiErrorResponse {
   code: string;
   details?: string[];
 }
+
+// v3.7: Discovery, Tags, and Creator Identity types
+
+export interface TutorialTag {
+  id: string;
+  name: string;
+  slug: string;
+  createdAt: Date;
+}
+
+export interface UserPublicProfile {
+  id: string;
+  username: string;
+  name: string | null;
+  image: string | null;
+  bio: string | null;
+  tutorialCount: number;
+}
+
+export interface ExploreTutorial {
+  id: string;
+  slug: string;
+  title: string;
+  description: string | null;
+  lang: string;
+  stepCount: number;
+  readingTime: number;
+  publishedAt: Date;
+  tags: TutorialTag[];
+  viewCount: number;
+  authorName: string | null;
+  authorUsername: string | null;
+  authorImage: string | null;
+}

@@ -84,3 +84,29 @@ export function trackCtaClicked(
     payload: { ctaId },
   });
 }
+
+/** Track an explore page view. */
+export function trackExploreViewed(
+  userId?: string,
+  sessionId?: string,
+  filters?: Record<string, string>,
+): Promise<void> {
+  return trackEvent({
+    eventType: 'explore_viewed',
+    userId,
+    sessionId,
+    payload: filters ?? {},
+  });
+}
+
+/** Track a user profile page view. */
+export function trackProfileViewed(
+  username: string,
+  userId?: string,
+): Promise<void> {
+  return trackEvent({
+    eventType: 'profile_viewed',
+    userId,
+    payload: { username },
+  });
+}

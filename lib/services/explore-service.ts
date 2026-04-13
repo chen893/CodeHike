@@ -1,0 +1,42 @@
+import * as searchRepo from '../repositories/tutorial-search-repository';
+import * as tagRepo from '../repositories/tag-repository';
+import type { ExploreTutorial, TutorialTag } from '../types/api';
+
+export async function getExploreData(options: {
+  page?: number;
+  sort?: string;
+  tag?: string;
+  lang?: string;
+  search?: string;
+}): Promise<{ tutorials: ExploreTutorial[]; total: number; tags: TutorialTag[] }> {
+  // Always load tags for sidebar
+  const tagsPromise = tagRepo.listAllTags();
+
+  let tutorials: ExploreTutorial[];
+  let total: number;
+
+  if (options.search && options.search.trim().length > 0) {
+    tutorials = await searchRepo.searchPublishedTutorials(options.search.trim());
+    total = tutorials.length;
+  } else {
+    const result = await searchRepo.listPublishedForExplore({
+      page: options.page,
+      pageSize: 20,
+      sort: options.sort === 'popular' ? 'popular' : 'newest',
+      tagSlug: options.tag,
+      lang: options.lang,
+    });
+    tutorials = result.tutorials;
+    total = result.total;
+  }
+
+  const tags = await tagsPromise;
+
+  return { tutorials, total, tags };
+}
+
+export async function getTagsPageData(): Promise<
+  (TutorialTag & { tutorialCount: number })[]
+> {
+  return tagRepo.listAllTags();
+}

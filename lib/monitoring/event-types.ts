@@ -14,4 +14,8 @@ export const ALLOWED_EVENT_TYPES = new Set([
   'generation_started',
   'generation_completed',
   'generation_failed',
+  'tag_viewed',
+  'profile_viewed',
+  'tutorial_tagged',
+  'username_set',
 ]);

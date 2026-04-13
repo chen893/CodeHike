@@ -1,0 +1,119 @@
+import { eq, desc, and, inArray, sql } from 'drizzle-orm';
+import { db } from '../db';
+import { tutorialTags, tutorialTagRelations, publishedTutorials } from '../db/schema';
+import type { TutorialTag } from '../types/api';
+
+type TutorialTagRow = typeof tutorialTags.$inferSelect;
+
+function toTutorialTag(row: TutorialTagRow): TutorialTag {
+  return {
+    id: row.id,
+    name: row.name,
+    slug: row.slug,
+    createdAt: row.createdAt,
+  };
+}
+
+function generateSlug(name: string): string {
+  return name
+    .toLowerCase()
+    .replace(/[^\w\s-]/g, '')
+    .replace(/\s+/g, '-')
+    .replace(/-+/g, '-')
+    .replace(/^-+|-+$/g, '')
+    .slice(0, 64);
+}
+
+export async function createTag(name: string): Promise<TutorialTag> {
+  const slug = generateSlug(name);
+  const [row] = await db
+    .insert(tutorialTags)
+    .values({ name, slug })
+    .returning();
+  return toTutorialTag(row);
+}
+
+export async function getOrCreateTag(name: string): Promise<TutorialTag> {
+  const [existing] = await db
+    .select()
+    .from(tutorialTags)
+    .where(eq(tutorialTags.name, name));
+  if (existing) {
+    return toTutorialTag(existing);
+  }
+  return createTag(name);
+}
+
+export async function getTagBySlug(slug: string): Promise<TutorialTag | null> {
+  const [row] = await db
+    .select()
+    .from(tutorialTags)
+    .where(eq(tutorialTags.slug, slug));
+  return row ? toTutorialTag(row) : null;
+}
+
+export async function listAllTags(): Promise<(TutorialTag & { tutorialCount: number })[]> {
+  const rows = await db
+    .select({
+      id: tutorialTags.id,
+      name: tutorialTags.name,
+      slug: tutorialTags.slug,
+      createdAt: tutorialTags.createdAt,
+      tutorialCount: sql<number>`count(${tutorialTagRelations.tutorialId})::int`,
+    })
+    .from(tutorialTags)
+    .leftJoin(tutorialTagRelations, eq(tutorialTags.id, tutorialTagRelations.tagId))
+    .groupBy(tutorialTags.id, tutorialTags.name, tutorialTags.slug, tutorialTags.createdAt)
+    .orderBy(desc(sql`count(${tutorialTagRelations.tutorialId})`));
+
+  return rows.map((row) => ({
+    id: row.id,
+    name: row.name,
+    slug: row.slug,
+    createdAt: row.createdAt,
+    tutorialCount: row.tutorialCount,
+  }));
+}
+
+export async function setTagsForTutorial(
+  tutorialId: string,
+  tagIds: string[],
+): Promise<void> {
+  await db.transaction(async (tx) => {
+    await tx
+      .delete(tutorialTagRelations)
+      .where(eq(tutorialTagRelations.tutorialId, tutorialId));
+
+    if (tagIds.length > 0) {
+      await tx.insert(tutorialTagRelations).values(
+        tagIds.map((tagId) => ({
+          tutorialId,
+          tagId,
+        })),
+      );
+    }
+  });
+}
+
+export async function getTagsForTutorial(tutorialId: string): Promise<TutorialTag[]> {
+  const rows = await db
+    .select({
+      id: tutorialTags.id,
+      name: tutorialTags.name,
+      slug: tutorialTags.slug,
+      createdAt: tutorialTags.createdAt,
+    })
+    .from(tutorialTagRelations)
+    .innerJoin(tutorialTags, eq(tutorialTagRelations.tagId, tutorialTags.id))
+    .where(eq(tutorialTagRelations.tutorialId, tutorialId));
+  return rows.map(toTutorialTag);
+}
+
+export async function getTutorialsForTag(tagSlug: string): Promise<string[]> {
+  const rows = await db
+    .select({ tutorialId: tutorialTagRelations.tutorialId })
+    .from(tutorialTagRelations)
+    .innerJoin(tutorialTags, eq(tutorialTagRelations.tagId, tutorialTags.id))
+    .where(eq(tutorialTags.slug, tagSlug));
+  return rows.map((r) => r.tutorialId);
+}

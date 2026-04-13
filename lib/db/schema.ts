@@ -31,6 +31,9 @@ export const users = pgTable('users', {
   email: text('email').unique(),
   emailVerified: timestamp('emailVerified', { mode: 'date' }),
   image: text('image'),
+  // v3.7: Creator profile fields
+  username: varchar('username', { length: 64 }).unique(),
+  bio: text('bio'),
 });
 
 export const accounts = pgTable(
@@ -166,6 +169,33 @@ export const events = pgTable('events', {
     .defaultNow()
     .notNull(),
 });
+
+// v3.7: Tutorial tags
+export const tutorialTags = pgTable('tutorial_tags', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  name: varchar('name', { length: 64 }).notNull().unique(),
+  slug: varchar('slug', { length: 64 }).notNull().unique(),
+  createdAt: timestamp('created_at', { withTimezone: true })
+    .defaultNow()
+    .notNull(),
+});
+
+export const tutorialTagRelations = pgTable(
+  'tutorial_tag_relations',
+  {
+    tutorialId: uuid('tutorial_id')
+      .notNull()
+      .references(() => publishedTutorials.id, { onDelete: 'cascade' }),
+    tagId: uuid('tag_id')
+      .notNull()
+      .references(() => tutorialTags.id, { onDelete: 'cascade' }),
+  },
+  (table) => [
+    {
+      pk: primaryKey({ columns: [table.tutorialId, table.tagId] }),
+    },
+  ],
+);
 
 export const draftSnapshots = pgTable('draft_snapshots', {
   id: uuid('id').primaryKey().defaultRandom(),
