@@ -10,6 +10,7 @@ import {
   CardTitle,
 } from "@/components/ui/card"
 import { getHomePageData } from "@/lib/services/tutorial-queries"
+import { getCurrentUser } from "@/auth"
 
 export const metadata = {
   title: "VibeDocs",
@@ -18,9 +19,10 @@ export const metadata = {
 
 export default async function Page() {
   const { tutorials, publishedTutorials } = await getHomePageData()
+  const user = await getCurrentUser()
 
   return (
-    <AppShell activePath="/">
+    <AppShell activePath="/" user={user}>
       <div className="mx-auto w-full max-w-6xl space-y-12 px-4 py-10 sm:px-6 lg:px-8">
         <div className="relative overflow-hidden rounded-3xl bg-slate-900 px-8 py-12 text-white shadow-2xl sm:px-12 sm:py-16">
           <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_top_left,_rgba(56,189,248,0.2),_transparent_40%),linear-gradient(135deg,_#0f172a_0%,_#1e293b_100%)]" />

@@ -1,9 +1,12 @@
 import { CreateDraftForm } from "@/components/create-draft-form";
 import { AppShell } from "@/components/app-shell";
+import { getCurrentUser } from "@/auth";
 
-export default function NewPage() {
+export default async function NewPage() {
+  const user = await getCurrentUser();
+
   return (
-    <AppShell activePath="/new">
+    <AppShell activePath="/new" user={user}>
       <div className="mx-auto flex min-h-screen w-full max-w-4xl flex-col gap-6 px-4 py-10 sm:px-6 lg:px-8">
         <header className="space-y-2 rounded-xl border border-border bg-card p-6 shadow-sm">
           <h1 className="text-2xl font-bold tracking-tight text-foreground">

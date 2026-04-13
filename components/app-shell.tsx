@@ -3,10 +3,19 @@
 import { useState } from 'react';
 import Link from 'next/link';
 import { Home, PlusCircle, Files, BookOpen, Terminal } from 'lucide-react';
+import { LoginButton } from '@/components/auth/login-button';
+import { UserMenu } from '@/components/auth/user-menu';
+
+interface AppShellUser {
+  name?: string | null;
+  email?: string | null;
+  image?: string | null;
+}
 
 interface AppShellProps {
   children: React.ReactNode;
   activePath?: string;
+  user?: AppShellUser | null;
 }
 
 const navItems = [
@@ -15,7 +24,7 @@ const navItems = [
   { href: '/new', label: '新建', icon: PlusCircle },
 ] as const;
 
-export function AppShell({ children, activePath }: AppShellProps) {
+export function AppShell({ children, activePath, user }: AppShellProps) {
   const [drawerOpen, setDrawerOpen] = useState(false);
 
   return (
@@ -23,7 +32,7 @@ export function AppShell({ children, activePath }: AppShellProps) {
       <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_top_left,_rgba(56,189,248,0.08),_transparent_35%),linear-gradient(180deg,_#f8fafc_0%,_#f1f5f9_100%)]" />
 
       <aside className="sticky left-0 top-0 z-20 hidden h-screen w-60 shrink-0 border-r border-slate-200 bg-slate-900 text-slate-100 lg:fixed lg:flex lg:flex-col">
-        <SidebarContent activePath={activePath} />
+        <SidebarContent activePath={activePath} user={user} />
       </aside>
 
       <button
@@ -49,7 +58,7 @@ export function AppShell({ children, activePath }: AppShellProps) {
           }`}
           onClick={(event) => event.stopPropagation()}
         >
-          <SidebarContent activePath={activePath} onNavigate={() => setDrawerOpen(false)} />
+          <SidebarContent activePath={activePath} user={user} onNavigate={() => setDrawerOpen(false)} />
         </div>
       </div>
 
@@ -60,9 +69,11 @@ export function AppShell({ children, activePath }: AppShellProps) {
 
 function SidebarContent({
   activePath,
+  user,
   onNavigate,
 }: {
   activePath?: string;
+  user?: AppShellUser | null;
   onNavigate?: () => void;
 }) {
   return (
@@ -109,9 +120,16 @@ function SidebarContent({
 
       <div className="mt-auto space-y-4">
         <div className="rounded-xl border border-slate-800 bg-slate-800/20 p-4">
-          <p className="mt-2 text-[11px] leading-relaxed text-slate-400">
-            把源码变成可交互的逐步教程
-          </p>
+          {user ? (
+            <UserMenu user={user} />
+          ) : (
+            <div className="space-y-2">
+              <p className="text-[11px] leading-relaxed text-slate-400">
+                登录后可创建和编辑教程
+              </p>
+              <LoginButton />
+            </div>
+          )}
         </div>
         <div className="flex items-center gap-2 px-2 text-[10px] font-bold text-slate-600">
           <span className="h-1.5 w-1.5 rounded-full bg-green-500 shadow-[0_0_8px_rgba(34,197,94,0.5)]" />
