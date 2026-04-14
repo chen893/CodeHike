@@ -52,39 +52,39 @@
 }
 
 :root {
-  --radius: 0.625rem;
-  --background: oklch(0.99 0.005 255);
-  --foreground: oklch(0.25 0.02 255);
+  --radius: 0.5rem;
+  --background: oklch(0.99 0.005 210);
+  --foreground: oklch(0.2 0.02 210);
   
   --card: oklch(1 0 0);
-  --card-foreground: oklch(0.25 0.02 255);
+  --card-foreground: oklch(0.2 0.02 210);
   
   --popover: oklch(1 0 0);
-  --popover-foreground: oklch(0.25 0.02 255);
+  --popover-foreground: oklch(0.2 0.02 210);
   
-  /* Brand: Violet/Indigo */
-  --primary: oklch(0.55 0.18 275);
-  --primary-foreground: oklch(0.99 0 0);
+  /* Brand: Cyan/Teal */
+  --primary: oklch(0.55 0.15 210);
+  --primary-foreground: oklch(1 0 0);
   
-  --secondary: oklch(0.96 0.01 275);
-  --secondary-foreground: oklch(0.35 0.1 275);
+  --secondary: oklch(0.96 0.02 210);
+  --secondary-foreground: oklch(0.3 0.08 210);
   
-  --muted: oklch(0.96 0.008 255);
-  --muted-foreground: oklch(0.55 0.02 255);
+  --muted: oklch(0.96 0.01 210);
+  --muted-foreground: oklch(0.5 0.02 210);
   
-  --accent: oklch(0.94 0.03 275);
-  --accent-foreground: oklch(0.3 0.12 275);
+  --accent: oklch(0.94 0.03 210);
+  --accent-foreground: oklch(0.25 0.1 210);
   
   --destructive: oklch(0.6 0.18 25);
-  --destructive-foreground: oklch(0.99 0 0);
+  --destructive-foreground: oklch(1 0 0);
   
-  --border: oklch(0.92 0.01 255);
-  --input: oklch(0.92 0.01 255);
-  --ring: oklch(0.55 0.18 275 / 25%);
+  --border: oklch(0.9 0.01 210);
+  --input: oklch(0.9 0.01 210);
+  --ring: oklch(0.55 0.15 210 / 40%);
   
-  --sidebar: oklch(0.2 0.02 255);
-  --sidebar-foreground: oklch(0.98 0.01 255);
-  --sidebar-border: oklch(0.3 0.02 255);
+  --sidebar: oklch(0.2 0.02 210);
+  --sidebar-foreground: oklch(0.98 0.01 210);
+  --sidebar-border: oklch(0.3 0.02 210);
 
   /* Status Tokens */
   --status-draft: oklch(0.94 0.04 85);
@@ -96,42 +96,42 @@
   --status-failed: oklch(0.94 0.05 25);
   --status-failed-foreground: oklch(0.45 0.15 25);
   
-  --status-generating: oklch(0.93 0.05 250);
-  --status-generating-foreground: oklch(0.4 0.15 250);
+  --status-generating: oklch(0.93 0.05 210);
+  --status-generating-foreground: oklch(0.4 0.15 210);
 }
 
 .dark {
-  --background: oklch(0.14 0.02 255);
-  --foreground: oklch(0.98 0.01 255);
+  --background: oklch(0.12 0.02 210);
+  --foreground: oklch(0.98 0.01 210);
   
-  --card: oklch(0.18 0.02 255);
-  --card-foreground: oklch(0.98 0.01 255);
+  --card: oklch(0.16 0.02 210);
+  --card-foreground: oklch(0.98 0.01 210);
   
-  --popover: oklch(0.18 0.02 255);
-  --popover-foreground: oklch(0.98 0.01 255);
+  --popover: oklch(0.16 0.02 210);
+  --popover-foreground: oklch(0.98 0.01 210);
   
-  --primary: oklch(0.65 0.15 275);
-  --primary-foreground: oklch(0.14 0.02 255);
+  --primary: oklch(0.65 0.12 210);
+  --primary-foreground: oklch(0.1 0.02 210);
   
-  --secondary: oklch(0.25 0.03 275);
-  --secondary-foreground: oklch(0.85 0.05 275);
+  --secondary: oklch(0.22 0.03 210);
+  --secondary-foreground: oklch(0.9 0.03 210);
   
-  --muted: oklch(0.22 0.02 255);
-  --muted-foreground: oklch(0.7 0.02 255);
+  --muted: oklch(0.2 0.02 210);
+  --muted-foreground: oklch(0.65 0.02 210);
   
-  --accent: oklch(0.28 0.05 275);
-  --accent-foreground: oklch(0.95 0.05 275);
+  --accent: oklch(0.24 0.04 210);
+  --accent-foreground: oklch(0.95 0.03 210);
   
   --destructive: oklch(0.5 0.15 25);
-  --destructive-foreground: oklch(0.98 0.01 255);
+  --destructive-foreground: oklch(0.98 0.01 25);
   
-  --border: oklch(0.25 0.02 255);
-  --input: oklch(0.25 0.02 255);
-  --ring: oklch(0.65 0.15 275 / 30%);
+  --border: oklch(0.22 0.02 210);
+  --input: oklch(0.22 0.02 210);
+  --ring: oklch(0.65 0.12 210 / 40%);
   
-  --sidebar: oklch(0.12 0.02 255);
-  --sidebar-foreground: oklch(0.98 0.01 255);
-  --sidebar-border: oklch(0.2 0.02 255);
+  --sidebar: oklch(0.1 0.02 210);
+  --sidebar-foreground: oklch(0.98 0.01 210);
+  --sidebar-border: oklch(0.18 0.02 210);
 
   /* Status Tokens (Dark Mode) */
   --status-draft: oklch(0.25 0.05 85);
@@ -143,8 +143,8 @@
   --status-failed: oklch(0.25 0.05 25);
   --status-failed-foreground: oklch(0.85 0.15 25);
   
-  --status-generating: oklch(0.25 0.05 250);
-  --status-generating-foreground: oklch(0.8 0.15 250);
+  --status-generating: oklch(0.25 0.05 210);
+  --status-generating-foreground: oklch(0.8 0.15 210);
 }
 
 @layer base {
@@ -249,14 +249,14 @@
 }
 
 .code-mark-wrap {
-  margin-left: -0.75rem;
-  padding-left: 0.625rem;
+  margin-left: -0.5rem;
+  padding-left: 0.5rem;
 }
 
 .code-change-line {
-  margin-left: -0.75rem;
+  margin-left: -0.5rem;
   min-height: 1.9em;
-  padding-left: 0.625rem;
+  padding-left: 0.5rem;
 }
 
 .code-line-added {

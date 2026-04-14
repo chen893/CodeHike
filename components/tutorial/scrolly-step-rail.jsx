@@ -31,7 +31,7 @@ export function StepRail({ steps }) {
   }
 
   return (
-    <div className="fixed right-5 top-1/2 z-20 hidden -translate-y-1/2 flex-col items-center gap-1 rounded-full border border-slate-200/80 bg-white/80 p-2 shadow-[0_1px_3px_rgba(15,23,42,0.08),0_4px_12px_rgba(15,23,42,0.04)] backdrop-blur lg:flex">
+    <div className="fixed right-5 top-1/2 z-20 hidden -translate-y-1/2 flex-col items-center gap-1 bg-transparent p-1 lg:flex">
       {steps.map((step, index) => {
         const state = getStepState(index)
         const isHovered = hoveredIndex === index
@@ -40,18 +40,18 @@ export function StepRail({ steps }) {
         return (
           <div
             key={step.id || index}
-            className="step-rail-node relative flex h-8 w-8 cursor-pointer items-center justify-center rounded-full transition-all hover:bg-[#2563eb]/[0.06]"
+            className="step-rail-node relative flex h-10 w-10 cursor-pointer items-center justify-center rounded-full transition-all hover:bg-[#2563eb]/[0.08]"
             onMouseEnter={() => setHoveredIndex(index)}
             onMouseLeave={() => setHoveredIndex(null)}
             onClick={() => handleSelect(index)}
           >
             <div
-              className={`step-rail-dash ${state} transition-all ${
+              className={`step-rail-dash transition-all duration-300 ${
                 state === "current"
-                  ? `${isHovered ? "h-1 w-6" : "h-1 w-[22px]"} rounded-sm bg-[#2563eb]`
+                  ? "h-2 w-2 rounded-full bg-[#2563eb] ring-4 ring-[#2563eb]/20"
                   : state === "completed"
-                    ? `${isHovered ? "h-[3px] w-[18px]" : "h-[3px] w-[14px]"} rounded-[1.5px] bg-[#2563eb]/25`
-                    : `${isHovered ? "h-[3px] w-[18px] bg-black/25" : "h-[3px] w-[14px] bg-black/12"} rounded-[1.5px]`
+                    ? `h-[3px] rounded-[1.5px] bg-[#2563eb]/40 ${isHovered ? "w-5" : "w-3"}`
+                    : `h-[3px] rounded-[1.5px] bg-slate-300 ${isHovered ? "w-5" : "w-3"}`
               }`}
             />
 

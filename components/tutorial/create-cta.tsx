@@ -10,6 +10,7 @@ export function CreateCTA({ slug }: CreateCTAProps) {
   const [clicked, setClicked] = useState(false);
 
   const handleClick = () => {
+    setClicked(true);
     // Fire-and-forget tracking with keepalive to survive navigation
     try {
       fetch('/api/events', {
@@ -29,22 +30,23 @@ export function CreateCTA({ slug }: CreateCTAProps) {
   };
 
   return (
-    <div className="mx-auto max-w-2xl px-4 py-12">
-      <div className="rounded-xl border border-slate-200 bg-slate-50 p-6 text-center dark:border-slate-700 dark:bg-slate-800">
-        <h3 className="text-lg font-semibold text-slate-900 dark:text-slate-100">
-          Create Your Own Interactive Tutorial
+    <div className="w-full">
+      <div className="rounded-lg border border-slate-200 bg-white p-8 text-center sm:p-10">
+        <h3 className="text-xl font-bold text-slate-900">
+          创建你自己的交互式教程
         </h3>
-        <p className="mt-2 text-sm text-slate-600 dark:text-slate-400">
-          Turn any source code into a step-by-step interactive tutorial in 60 seconds.
+        <p className="mt-3 text-base text-slate-600">
+          选择一段源码，快速生成可以继续编辑和发布的分步教程。
         </p>
         <button
           onClick={handleClick}
           disabled={clicked}
-          className="mt-4 inline-flex items-center rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700 disabled:opacity-50"
+          className="mt-6 inline-flex h-11 items-center justify-center rounded-lg bg-blue-600 px-8 text-sm font-bold text-white transition-all hover:bg-blue-500 active:scale-95 disabled:opacity-50"
         >
-          {clicked ? 'Redirecting...' : 'Create a Tutorial'}
+          {clicked ? '正在跳转...' : '立即开始创建'}
         </button>
       </div>
     </div>
   );
 }
+

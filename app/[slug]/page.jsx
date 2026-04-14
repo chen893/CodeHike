@@ -1,6 +1,5 @@
 import { notFound } from "next/navigation"
 import { TutorialScrollyDemo } from "../../components/tutorial-scrolly-demo"
-import { CreateCTA } from "../../components/tutorial/create-cta"
 import {
   getTutorialMetadata,
   getTutorialPageData,
@@ -51,7 +50,6 @@ export default async function TutorialPage({ params }) {
         fileName={tutorial.fileName}
         slug={slug}
       />
-      <CreateCTA slug={slug} />
     </main>
   )
 }

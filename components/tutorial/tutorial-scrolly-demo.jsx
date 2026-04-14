@@ -1,10 +1,12 @@
 "use client"
 
 import { useState } from "react"
+import Link from "next/link"
 import { Selectable, SelectionProvider } from "codehike/utils/selection"
 import { MobileCodeFrame, SelectedCodeFrame } from "./scrolly-code-frame.jsx"
 import { StepRail } from "./scrolly-step-rail.jsx"
 import { ShareDialog } from "./share-dialog"
+import { CreateCTA } from "./create-cta"
 
 export function TutorialScrollyDemo({
   steps,
@@ -12,30 +14,49 @@ export function TutorialScrollyDemo({
   title,
   fileName,
   slug = undefined,
+  showBreadcrumb = true,
 }) {
   const [shareOpen, setShareOpen] = useState(false)
   return (
     <SelectionProvider
-      className="grid min-h-screen bg-[#f7f8fa] text-slate-900 lg:grid-cols-[minmax(0,1.08fr)_minmax(420px,0.92fr)]"
+      className="grid min-h-screen bg-[#f7f8fa] text-slate-900 lg:grid-cols-[1.1fr_0.9fr] lg:gap-x-12 xl:gap-x-16"
       rootMargin="0% 0% -42% 0%"
     >
-      <aside className="hidden min-h-screen bg-[#1e1e2e] lg:block">
+      <aside className="hidden min-h-screen border-r border-slate-200 bg-[#1e1e2e] lg:block">
         <div className="sticky top-0 flex h-screen items-start justify-center overflow-hidden">
           <SelectedCodeFrame steps={steps} fileName={fileName} />
         </div>
       </aside>
 
-      <div className="relative min-h-screen bg-[#f7f8fa] px-5 pb-10 lg:px-0 lg:pb-0">
+      <div className="relative min-h-screen bg-[#f7f8fa] px-6 pb-12 lg:px-0 lg:pb-0">
         <StepRail steps={steps} />
+
+        {showBreadcrumb && (
+          <nav className="flex items-center gap-2 px-4 py-6 text-xs text-slate-400 sm:px-8 sm:text-sm lg:px-12 lg:pt-10">
+            {slug ? (
+              <Link href="/" className="transition-colors hover:text-slate-900">
+                VibeDocs
+              </Link>
+            ) : (
+              <span className="cursor-default">VibeDocs</span>
+            )}
+            <span className="select-none text-slate-300">/</span>
+            <span className="cursor-default transition-colors hover:text-slate-600">教程</span>
+            <span className="select-none text-slate-300">/</span>
+            <span className="max-w-[120px] truncate font-medium text-slate-900 sm:max-w-[240px]">
+              {title || "教程"}
+            </span>
+          </nav>
+        )}
 
         {slug && (
           <>
             <button
               onClick={() => setShareOpen(true)}
-              className="fixed right-4 top-4 z-40 rounded-full border border-slate-200 bg-white/80 p-2.5 text-slate-500 shadow-sm backdrop-blur-sm transition-colors hover:bg-white hover:text-slate-700 hover:shadow-md lg:right-6 lg:top-6"
+              className="fixed right-4 top-4 z-40 flex h-11 w-11 items-center justify-center rounded-lg border border-slate-200 bg-white/90 text-slate-500 shadow-sm backdrop-blur-sm transition-all hover:bg-white hover:text-slate-700 hover:shadow-md lg:right-8 lg:top-8"
               aria-label="分享教程"
             >
-              <svg className="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <svg className="h-5 w-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                 <circle cx="18" cy="5" r="3" />
                 <circle cx="6" cy="12" r="3" />
                 <circle cx="18" cy="19" r="3" />
@@ -53,15 +74,15 @@ export function TutorialScrollyDemo({
         )}
 
         {intro ? (
-          <section className="flex min-h-auto flex-col justify-center py-9 pl-4 sm:py-10 sm:pl-8 lg:min-h-screen lg:pl-10 lg:pr-14 lg:pb-[72px] lg:pt-12">
-            <h1 className="text-[clamp(2.625rem,5vw,4.5rem)] font-extrabold leading-[1.02] tracking-[-0.04em] text-slate-900">
-              {title || "Tutorial renderer"}
+          <section className="flex min-h-auto flex-col justify-center py-12 pl-4 sm:py-16 sm:pl-8 lg:min-h-screen lg:pl-12 lg:pr-16 lg:pb-24 lg:pt-16">
+            <h1 className="text-5xl font-extrabold leading-tight text-slate-900 sm:text-6xl lg:text-7xl">
+              {title || "教程渲染器"}
             </h1>
-            <div className="mt-4">
+            <div className="mt-6">
               {intro.map((paragraph, index) => (
                 <p
                   key={`intro-${index}`}
-                  className="mt-4 w-full max-w-[600px] text-[clamp(1rem,1.4vw,1.1875rem)] leading-[1.75] text-slate-500"
+                  className="mt-4 w-full max-w-2xl text-lg leading-relaxed text-slate-500 sm:text-xl"
                 >
                   {paragraph}
                 </p>
@@ -70,42 +91,87 @@ export function TutorialScrollyDemo({
           </section>
         ) : null}
 
-        <div>
+        <div className="space-y-4">
           {steps.map((step, index) => (
             <Selectable
               key={step.id || `step-${index}`}
               index={index}
               selectOn={["click", "scroll"]}
-              className="article-step scroll-mt-24 border-l-2 border-slate-200 pl-5 transition-colors data-[selected=true]:border-[#2563eb] sm:pl-8 lg:flex lg:min-h-screen lg:items-start lg:pl-10 lg:pr-14"
+              className="article-step scroll-mt-24 transition-all sm:pl-2 lg:flex lg:min-h-screen lg:items-start lg:pl-4 lg:pr-16"
             >
-              <article className="w-full max-w-[560px] py-9 pb-7 lg:py-14 lg:pb-[120px]">
+              <article className="w-full max-w-2xl py-12 pb-8 lg:py-20 lg:pb-32">
                 {step.eyebrow && (
-                  <p className="mb-3 text-[11px] font-semibold uppercase tracking-[0.1em] text-[#2563eb]">
+                  <p className="mb-4 text-xs font-bold uppercase text-[#2563eb]">
                     {step.eyebrow}
                   </p>
                 )}
-                <h2 className="text-[clamp(1.75rem,2.8vw,2.75rem)] font-bold leading-[1.15] tracking-[-0.025em] text-slate-900">
+                <h2 className="text-3xl font-bold leading-tight text-slate-900 sm:text-4xl lg:text-5xl">
                   {step.title}
                 </h2>
                 {step.lead && (
-                  <p className="mt-6 max-w-[560px] text-[clamp(1rem,1.3vw,1.125rem)] font-medium leading-[1.6] text-slate-900">
+                  <p className="mt-8 text-lg font-medium leading-relaxed text-slate-800 sm:text-xl">
                     {step.lead}
                   </p>
                 )}
-                <div>
+                <div className="space-y-6">
                   {step.paragraphs.map((paragraph, paragraphIndex) => (
                     <p
                       key={`step-${index}-p-${paragraphIndex}`}
-                      className="mt-5 max-w-[560px] text-[clamp(0.9375rem,1.2vw,1.0625rem)] leading-[1.8] text-slate-500"
+                      className="mt-6 text-base leading-relaxed text-slate-600 sm:text-lg"
                     >
                       {paragraph}
                     </p>
                   ))}
                 </div>
-                <MobileCodeFrame step={step} fileName={fileName} />
+                <MobileCodeFrame 
+                  step={step} 
+                  fileName={fileName} 
+                  index={index} 
+                  total={steps.length} 
+                />
               </article>
             </Selectable>
           ))}
+          
+          <div className="px-4 pb-24 pt-16 sm:px-2 lg:pl-4 lg:pr-16">
+            <div className="max-w-2xl border-t border-slate-200 pt-16">
+              <div className="mb-6 flex items-center gap-2 text-emerald-600">
+                <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2.5">
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M9 12.75L11.25 15 15 9.75M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                </svg>
+                <span className="text-sm font-bold uppercase">教程学习完成</span>
+              </div>
+
+              <h2 className="text-3xl font-bold text-slate-900 sm:text-4xl">
+                干得漂亮！你已经完成了本教程。
+              </h2>
+
+              <p className="mt-6 text-lg text-slate-600">
+                感谢阅读。希望这些步骤对你有所帮助，现在你可以继续探索或尝试自己创作一个教程。
+              </p>
+
+              <div className="mt-10 flex flex-wrap gap-4">
+                <Link
+                  href="/"
+                  className="inline-flex h-11 items-center justify-center rounded-lg border border-slate-200 bg-white px-5 text-sm font-medium text-slate-600 transition-colors hover:bg-slate-50 hover:text-slate-900"
+                >
+                  返回首页
+                </Link>
+                <Link
+                  href="/explore"
+                  className="inline-flex h-11 items-center justify-center rounded-lg border border-slate-200 bg-white px-5 text-sm font-medium text-slate-600 transition-colors hover:bg-slate-50 hover:text-slate-900"
+                >
+                  发现更多
+                </Link>
+              </div>
+
+              {slug && (
+                <div className="mt-20">
+                  <CreateCTA slug={slug} />
+                </div>
+              )}
+            </div>
+          </div>
         </div>
       </div>
     </SelectionProvider>

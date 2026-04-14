@@ -12,6 +12,7 @@ export default auth((req) => {
   // Public routes: homepage, published tutorials, explore, tags, profiles, auth callbacks, model probe, search
   const isPublicRoute =
     pathname === '/' ||
+    pathname.startsWith('/auth/signin') ||
     pathname.startsWith('/api/auth') ||
     pathname.startsWith('/api/tutorials/') ||
     pathname.startsWith('/api/models/') ||
@@ -38,7 +39,7 @@ export default auth((req) => {
       )
     }
     // Page routes should redirect to login
-    return Response.redirect(new URL('/api/auth/signin', req.url))
+    return Response.redirect(new URL('/auth/signin', req.url))
   }
 })
 

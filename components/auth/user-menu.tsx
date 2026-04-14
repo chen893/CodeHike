@@ -8,23 +8,25 @@ interface UserMenuProps {
 
 export function UserMenu({ user }: UserMenuProps) {
   return (
-    <div className="flex items-center gap-3">
+    <div className="flex items-center gap-3 w-full overflow-hidden">
       {user.image && (
         <img
           src={user.image}
           alt={user.name || ''}
-          className="h-8 w-8 rounded-full"
+          className="h-9 w-9 shrink-0 rounded-full border border-slate-700 shadow-sm"
         />
       )}
-      <span className="text-sm text-slate-600">
-        {user.name || user.email}
-      </span>
-      <button
-        onClick={() => signOut()}
-        className="text-xs text-slate-400 hover:text-slate-600"
-      >
-        登出
-      </button>
+      <div className="flex flex-1 flex-col min-w-0">
+        <span className="truncate text-sm font-semibold text-slate-100">
+          {user.name || user.email?.split('@')[0]}
+        </span>
+        <button
+          onClick={() => signOut()}
+          className="w-fit text-xs font-medium text-slate-400 transition-colors hover:text-cyan-400"
+        >
+          安全退出
+        </button>
+      </div>
     </div>
   )
 }

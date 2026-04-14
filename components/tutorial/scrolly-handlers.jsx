@@ -9,7 +9,7 @@ import {
 } from "codehike/utils/token-transitions"
 
 function FocusedPre(props) {
-  return <InnerPre merge={props} className="code-pre overflow-hidden rounded-2xl" />
+  return <InnerPre merge={props} className="code-pre overflow-hidden rounded-lg" />
 }
 
 class SmoothPre extends React.Component {
@@ -70,7 +70,7 @@ class SmoothPre extends React.Component {
   }
 
   render() {
-    return <InnerPre merge={this.props} className="code-pre overflow-hidden rounded-2xl" />
+    return <InnerPre merge={this.props} className="code-pre overflow-hidden rounded-lg" />
   }
 }
 
