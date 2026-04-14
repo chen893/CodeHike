@@ -458,8 +458,8 @@ function assembleTutorial(data) {
 
 | 注解 | 作用 | 数据来源 |
 |------|------|----------|
-| **focus** | 滚动到某一步时，高亮指定代码区域，其余区域变暗 | `step.focus.find` → 计算起止行号 |
-| **mark** | 在指定行左侧画竖线标记 | `step.marks[].find` → 计算行号 |
+| **focus** | 滚动到某一步时，高亮指定代码区域，其余区域变暗 | `step.focus.find` → 计算起止行号。编辑器支持交互式行选择（点击/Shift+点击确定范围）自动填充 find 文本 |
+| **mark** | 在指定行左侧画竖线标记 | `step.marks[].find` → 计算行号。编辑器支持 mark 模式下点击行自动生成 mark 条目 |
 
 ### 6.2 映射为 codehike 注解
 

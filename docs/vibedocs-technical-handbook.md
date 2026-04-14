@@ -580,7 +580,7 @@ DraftSnapshot {
 | `components/create-draft-form.tsx` | 创建草稿表单（多文件源码输入 + Teaching Brief 表单） |
 | `components/draft-workspace.tsx` | 编辑工作区主容器 |
 | `components/draft-meta-editor.tsx` | meta 信息编辑器 |
-| `components/step-editor.tsx` | 单步编辑器（文案 + patches + focus + marks + 代码预览 + 结构变更检测） |
+| `components/step-editor.tsx` | 单步编辑器（文案 + patches + focus + marks + 交互式行选择 + 代码预览 + 结构变更检测） |
 | `components/step-list.tsx` | 步骤列表（含删除/重排） |
 | `components/generation-progress.tsx` | 生成进度展示 |
 | `components/drafts-page.tsx` | 草稿列表页视图 |
@@ -642,13 +642,16 @@ GitHub 导入（v3.9 新增）：
 - `components/tutorial/use-remote-resource.ts` — 远程加载 + 请求版本化
 
 步骤编辑器子组件：
-- `components/step-editor/types.ts` — 步骤编辑器类型定义
+- `components/step-editor/types.ts` — 步骤编辑器类型定义（DiffLine、SelectionMode、FocusRange、PatchDraft、MarkDraft）
 - `components/step-editor/diff-utils.ts` — Diff 计算工具
-- `components/step-editor/diff-line.tsx` — Diff 行渲染
-- `components/step-editor/code-diff-view.tsx` — 代码差异视图
+- `components/step-editor/diff-line.tsx` — Diff 行渲染（支持交互点击和 focus/mark 高亮样式）
+- `components/step-editor/code-diff-view.tsx` — 代码差异视图（支持 interactive 模式：行点击、focus/mark 选区高亮）
+- `components/step-editor/code-preview-panel.tsx` — 代码预览面板（选择模式切换、diff 统计、文件切换）
+- `components/step-editor/patch-item.tsx` — 单个 Patch 编辑卡片（find/replace textarea + 校验状态 + 文件选择）
+- `components/step-editor/focus-marks-panel.tsx` — Focus/Marks 折叠面板（focus 文本输入 + marks 列表编辑）
 - `components/step-editor/use-patch-validation.ts` — Patch 校验 hook
-- `components/step-editor/intermediate-preview.tsx` — 中间代码预览
-- `components/step-editor/code-selection-menu.tsx` — 代码选择菜单
+- `components/step-editor/intermediate-preview.tsx` — 中间代码预览（多 patch 逐步展开）
+- `components/step-editor/code-selection-menu.tsx` — 代码文本选择菜单（选中代码快速设为 patch find 或 focus）
 
 ---
 
@@ -807,6 +810,12 @@ GitHub 导入（v3.9 新增）：
 - 调用 `getStepCodePreview()` 获取 `previousFiles` / `currentFiles` 和 diff 摘要
 - 多文件时有文件选择器切换预览目标
 - 修改 patches 后实时刷新预览
+- **交互式行选择模式**（v3.9 新增）：
+  - 三种模式切换：关闭 / Focus / Mark
+  - Focus 模式：点击行选择高亮范围（Shift+点击扩展范围），自动填充 focus find 文本
+  - Mark 模式：点击行切换标记，自动生成 mark 条目
+  - 选中行有视觉高亮（蓝色=focus，紫色=mark）
+  - 切换模式或 patches 变更时自动重置选区
 
 **结构变更检测：**
 - `getStructureSignature()` 将 patches/focus/marks 序列化为 JSON，与原始值比对
@@ -1033,7 +1042,7 @@ NEXT_PUBLIC_BASE_URL=https://...    # 公开访问基础 URL（SEO 生成用）
 - 步骤编辑器子组件拆分（diff 视图、代码选择菜单、中间预览）
 - 错误分类层（`lib/errors/`）
 
-### Phase 10：v3.9 GitHub 仓库导入 MVP ✅ 已完成
+### Phase 10：v3.9 GitHub 仓库导入 + 编辑器增强 ✅ 已完成
 - GitHub 仓库文件树浏览（`/api/github/repo-tree`，代理 GitHub Trees API）
 - GitHub 仓库文件内容批量获取（`/api/github/file-content`，代理 Contents API）
 - OAuth token 复用（从 accounts 表取已存储的 GitHub token）
@@ -1041,6 +1050,11 @@ NEXT_PUBLIC_BASE_URL=https://...    # 公开访问基础 URL（SEO 生成用）
 - 导入状态机（URL 输入 → 树加载 → 文件选择 → 内容拉取 → 映射 SourceItem[]）
 - 创建表单 Tab 切换（手动粘贴 / GitHub 导入）
 - 导入限制（≤15 文件、≤1500 行）前端 + 后端双重校验
+- 步骤编辑器子组件重构：CodePreviewPanel、PatchItem、FocusMarksPanel 独立拆分
+- 交互式行选择：focus/mark 模式下点击 diff 行自动填充 find 文本（Shift+点击扩展范围）
+- diff 视图 memo 化 + useCallback 优化，避免不必要的重渲染
+- 工作区侧边栏宽度从 16rem 调整到 20rem
+- 步骤列表操作按钮改为 hover 浮层样式
 
 
 
@@ -1064,4 +1078,4 @@ NEXT_PUBLIC_BASE_URL=https://...    # 公开访问基础 URL（SEO 生成用）
 
 ---
 
-*本文档基于 VibeDocs v3.9 实现状态编写。v3.9 在 v3.8 之上完成了 GitHub 公开仓库导入 MVP：仓库文件树浏览、文件内容批量获取、导入 UI Tab 切换。*
+*本文档基于 VibeDocs v3.9 实现状态编写。v3.9 在 v3.8 之上完成了 GitHub 公开仓库导入 MVP 和步骤编辑器增强（交互式行选择、子组件拆分、性能优化）。*

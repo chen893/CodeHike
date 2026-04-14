@@ -89,6 +89,8 @@ lib/services/compute-generation-quality.ts # 质量指标计算
 | 目录 | 用途 |
 |------|------|
 | `components/drafts/` | 草稿列表、创建、编辑、发布相关 client hooks / feature clients / 子视图 |
+| `components/create-draft/` | GitHub 仓库导入（API 客户端、导入状态机、文件树浏览器、导入 Tab 视图） |
+| `components/step-editor/` | 步骤编辑器子组件（diff 视图、patch 编辑、focus/marks 面板、代码预览、行选择交互） |
 | `components/tutorial/` | 教程阅读、远程加载、生成进度协议解析、渲染器子模块、标签编辑 |
 | `components/explore/` | 探索页面客户端交互（搜索输入、标签筛选、排序切换） |
 | `components/profile/` | 用户档案编辑、用户名设置、profile feature client |
@@ -208,7 +210,7 @@ lib/services/compute-generation-quality.ts # 质量指标计算
 | `docs/vibedocs-technical-handbook.md` | **主文档** — 产品、架构、数据、API、UI、AI 生成的技术手册 |
 | `docs/tutorial-data-format.md` | 教程 DSL 权威规范 — JSON 结构、Patch 机制、代码组装算法、校验规则 |
 | `docs/v3-implementation-issues.md` | 实施问题记录 — 技术决策和解决方案（活跃维护） |
-| `docs/ui-review-workflow.md` | UI 审查流程 — 截图规范、模型审查、修复验证 |
+| `docs/ui-review-workflow.md` | UI 审查流程 — 截图规范、模型审查、修复验证（已迁移至 `docs/workflow/`） |
 | `docs/mini-redux.js` | Redux 核心源码实现（简化版），测试用样本源码 |
 | `docs/archive/` | 已归档的 PRD、技术设计、实施计划、版本任务分解等历史文档 |
 
