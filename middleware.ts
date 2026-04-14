@@ -26,7 +26,8 @@ export default auth((req) => {
     pathname.startsWith('/drafts') ||
     pathname.startsWith('/new') ||
     pathname.startsWith('/api/drafts') ||
-    pathname.startsWith('/api/user/')
+    pathname.startsWith('/api/user/') ||
+    pathname.startsWith('/api/github/')
 
   if (isProtectedRoute && !req.auth) {
     // API routes should return 401 JSON

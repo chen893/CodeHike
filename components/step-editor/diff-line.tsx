@@ -1,10 +1,14 @@
 'use client'
 
+import { memo } from 'react'
 import type { DiffLine } from './types'
 
 interface DiffLineProps {
   line: DiffLine
   compact?: boolean
+  interactive?: boolean
+  selectionType?: 'focus' | 'mark' | 'none'
+  onLineClick?: (lineNumber: number, event: React.MouseEvent) => void
 }
 
 const LINE_STYLES: Record<DiffLine['type'], { container: string; marker: string; markerChar: string }> = {
@@ -30,11 +34,35 @@ const LINE_STYLES: Record<DiffLine['type'], { container: string; marker: string;
   },
 }
 
-export function DiffLineComponent({ line, compact = false }: DiffLineProps) {
+const SELECTION_STYLES: Record<string, string> = {
+  focus: 'bg-blue-100/70 border-l-4 border-blue-400',
+  mark: 'bg-purple-100/70 border-l-4 border-purple-400',
+}
+
+export const DiffLineComponent = memo(function DiffLineComponent({
+  line,
+  compact = false,
+  interactive = false,
+  selectionType = 'none',
+  onLineClick,
+}: DiffLineProps) {
   const style = LINE_STYLES[line.type]
+  const isRemoved = line.type === 'removed'
+  const canInteract = interactive && !isRemoved && onLineClick
+  const isSelected = selectionType === 'focus' || selectionType === 'mark'
+
+  // Selection highlight overrides diff container style
+  const containerClass = isSelected
+    ? SELECTION_STYLES[selectionType]
+    : style.container
 
   return (
-    <div className={`flex ${style.container}`}>
+    <div
+      className={`flex ${containerClass} ${
+        canInteract ? 'cursor-pointer transition-colors hover:bg-slate-100/50' : ''
+      }`}
+      onClick={canInteract ? (e) => onLineClick!(line.lineNumber, e) : undefined}
+    >
       {/* Gutter: line number + change marker */}
       <div
         className={`shrink-0 select-none text-right ${
@@ -61,4 +89,4 @@ export function DiffLineComponent({ line, compact = false }: DiffLineProps) {
       </div>
     </div>
   )
-}
+})

@@ -42,7 +42,7 @@ export function DraftWorkspace({ draft }: DraftWorkspaceProps) {
   );
 
   return (
-    <div className="relative min-h-screen overflow-hidden bg-slate-50 text-slate-900 lg:grid lg:grid-cols-[16rem_minmax(0,1fr)]">
+    <div className="relative min-h-screen overflow-hidden bg-slate-50 text-slate-900 lg:grid lg:grid-cols-[20rem_minmax(0,1fr)]">
       <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_top_left,_rgba(15,23,42,0.03),_transparent_28%),linear-gradient(180deg,_rgba(248,250,252,1),_rgba(241,245,249,1))]" />
 
       <aside className="sticky top-0 hidden h-screen overflow-y-auto border-r border-slate-200 bg-white lg:flex lg:flex-col">
@@ -67,7 +67,7 @@ export function DraftWorkspace({ draft }: DraftWorkspaceProps) {
         aria-hidden="true"
       >
         <div
-          className={`absolute left-0 top-0 h-full w-[min(86vw,16rem)] border-r border-slate-200 bg-white shadow-2xl transition-transform duration-300 ease-out ${
+          className={`absolute left-0 top-0 h-full w-[min(86vw,20rem)] border-r border-slate-200 bg-white shadow-2xl transition-transform duration-300 ease-out ${
             drawerOpen ? 'translate-x-0' : '-translate-x-full'
           }`}
           onClick={(event) => event.stopPropagation()}

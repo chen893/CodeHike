@@ -466,3 +466,62 @@
 **根因**: Drizzle schema 已定义 `userId` 列和 NextAuth 表，但 `drizzle-kit push` 未执行（仅生成了 migration 文件但未应用）。
 
 **解决方案**: 执行 `drizzle-kit push` 将 schema 同步到数据库。
+
+### 问题 4: 生产库缺少 v3.6/v3.7 表导致部署构建失败
+
+**现象**: 2026-04-14 重新部署 `vibedocs` 到 IP 服务器时，Next.js 构建在预渲染 `/tags` 阶段失败，报错 `relation "tutorial_tags" does not exist`；同时 analytics 写入 `tutorial_viewed` 时记录 `relation "events" does not exist`。
+
+**根因**: 生产库仍只有早期的 `drafts`、`published_tutorials` 表，缺少 NextAuth 用户表、`drafts.userId`、`draft_snapshots`、v3.6 `events`、v3.7 `tutorial_tags` / `tutorial_tag_relations`。仓库 `drizzle/meta/_journal.json` 中登记了 `0001_noisy_revanche`，但对应 SQL 文件缺失，不能直接依赖迁移目录完整回放。
+
+**解决方案**: 在生产库执行幂等 SQL 补齐缺失表、列和外键约束后重新构建；构建通过后再切换 `/srv/apps/vibedocs/current` 到新 release 并重启 systemd。后续应补齐缺失的 Drizzle migration 文件或生成新的 schema baseline，避免下次部署再次需要手工修正。
+
+---
+
+## 问题 26：`step-editor.tsx` 单文件膨胀至 877 行，可维护性差
+
+**现象**：步骤编辑器组件承担了状态管理、代码预览计算、patch CRUD、focus/marks 编辑、diff 渲染等全部职责，单文件 877 行。修改任一区域都需要理解整个组件，新人上手成本高。
+
+**根因**：
+- 初始实现时所有功能内联在同一个组件，后续迭代只做加法不做拆分
+- 代码预览（`getStepCodePreview`）、diff 计算（`computeDiffLines`）、结构签名（`JSON.stringify`）等昂贵运算在每次渲染时无条件执行
+- `handleLineClick` 等回调在每次渲染时创建新引用，导致子组件不必要的重渲染
+
+**解决**：
+
+### 1. 拆分为子组件
+
+| 组件 | 行数 | 职责 |
+|---|---|---|
+| `code-preview-panel.tsx` | 196 | Diff 视图 + 选择模式 + 文件选择器 |
+| `patch-item.tsx` | 91 | 单个 patch 卡片 + 验证指示器 |
+| `focus-marks-panel.tsx` | 202 | 可折叠 Focus/Marks 编辑 |
+| `step-editor.tsx` | 480 | 状态管理 + 布局编排 |
+
+共享类型 `PatchDraft` / `MarkDraft` 提取到 `types.ts`。
+
+### 2. 性能优化
+
+- **`useMemo` 包裹昂贵计算**：`getStepCodePreview`（代码预览）、`computeDiffLines`（diff）、`getStructureSignature`（结构签名）全部缓存
+- **关键发现**：`getStepCodePreview` 内部只使用 `step.patches`（通过 `getFilesAfterStep`），不依赖 prose 字段。因此 code preview memo 故意排除 `eyebrow/title/lead/paragraphs`，编辑文案时不再触发代码重算
+- **`useCallback` 包裹 `handleLineClick`**：稳定引用防止 `CodeDiffView` 重渲染
+- **`React.memo` 包裹 `CodeDiffView`、`DiffLineComponent`、`IntermediatePatchPreview`**：父组件状态变化时跳过无关子树
+
+### 3. DRY
+
+- 3 个 `<input>` 的重复 class 提取为 `INPUT_CLASS` 常量
+- `IntermediatePatchPreview` 内的 `computeIntermediatePatchStates` 包裹 `useMemo`
+
+**影响文件**：
+- `components/step-editor.tsx` — 主组件重写
+- `components/step-editor/types.ts` — 新增 `PatchDraft`、`MarkDraft`
+- `components/step-editor/code-preview-panel.tsx` — 新文件
+- `components/step-editor/patch-item.tsx` — 新文件
+- `components/step-editor/focus-marks-panel.tsx` — 新文件
+- `components/step-editor/code-diff-view.tsx` — 添加 `React.memo`
+- `components/step-editor/diff-line.tsx` — 添加 `React.memo`
+- `components/step-editor/intermediate-preview.tsx` — 添加 `useMemo`
+
+**经验**：
+- React 组件超过 300 行就应考虑拆分，按 UI 区块（而非功能层）拆分最自然
+- `useMemo` 的真正收益不在于"少算一次"，而在于**让子组件的 `React.memo` 生效**——如果 memo 返回的引用每次都变，子组件的 `React.memo` 等于白加
+- 拆分子组件时优先选择 props 少的边界（`PatchItem` 6 个 props vs `CodePreviewPanel` 22 个 props）；props 过多说明边界选得不好或状态管理需要上提

@@ -1,8 +1,17 @@
+import type { ContentMark, ContentPatch } from '@/lib/schemas/tutorial-draft'
+
 export interface DiffLine {
   type: 'added' | 'removed' | 'modified' | 'unchanged'
   content: string
   lineNumber: number  // 1-based line number in the "after" state (for added/unchanged/modified) or "before" state (for removed)
   beforeLineNumber?: number // line number in the "before" state
+}
+
+export type SelectionMode = 'off' | 'focus' | 'mark'
+
+export interface FocusRange {
+  startLine: number
+  endLine: number
 }
 
 export interface PatchValidationResult {
@@ -22,4 +31,14 @@ export interface IntermediatePatchState {
   beforeCode: string
   afterCode: string
   error?: string
+}
+
+export interface PatchDraft extends ContentPatch {
+  localId: string
+  file?: string
+}
+
+export interface MarkDraft extends ContentMark {
+  localId: string
+  file?: string
 }

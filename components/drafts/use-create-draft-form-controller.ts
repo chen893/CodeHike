@@ -137,5 +137,6 @@ export function useCreateDraftFormController() {
     updateSourceItem,
     addSourceItem,
     removeSourceItem,
+    setSourceItems,
   };
 }

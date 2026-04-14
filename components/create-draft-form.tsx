@@ -1,17 +1,20 @@
 'use client';
 
+import { useState } from 'react';
 import { GenerationProgress } from './generation-progress';
 import { CodeMirrorEditor } from './code-mirror-editor';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
-import { Plus, Trash2 } from 'lucide-react';
+import { Plus, Trash2, FileCode, GitBranch } from 'lucide-react';
 import type { TeachingBrief } from '@/lib/schemas/index';
 import { AVAILABLE_MODELS } from '@/lib/schemas/model-config';
 import { STYLE_TEMPLATES } from '@/lib/ai/style-templates';
 import { useCreateDraftFormController } from '@/components/drafts/use-create-draft-form-controller';
 import { FIRST_EXPERIENCE_TEMPLATE } from '@/lib/first-experience-template';
+import { GitHubImportTab } from '@/components/create-draft/github-import-tab';
+import type { SourceItemDraft } from '@/components/drafts/create-draft-form-utils';
 
 export function CreateDraftForm() {
   const {
@@ -31,7 +34,10 @@ export function CreateDraftForm() {
     updateSourceItem,
     addSourceItem,
     removeSourceItem,
+    setSourceItems,
   } = useCreateDraftFormController();
+
+  const [sourceTab, setSourceTab] = useState<'paste' | 'github'>('paste');
 
   if (generating && draftId) {
     return (
@@ -45,6 +51,12 @@ export function CreateDraftForm() {
   }
 
   const activeItem = sourceItems.find((item) => item.id === activeSourceItemId) || sourceItems[0];
+
+  function handleGitHubImportComplete(items: SourceItemDraft[]) {
+    setSourceItems(items);
+    setActiveSourceItemId(items[0].id);
+    setSourceTab('paste'); // Switch to paste view to show imported files
+  }
 
   return (
     <form
@@ -82,8 +94,38 @@ export function CreateDraftForm() {
               可以添加多个文件，比如主逻辑和配置文件。
             </p>
           </div>
+          {/* Tab switcher */}
+          <div className="flex rounded-md border border-border bg-muted/50 p-0.5">
+            <button
+              type="button"
+              onClick={() => setSourceTab('paste')}
+              className={`flex items-center gap-1.5 rounded-sm px-3 py-1.5 text-xs font-medium transition-colors ${
+                sourceTab === 'paste'
+                  ? 'bg-background text-foreground shadow-sm'
+                  : 'text-muted-foreground hover:text-foreground'
+              }`}
+            >
+              <FileCode className="h-3.5 w-3.5" />
+              手动粘贴
+            </button>
+            <button
+              type="button"
+              onClick={() => setSourceTab('github')}
+              className={`flex items-center gap-1.5 rounded-sm px-3 py-1.5 text-xs font-medium transition-colors ${
+                sourceTab === 'github'
+                  ? 'bg-background text-foreground shadow-sm'
+                  : 'text-muted-foreground hover:text-foreground'
+              }`}
+            >
+              <GitBranch className="h-3.5 w-3.5" />
+              GitHub 导入
+            </button>
+          </div>
         </div>
 
+        {sourceTab === 'github' ? (
+          <GitHubImportTab onImportComplete={handleGitHubImportComplete} />
+        ) : (
         <div className="grid overflow-hidden rounded-xl border border-border bg-muted/30">
           <div className="flex items-center border-b border-border bg-muted/50">
             <div className="flex flex-1 flex-wrap items-center overflow-hidden">
@@ -172,6 +214,7 @@ export function CreateDraftForm() {
             </div>
           </div>
         </div>
+        )}
       </section>
 
       <section className="space-y-6 rounded-xl border border-border bg-card p-6 shadow-sm md:p-8">

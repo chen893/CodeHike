@@ -1,6 +1,7 @@
 'use client'
 
-import type { DiffLine } from './types'
+import { memo } from 'react'
+import type { DiffLine, FocusRange } from './types'
 import { DiffLineComponent } from './diff-line'
 
 interface CodeDiffViewProps {
@@ -8,6 +9,10 @@ interface CodeDiffViewProps {
   language?: string
   height?: string
   compact?: boolean
+  interactive?: boolean
+  selectedFocusRange?: FocusRange | null
+  selectedMarkLines?: Set<number>
+  onLineClick?: (lineNumber: number, event: React.MouseEvent) => void
 }
 
 function computeDiffStats(lines: DiffLine[]) {
@@ -40,20 +45,54 @@ function formatDiffStats(stats: { added: number; removed: number; modified: numb
   return parts.length > 0 ? parts.join(', ') : 'No changes'
 }
 
-export function CodeDiffView({
+function getLineSelectionType(
+  line: DiffLine,
+  focusRange: FocusRange | null | undefined,
+  markLines: Set<number> | undefined,
+): 'focus' | 'mark' | 'none' {
+  // Removed lines use "before" state line numbers; skip highlighting
+  if (line.type === 'removed') return 'none'
+  if (focusRange && line.lineNumber >= focusRange.startLine && line.lineNumber <= focusRange.endLine) {
+    return 'focus'
+  }
+  if (markLines && markLines.has(line.lineNumber)) {
+    return 'mark'
+  }
+  return 'none'
+}
+
+export const CodeDiffView = memo(function CodeDiffView({
   diffLines,
   language,
   height,
   compact = false,
+  interactive = false,
+  selectedFocusRange,
+  selectedMarkLines,
+  onLineClick,
 }: CodeDiffViewProps) {
   const stats = computeDiffStats(diffLines)
   const statsText = formatDiffStats(stats)
+  const markLines = selectedMarkLines ?? new Set<number>()
 
   const linesContainer = (
     <div className="font-mono">
-      {diffLines.map((line, index) => (
-        <DiffLineComponent key={index} line={line} compact={compact} />
-      ))}
+      {diffLines.map((line, index) => {
+        const selectionType = interactive
+          ? getLineSelectionType(line, selectedFocusRange, markLines)
+          : 'none'
+
+        return (
+          <DiffLineComponent
+            key={index}
+            line={line}
+            compact={compact}
+            interactive={interactive}
+            selectionType={selectionType}
+            onLineClick={onLineClick}
+          />
+        )
+      })}
     </div>
   )
 
@@ -79,4 +118,4 @@ export function CodeDiffView({
       )}
     </div>
   )
-}
+})

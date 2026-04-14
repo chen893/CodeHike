@@ -117,8 +117,8 @@ interface TutorialMeta {
    */
   fileName?: string
 
-  /** 教程简介 */
-  description?: string
+  /** 教程简介（必填） */
+  description: string
 }
 ```
 
@@ -141,13 +141,13 @@ interface TutorialStep {
   id: string
 
   /** 步骤眉标，如 "State", "Read", "Dispatch" */
-  eyebrow: string
+  eyebrow?: string
 
   /** 步骤标题 */
   title: string
 
   /** 导语（紧跟标题后的段落） */
-  lead: string
+  lead?: string
 
   /** 正文段落数组 */
   paragraphs: string[]
@@ -156,10 +156,16 @@ interface TutorialStep {
   patches?: ContentPatch[]
 
   /** 高亮区域（用内容锚定，组装时计算行号） */
-  focus?: ContentRange
+  focus?: ContentRange | null
 
   /** 标记行（用内容锚定，组装时计算行号） */
   marks?: ContentMark[]
+
+  /** 教学目标（v3.1 大纲阶段生成） */
+  teachingGoal?: string
+
+  /** 引入的概念（v3.1 大纲阶段生成） */
+  conceptIntroduced?: string
 }
 ```
 

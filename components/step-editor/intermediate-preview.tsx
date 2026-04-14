@@ -1,6 +1,6 @@
 'use client'
 
-import { useState } from 'react'
+import { useMemo, useState } from 'react'
 import { CodeDiffView } from './code-diff-view'
 import { computeDiffLines, computeIntermediatePatchStates, formatUnifiedDiff } from './diff-utils'
 
@@ -17,11 +17,14 @@ export function IntermediatePatchPreview({
 }: IntermediatePatchPreviewProps) {
   const [openIndex, setOpenIndex] = useState<number | null>(null)
 
+  const states = useMemo(
+    () => computeIntermediatePatchStates(previousCode, patches),
+    [previousCode, patches]
+  )
+
   if (patches.length < 2) {
     return null
   }
-
-  const states = computeIntermediatePatchStates(previousCode, patches)
 
   return (
     <div className="border border-slate-200 rounded-lg overflow-hidden mt-4">

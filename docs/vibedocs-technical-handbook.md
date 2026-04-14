@@ -41,7 +41,7 @@
 **重要版本陷阱（已踩过）：**
 - AI SDK v6 的 `maxTokens` 已重命名为 `maxOutputTokens`
 - DeepSeek `maxOutputTokens` 上限为 **8192**（超出会被截断）
-- 不要用 `@ai-sdk/openai`（默认走 `/responses` 端点），必须用 `@ai-sdk/openai-compatible`
+- 不要用 `@ai-sdk/openai` 的默认 provider（默认走 `/responses` 端点），DeepSeek 必须用 `@ai-sdk/openai-compatible`
 - Tailwind v4 需要 `@tailwindcss/postcss` 和 `@import "tailwindcss"`，且需要显式 `@source` 指令
 - NextAuth v5 使用 `AUTH_SECRET` 环境变量（不是 `NEXTAUTH_SECRET`），不过 v5 同时接受两者
 - NextAuth v5 middleware 必须用轻量级实例（无 DB adapter），因为 Edge Runtime 不支持 Node.js crypto
@@ -376,6 +376,11 @@ DraftSnapshot {
 | GET | `/api/user/profile` | 获取当前用户档案（需认证） |
 | PATCH | `/api/user/profile` | 更新用户档案（name/bio，需认证） |
 | POST | `/api/user/username` | 设置用户名（首次设置，已设置返回 409，需认证） |
+| POST | `/api/events` | 事件追踪（fire-and-forget 埋点） |
+| GET | `/api/tutorials/[slug]/export-markdown` | 导出教程为 Markdown 文件 |
+| GET | `/api/tutorials/[slug]/export-html` | 导出教程为 HTML 文件 |
+| GET | `/api/github/repo-tree?url=` | GitHub 仓库文件树（需认证，代理 GitHub Trees API） |
+| POST | `/api/github/file-content` | GitHub 仓库文件内容批量获取（需认证，代理 Contents API，≤15 文件 ≤1500 行） |
 
 **关键设计决策：**
 - 只用 Route Handlers，不用 tRPC、不用 Server Actions
@@ -404,6 +409,12 @@ DraftSnapshot {
 ├─────────────────────────────────────────────┤
 │  lib/repositories/       (仓储层)            │
 │  Drizzle ORM 数据访问                        │
+├─────────────────────────────────────────────┤
+│  lib/db/                 (数据库层)          │
+│  Drizzle schema + DB 连接                    │
+├─────────────────────────────────────────────┤
+│  lib/errors/             (错误层)            │
+│  错误类型定义 + 分类                          │
 ├─────────────────────────────────────────────┤
 │  lib/tutorial/           (渲染基础层)        │
 │  patch 应用、payload 构建、registry           │
@@ -469,6 +480,23 @@ DraftSnapshot {
 | `lib/monitoring/event-types.ts` | 事件类型注册表（`ALLOWED_EVENT_TYPES`），新增事件必须先在此注册 |
 | `lib/types/api.ts` | API 响应类型定义（`TutorialTag`、`UserPublicProfile`、`ExploreTutorial` 等） |
 | `lib/types/client.ts` | 客户端 DTO 类型定义（`ClientTutorialTag`、`ClientExploreTutorial` 等） |
+| `lib/utils/html-escape.ts` | HTML 转义工具（导出 Markdown/HTML 用） |
+| `lib/db/index.ts` | Drizzle DB 连接实例 |
+| `lib/db/schema.ts` | Drizzle schema 定义（所有表） |
+| `lib/errors/error-types.ts` | 错误类型定义（`AppError` 层级） |
+| `lib/errors/classify-error.ts` | 错误分类（用户错误 vs 系统错误） |
+| `lib/first-experience-template.ts` | 首次体验模板数据 |
+
+### 8.4 仓储层
+
+| 文件 | 用途 |
+|------|------|
+| `lib/repositories/draft-repository.ts` | 草稿 CRUD + `listDraftSummaries()` 摘要查询 |
+| `lib/repositories/published-tutorial-repository.ts` | 已发布教程 CRUD + slug 查询 |
+| `lib/repositories/draft-snapshot-repository.ts` | 版本快照 CRUD |
+| `lib/repositories/tag-repository.ts` | 标签 CRUD + `getOrCreateTag()` 并发安全 |
+| `lib/repositories/user-repository.ts` | 用户查询 + username 设置 |
+| `lib/repositories/tutorial-search-repository.ts` | 全文搜索查询（ts_vector） |
 
 ---
 
@@ -569,7 +597,7 @@ DraftSnapshot {
 
 | 组件 | 说明 |
 |------|------|
-| `components/tutorial/share-dialog.tsx` | 分享对话框（公开 URL + embed snippet + 社交分享） |
+| `components/tutorial/share-dialog.tsx` | 分享对话框（公开 URL + embed snippet + 社交分享 + Markdown/HTML 导出按钮） |
 
 ### 10.6 发现与标签组件（v3.7 新增）
 
@@ -587,7 +615,7 @@ DraftSnapshot {
 | `components/profile/username-setup.tsx` | 首次用户名设置（带可用性验证） |
 | `components/profile/profile-client.ts` | 档案 API 调用封装 |
 
-### 10.6 Feature 分解
+### 10.8 Feature 分解
 
 草稿相关：
 - `components/drafts/draft-client.ts` — API 调用封装
@@ -599,6 +627,12 @@ DraftSnapshot {
 - `components/drafts/draft-workspace-content.tsx` — 工作区主内容视图
 - `components/drafts/draft-workspace-sidebar.tsx` — 工作区侧边栏
 
+GitHub 导入（v3.9 新增）：
+- `components/create-draft/github-client.ts` — GitHub API 客户端调用封装
+- `components/create-draft/use-github-import-controller.ts` — 导入状态机（idle → loading-tree → selecting → loading-content → done）
+- `components/create-draft/file-tree-browser.tsx` — 文件树多选 UI（递归渲染 + 目录全选 + 文件统计）
+- `components/create-draft/github-import-tab.tsx` — GitHub 导入 Tab 视图
+
 教程相关：
 - `components/tutorial/tutorial-client.ts` — 教程 API 调用封装
 - `components/tutorial/use-generation-progress.ts` — SSE 解析 + 状态机
@@ -606,21 +640,15 @@ DraftSnapshot {
 - `components/tutorial/generation-progress-utils.ts` — 生成进度工具函数
 - `components/tutorial/generation-progress-view.tsx` — 生成进度视图组件
 - `components/tutorial/use-remote-resource.ts` — 远程加载 + 请求版本化
-- `components/tutorial/tag-editor.tsx` — 标签编辑器（添加/删除 + 自动补全）
-- `components/tutorial/tags-client.ts` — 标签 API 调用封装
 
-探索相关（v3.7 新增）：
-- `components/explore/explore-client.tsx` — 搜索输入 + 标签筛选 chips + 排序切换
-
-用户档案相关（v3.7 新增）：
-- `components/profile/profile-client.ts` — 档案 API 调用封装
-- `components/profile/profile-editor.tsx` — 档案编辑器
-- `components/profile/username-setup.tsx` — 用户名设置
-
-| 文件 | 用途 |
-|------|------|
-| `lib/repositories/draft-repository.ts` | 草稿 CRUD + `listDraftSummaries()` 摘要查询 |
-| `lib/repositories/published-tutorial-repository.ts` | 已发布教程 CRUD + slug 查询 |
+步骤编辑器子组件：
+- `components/step-editor/types.ts` — 步骤编辑器类型定义
+- `components/step-editor/diff-utils.ts` — Diff 计算工具
+- `components/step-editor/diff-line.tsx` — Diff 行渲染
+- `components/step-editor/code-diff-view.tsx` — 代码差异视图
+- `components/step-editor/use-patch-validation.ts` — Patch 校验 hook
+- `components/step-editor/intermediate-preview.tsx` — 中间代码预览
+- `components/step-editor/code-selection-menu.tsx` — 代码选择菜单
 
 ---
 
@@ -706,9 +734,10 @@ DraftSnapshot {
 **`events` 表（v3.6 事件追踪）：**
 - `id` uuid PK
 - `eventType` varchar(64)
-- `userId` text (nullable)
-- `slug` text (nullable)
-- `metadata` jsonb (nullable)
+- `payload` jsonb (default `{}`)
+- `userId` text
+- `sessionId` varchar(128)
+- `slug` varchar(256)
 - `createdAt` timestamp with time zone
 
 ### 11.2 设计决策
@@ -838,6 +867,9 @@ DraftSnapshot {
 | `lib/services/explore-service.ts` | 探索页数据查询（搜索 + 标签筛选 + 排序 + 分页） |
 | `lib/services/tag-service.ts` | 标签管理（AI 生成 + 手动设置 + 名称规范化） |
 | `lib/services/user-profile-service.ts` | 用户档案（公开 profile + username 设置 + profile 更新） |
+| `lib/services/export-markdown.ts` | 教程导出为 Markdown |
+| `lib/services/export-html.ts` | 教程导出为 HTML |
+| `lib/services/github-repo-service.ts` | GitHub 仓库导入（文件树获取 + 文件内容拉取 + OAuth token 检索） |
 
 ---
 
@@ -851,6 +883,12 @@ DraftSnapshot {
 | `lib/ai/tutorial-generator.ts` | v1 生成器封装 |
 | `lib/ai/multi-phase-generator.ts` | v2 多阶段生成 SSE 流编排 |
 | `lib/ai/tag-generator.ts` | AI 标签生成（generateText + 语言回退 fallback map） |
+| `lib/ai/provider-registry.ts` | AI provider 注册表（DeepSeek + OpenAI 多 provider 支持） |
+| `lib/ai/prompt-adapters.ts` | Prompt 适配器（根据 provider 能力调整输出格式） |
+| `lib/ai/model-probe.ts` | 模型能力探测（可达性、延迟、response_format 支持） |
+| `lib/ai/style-templates.ts` | 教学风格模板 |
+| `lib/ai/source-preprocessor.ts` | 源码预处理（压缩、注释清理） |
+| `lib/ai/patch-auto-fix.ts` | Patch 自动修复（常见 AI 输出错误的自动纠正） |
 
 ---
 
@@ -864,6 +902,7 @@ DraftSnapshot {
 | `lib/schemas/tutorial-outline.ts` | 教学大纲校验 |
 | `lib/schemas/generation-quality.ts` | GenerationQuality 校验 |
 | `lib/schemas/api.ts` | API 请求校验 |
+| `lib/schemas/model-config.ts` | 模型配置校验 |
 | `lib/schemas/index.ts` | Barrel 导出 |
 
 ---
@@ -911,6 +950,9 @@ DATABASE_URL=postgresql://...       # PostgreSQL 连接
 DEEPSEEK_API_KEY=...                # DeepSeek API Key
 DEEPSEEK_BASE_URL=https://api.deepseek.com  # DeepSeek API 端点
 DEEPSEEK_MODEL=deepseek-chat        # 默认模型
+OPENAI_API_KEY=...                  # OpenAI API Key（可选，多 provider 支持）
+OPENAI_BASE_URL=...                 # OpenAI API 端点（可选）
+DEFAULT_AI_MODEL=...                # 默认 AI 模型（可选，覆盖 DEEPSEEK_MODEL）
 AUTH_SECRET=...                     # NextAuth v5 密钥（生产环境必须更换）
 GITHUB_ID=...                       # GitHub OAuth App Client ID
 GITHUB_SECRET=...                   # GitHub OAuth App Client Secret
@@ -984,6 +1026,22 @@ NEXT_PUBLIC_BASE_URL=https://...    # 公开访问基础 URL（SEO 生成用）
 - 导航更新（AppShell 新增"探索"和"标签"入口）
 - 保留 slug 扩展（explore、tags、u、admin、dashboard 等）
 
+### Phase 9：v3.8 导出与体验优化 ✅ 已完成
+- Markdown/HTML 导出（`/api/tutorials/[slug]/export-markdown`、`export-html`）
+- AI 多 provider 支持（DeepSeek + OpenAI，`provider-registry.ts`）
+- Patch 自动修复（`patch-auto-fix.ts`）
+- 步骤编辑器子组件拆分（diff 视图、代码选择菜单、中间预览）
+- 错误分类层（`lib/errors/`）
+
+### Phase 10：v3.9 GitHub 仓库导入 MVP ✅ 已完成
+- GitHub 仓库文件树浏览（`/api/github/repo-tree`，代理 GitHub Trees API）
+- GitHub 仓库文件内容批量获取（`/api/github/file-content`，代理 Contents API）
+- OAuth token 复用（从 accounts 表取已存储的 GitHub token）
+- 文件树多选 UI（递归树渲染 + 目录全选 + 文件大小显示）
+- 导入状态机（URL 输入 → 树加载 → 文件选择 → 内容拉取 → 映射 SourceItem[]）
+- 创建表单 Tab 切换（手动粘贴 / GitHub 导入）
+- 导入限制（≤15 文件、≤1500 行）前端 + 后端双重校验
+
 
 
 ---
@@ -1006,4 +1064,4 @@ NEXT_PUBLIC_BASE_URL=https://...    # 公开访问基础 URL（SEO 生成用）
 
 ---
 
-*本文档基于 VibeDocs v3.7 实现状态编写。v3.7 在 v3.6（分析监控基础）之上完成了发现系统（全文搜索 + 标签筛选）、标签管理（AI 生成 + 手动编辑）、创作者身份（公开档案 + 用户名）等全部发现与增长功能。*
+*本文档基于 VibeDocs v3.9 实现状态编写。v3.9 在 v3.8 之上完成了 GitHub 公开仓库导入 MVP：仓库文件树浏览、文件内容批量获取、导入 UI Tab 切换。*
