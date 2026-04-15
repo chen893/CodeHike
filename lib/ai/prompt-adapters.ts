@@ -45,6 +45,12 @@ const ADAPTATIONS: Record<string, PromptAdaptation> = {
     stepLocMax: 8,
     extraInstructions: 'Keep changes small and precise.',
   },
+  'glm-5.1': {
+    locBudget: 20,
+    outlineLocBudget: 10,
+    stepLocMin: 3,
+    stepLocMax: 10,
+  },
 }
 
 /**

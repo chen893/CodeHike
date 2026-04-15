@@ -34,4 +34,10 @@ export const AVAILABLE_MODELS: ModelConfig[] = [
     provider: 'openai',
     maxOutputTokens: 16384,
   },
+  {
+    id: 'zhipu/glm-5.1',
+    label: 'GLM-5.1',
+    provider: 'zhipu',
+    maxOutputTokens: 16384,
+  },
 ]

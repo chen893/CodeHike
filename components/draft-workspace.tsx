@@ -19,14 +19,17 @@ export function DraftWorkspace({ draft }: DraftWorkspaceProps) {
       draft={controller.draft}
       hasDraft={controller.hasDraft}
       steps={controller.steps}
+      chapters={controller.chapters}
       selectedStepIndex={controller.selectedStepIndex}
+      selectedStepId={controller.selectedStepId}
       status={controller.status}
       saving={controller.saving}
       editingMeta={controller.editingMeta}
       canPublish={controller.canPublish}
       canDeleteDraft={controller.canDeleteDraft}
-      onSelectStep={(index) => {
-        controller.selectStep(index);
+      onSelectStep={(stepId) => {
+        const idx = controller.steps.findIndex((s) => s.id === stepId);
+        if (idx >= 0) controller.selectStep(idx);
         setDrawerOpen(false);
       }}
       onMoveStep={controller.moveStep}
@@ -38,6 +41,12 @@ export function DraftWorkspace({ draft }: DraftWorkspaceProps) {
       onOpenPublished={controller.openPublishedTutorial}
       onToggleEditingMeta={controller.toggleEditingMeta}
       onDeleteDraft={controller.deleteDraft}
+      onAddChapter={controller.addChapter}
+      onUpdateChapter={controller.updateChapter}
+      onDeleteChapter={controller.deleteChapter}
+      onMoveChapter={controller.moveChapter}
+      onMoveStepToChapter={controller.moveStepToChapter}
+      onAppendStepToChapter={controller.appendStepToChapter}
     />
   );
 

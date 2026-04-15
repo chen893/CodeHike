@@ -5,42 +5,63 @@
 import type { TutorialDraft } from '../schemas/tutorial-draft';
 import { applyContentPatches } from '../tutorial/draft-code';
 import { normalizeBaseCode } from '../tutorial/normalize';
+import { ensureDraftChapters, deriveStepChapterMeta } from '../tutorial/chapters';
 
 export function exportTutorialAsMarkdown(draft: TutorialDraft): string {
   const sections: string[] = [];
 
+  // Ensure chapters are present (handles legacy drafts)
+  const normalizedDraft = ensureDraftChapters(draft);
+
   // Title and description
-  sections.push(`# ${draft.meta.title}`);
-  if (draft.meta.description) {
+  sections.push(`# ${normalizedDraft.meta.title}`);
+  if (normalizedDraft.meta.description) {
     sections.push('');
-    sections.push(`> ${draft.meta.description}`);
+    sections.push(`> ${normalizedDraft.meta.description}`);
   }
 
   // Intro
-  if (draft.intro?.paragraphs?.length) {
+  if (normalizedDraft.intro?.paragraphs?.length) {
     sections.push('');
-    sections.push(...draft.intro.paragraphs);
+    sections.push(...normalizedDraft.intro.paragraphs);
   }
 
   // Compute code state at each step
-  const { files, primaryFile } = normalizeBaseCode(draft.baseCode, draft.meta);
+  const { files, primaryFile } = normalizeBaseCode(normalizedDraft.baseCode, normalizedDraft.meta);
   let currentFiles: Record<string, string> = { ...files };
 
   // Base code
   sections.push('');
   sections.push('## Starting Code');
-  const baseLang = draft.meta.lang || '';
+  const baseLang = normalizedDraft.meta.lang || '';
   sections.push(`\`\`\`${baseLang}`);
   sections.push(files[primaryFile] || '');
   sections.push('```');
 
+  // Compute step-chapter metadata to know when chapters start
+  const stepChapterMeta = deriveStepChapterMeta(normalizedDraft.chapters, normalizedDraft.steps);
+  const totalChapters = normalizedDraft.chapters.length;
+
   // Steps
-  for (let i = 0; i < draft.steps.length; i++) {
-    const step = draft.steps[i];
+  for (let i = 0; i < normalizedDraft.steps.length; i++) {
+    const step = normalizedDraft.steps[i];
+    const meta = stepChapterMeta[step.id];
+
+    // Insert chapter header if this is the first step in a chapter
+    // (show for all chapters when there are multiple, skip for single chapter)
+    if (meta && meta.stepIndexInChapter === 0 && totalChapters > 1) {
+      sections.push('');
+      sections.push(`## Chapter ${meta.chapterIndex + 1}: ${meta.chapterTitle}`);
+      if (meta.chapterDescription) {
+        sections.push('');
+        sections.push(`*${meta.chapterDescription}*`);
+      }
+    }
+
     const label = step.eyebrow || `Step ${i + 1}`;
 
     sections.push('');
-    sections.push(`## ${label}: ${step.title}`);
+    sections.push(`### ${label}: ${step.title}`);
 
     if (step.lead) {
       sections.push('');

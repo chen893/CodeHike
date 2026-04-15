@@ -1,6 +1,7 @@
 import * as draftRepo from '../repositories/draft-repository';
 import { buildTutorialSteps } from '../tutorial/assembler';
 import { buildDraftPreviewPayload } from './build-draft-preview-payload';
+import { deriveChapterSections, deriveStepChapterMeta, ensureDraftChapters } from '../tutorial/chapters';
 
 export async function getDraftDetail(id: string, userId: string) {
   return draftRepo.getDraftById(id, userId);
@@ -16,7 +17,11 @@ export async function getDraftPreviewPageData(id: string, userId: string) {
     return null;
   }
 
-  const steps = await buildTutorialSteps(draft.tutorialDraft as any);
+  const normalizedDraft = ensureDraftChapters(draft.tutorialDraft as any);
+  const steps = await buildTutorialSteps(normalizedDraft);
+
+  const chapters = deriveChapterSections(normalizedDraft.chapters, normalizedDraft.steps);
+  const stepChapterMeta = deriveStepChapterMeta(normalizedDraft.chapters, normalizedDraft.steps);
 
   return {
     draft,
@@ -24,6 +29,8 @@ export async function getDraftPreviewPageData(id: string, userId: string) {
     title: draft.tutorialDraft.meta.title,
     fileName: draft.tutorialDraft.meta.fileName,
     intro: draft.tutorialDraft.intro.paragraphs,
+    chapters,
+    stepChapterMeta,
   };
 }
 

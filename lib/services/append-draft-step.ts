@@ -1,6 +1,7 @@
 import * as draftRepo from '../repositories/draft-repository';
 import { validateTutorialDraft } from '../utils/validation';
 import { appendStepRequestSchema } from '../schemas/api';
+import { ensureDraftChapters } from '../tutorial/chapters';
 
 export async function appendDraftStep(
   id: string,
@@ -12,9 +13,24 @@ export async function appendDraftStep(
   const draft = await draftRepo.getDraftById(id, userId);
   if (!draft || !draft.tutorialDraft) throw new Error('Draft not found');
 
-  const steps = [...draft.tutorialDraft.steps, parsed.step];
+  // Normalize draft to ensure chapters exist (handles legacy drafts)
+  const normalizedTd = ensureDraftChapters(draft.tutorialDraft as any);
 
-  const updated = await draftRepo.updateDraftSteps(id, steps);
+  // Assign chapterId if missing: default to first chapter
+  const firstChapterId = normalizedTd.chapters[0].id;
+  const stepWithChapter = {
+    ...parsed.step,
+    chapterId: parsed.step.chapterId || firstChapterId,
+  };
+
+  const steps = [...normalizedTd.steps, stepWithChapter];
+
+  // Store the normalized draft (with chapters) plus the new step
+  const updatedTd = { ...normalizedTd, steps };
+  const updated = await draftRepo.updateDraftTutorial(id, updatedTd, {
+    inputHash: draft.tutorialDraftInputHash,
+    model: draft.generationModel ?? 'unknown',
+  });
   if (!updated) throw new Error('Failed to append step');
 
   // Re-validate

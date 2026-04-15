@@ -133,6 +133,8 @@ export function RemotePreviewPage({ fetchUrl, title }: RemotePreviewPageProps) {
         title={payload.title}
         fileName={payload.fileName}
         showBreadcrumb={false}
+        chapters={payload.chapters}
+        stepChapterMeta={payload.stepChapterMeta}
       />
     </main>
   );

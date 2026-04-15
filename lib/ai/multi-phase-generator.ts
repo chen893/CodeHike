@@ -1,6 +1,6 @@
 import { generateText, Output } from 'ai';
 import { tutorialOutlineSchema } from '../schemas/tutorial-outline';
-import { tutorialStepSchema, type TutorialStep, type TutorialDraft } from '../schemas/tutorial-draft';
+import { tutorialStepSchema, legacyTutorialStepSchema, type TutorialStep, type TutorialDraft } from '../schemas/tutorial-draft';
 import type { TutorialOutline } from '../schemas/tutorial-outline';
 import type { SourceItem } from '../schemas/source-item';
 import type { TeachingBrief } from '../schemas/teaching-brief';
@@ -9,6 +9,7 @@ import { buildStepFillPrompt } from './step-fill-prompt';
 import { adaptPromptForModel } from './prompt-adapters';
 import { applyContentPatches } from '../tutorial/draft-code';
 import { normalizeBaseCode, normalizeTutorialMeta } from '../tutorial/normalize';
+import { ensureDraftChapters, DEFAULT_CHAPTER_ID } from '../tutorial/chapters';
 import { validateTutorialDraft } from '../utils/validation';
 import { createProvider, getMaxOutputTokens } from './provider-registry';
 import { tryAutoFixPatches } from './patch-auto-fix';
@@ -155,7 +156,7 @@ export function createMultiPhaseGenerationStream(
                 model,
                 system: adaptPromptForModel(systemPrompt, modelId),
                 prompt: adaptPromptForModel(userPrompt, modelId),
-                output: Output.object({ schema: tutorialStepSchema }),
+                output: Output.object({ schema: legacyTutorialStepSchema }),
                 maxOutputTokens: getMaxOutputTokens(modelId),
               });
 
@@ -188,7 +189,7 @@ export function createMultiPhaseGenerationStream(
                 }
               }
 
-              stepResult = step;
+              stepResult = { ...step, chapterId: step.chapterId ?? DEFAULT_CHAPTER_ID };
               break;
             } catch (stepErr: any) {
               totalRetries++;
@@ -201,6 +202,7 @@ export function createMultiPhaseGenerationStream(
             console.error(`[multi-phase] Step ${i + 1} failed after ${MAX_STEP_RETRIES} retries`);
             stepResult = {
               id: outline.steps[i].id,
+              chapterId: DEFAULT_CHAPTER_ID,
               title: outline.steps[i].title,
               paragraphs: [`⚠️ 此步骤自动生成失败，请手动编辑。错误：${lastError}`],
             } as TutorialStep;
@@ -227,12 +229,13 @@ export function createMultiPhaseGenerationStream(
         }
 
         // ── Assemble final draft ──
-        const draft: TutorialDraft = {
+        // ensureDraftChapters wraps legacy data with a default chapter + chapterId
+        const draft: TutorialDraft = ensureDraftChapters({
           meta: outline.meta,
           intro: outline.intro,
           baseCode: outline.baseCode,
           steps: filledSteps,
-        };
+        });
 
         // ── Phase 3: Validate ──
         controller.enqueue(encoder.encode(

@@ -142,6 +142,69 @@ export async function unpublishDraftRequest(draftId: string) {
   }
 }
 
+export async function updateDraftStructureRequest(
+  draftId: string,
+  data: {
+    chapters: Array<{ id: string; title: string; description?: string; order: number }>;
+    stepOrder: Array<{ stepId: string; chapterId: string }>;
+  }
+) {
+  const response = await fetch(withBasePath(`/api/drafts/${draftId}/structure`), {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(data),
+  });
+
+  return readJsonResponse<ClientDraftRecord>(response, '更新章节结构失败');
+}
+
+export async function addChapterRequest(
+  draftId: string,
+  data?: { title?: string; description?: string }
+) {
+  const response = await fetch(withBasePath(`/api/drafts/${draftId}/chapters`), {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(data ?? {}),
+  });
+
+  return readJsonResponse<ClientDraftRecord>(response, '添加章节失败');
+}
+
+export async function updateChapterRequest(
+  draftId: string,
+  chapterId: string,
+  data: { title?: string; description?: string }
+) {
+  const response = await fetch(
+    withBasePath(`/api/drafts/${draftId}/chapters/${chapterId}`),
+    {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(data),
+    }
+  );
+
+  return readJsonResponse<ClientDraftRecord>(response, '更新章节失败');
+}
+
+export async function deleteChapterRequest(
+  draftId: string,
+  chapterId: string,
+  moveStepsToChapterId: string
+) {
+  const response = await fetch(
+    withBasePath(`/api/drafts/${draftId}/chapters/${chapterId}`),
+    {
+      method: 'DELETE',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ moveStepsToChapterId }),
+    }
+  );
+
+  return readJsonResponse<ClientDraftRecord>(response, '删除章节失败');
+}
+
 export async function startDraftGenerationStream(draftId: string, signal: AbortSignal, modelId?: string) {
   const response = await fetch(withBasePath(`/api/drafts/${draftId}/generate`), {
     method: 'POST',

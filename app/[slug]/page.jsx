@@ -49,6 +49,8 @@ export default async function TutorialPage({ params }) {
         title={tutorial.title}
         fileName={tutorial.fileName}
         slug={slug}
+        chapters={tutorial.chapters}
+        stepChapterMeta={tutorial.stepChapterMeta}
       />
     </main>
   )

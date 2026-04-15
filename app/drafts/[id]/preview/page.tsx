@@ -26,6 +26,8 @@ export default async function DraftPreviewPage({
         intro={preview.intro}
         title={preview.title}
         fileName={preview.fileName}
+        chapters={preview.chapters}
+        stepChapterMeta={preview.stepChapterMeta}
       />
     </main>
   );

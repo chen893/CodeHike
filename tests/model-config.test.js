@@ -12,6 +12,10 @@ test('getMaxOutputTokens returns 16384 for openai/gpt-4o', () => {
   assert.equal(getMaxOutputTokens('openai/gpt-4o'), 16384);
 });
 
+test('getMaxOutputTokens returns 16384 for zhipu/glm-5.1', () => {
+  assert.equal(getMaxOutputTokens('zhipu/glm-5.1'), 16384);
+});
+
 test('getMaxOutputTokens returns 8192 for unknown provider (default)', () => {
   assert.equal(getMaxOutputTokens('unknown/model'), 8192);
 });
@@ -23,9 +27,9 @@ test('getMaxOutputTokens returns 8192 when called with no argument (default)', (
 
 // ── getAvailableProviders ──
 
-test('getAvailableProviders returns deepseek and openai', () => {
+test('getAvailableProviders returns deepseek, openai, and zhipu', () => {
   const providers = getAvailableProviders();
-  assert.deepEqual(providers.sort(), ['deepseek', 'openai']);
+  assert.deepEqual(providers.sort(), ['deepseek', 'openai', 'zhipu']);
 });
 
 // ── createProvider error cases ──

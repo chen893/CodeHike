@@ -57,10 +57,21 @@ export default function SignInPage() {
               </div>
               <div className="relative flex justify-center text-xs uppercase">
                 <span className="bg-white px-2 text-slate-500 dark:bg-slate-900 dark:text-slate-400">
-                  GitHub OAuth
+                  或
                 </span>
               </div>
             </div>
+
+            <button
+              onClick={() => signIn('linuxdo', { callbackUrl: '/' })}
+              className="group relative flex w-full items-center justify-center gap-3 rounded-lg bg-slate-800 px-4 py-3 text-sm font-semibold text-white transition-all hover:bg-slate-700 active:scale-[0.98] dark:bg-slate-200 dark:text-slate-900 dark:hover:bg-slate-300"
+              style={{ minHeight: '44px' }}
+            >
+              <svg className="h-5 w-5" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                <path d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
+              </svg>
+              <span>使用 Linux.do 账号登录</span>
+            </button>
 
             <p className="text-center text-xs leading-relaxed text-slate-500 dark:text-slate-400">
               认证完成后会回到首页，你也可以从侧边栏继续进入草稿箱。

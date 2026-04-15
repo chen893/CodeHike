@@ -2,7 +2,8 @@
 
 import Link from 'next/link';
 import { Badge } from '@/components/ui/badge';
-import { StepList } from '@/components/step-list';
+import { ChapteredStepList } from '@/components/drafts/chaptered-step-list';
+import type { Chapter } from '@/lib/schemas/chapter';
 import type { ClientDraftRecord } from '@/lib/types/client';
 import type { DraftStatusInfo } from '@/lib/draft-status';
 
@@ -16,13 +17,15 @@ interface DraftWorkspaceSidebarProps {
   draft: ClientDraftRecord;
   hasDraft: boolean;
   steps: NonNullable<ClientDraftRecord['tutorialDraft']>['steps'];
+  chapters: Chapter[];
   selectedStepIndex: number;
+  selectedStepId: string | null;
   status: DraftStatusInfo;
   saving: boolean;
   editingMeta: boolean;
   canPublish: boolean;
   canDeleteDraft: boolean;
-  onSelectStep: (index: number) => void;
+  onSelectStep: (stepId: string) => void;
   onMoveStep: (stepId: string, direction: -1 | 1) => Promise<void>;
   onDeleteStep: (stepId: string) => Promise<void>;
   onAppendStep: () => Promise<void>;
@@ -32,13 +35,27 @@ interface DraftWorkspaceSidebarProps {
   onOpenPublished: () => void;
   onToggleEditingMeta: () => void;
   onDeleteDraft: () => Promise<void>;
+  onAddChapter: () => Promise<void>;
+  onUpdateChapter: (
+    chapterId: string,
+    data: { title?: string; description?: string }
+  ) => Promise<void>;
+  onDeleteChapter: (
+    chapterId: string,
+    moveStepsToChapterId: string
+  ) => Promise<void>;
+  onMoveChapter: (chapterId: string, direction: 'up' | 'down') => Promise<void>;
+  onMoveStepToChapter: (stepId: string, targetChapterId: string) => Promise<void>;
+  onAppendStepToChapter: (chapterId: string) => Promise<void>;
 }
 
 export function DraftWorkspaceSidebar({
   draft,
   hasDraft,
   steps,
+  chapters,
   selectedStepIndex,
+  selectedStepId,
   status,
   saving,
   editingMeta,
@@ -54,6 +71,12 @@ export function DraftWorkspaceSidebar({
   onOpenPublished,
   onToggleEditingMeta,
   onDeleteDraft,
+  onAddChapter,
+  onUpdateChapter,
+  onDeleteChapter,
+  onMoveChapter,
+  onMoveStepToChapter,
+  onAppendStepToChapter,
 }: DraftWorkspaceSidebarProps) {
   return (
     <div className="flex h-full flex-col gap-6 p-6">
@@ -83,13 +106,19 @@ export function DraftWorkspaceSidebar({
 
       <div className="rounded-xl border border-slate-200 bg-white/50 p-2">
         {hasDraft ? (
-          <StepList
+          <ChapteredStepList
             steps={steps}
-            selectedIndex={selectedStepIndex}
-            onSelect={onSelectStep}
-            onMoveUp={(stepId) => onMoveStep(stepId, -1)}
-            onMoveDown={(stepId) => onMoveStep(stepId, 1)}
-            onDelete={onDeleteStep}
+            chapters={chapters}
+            selectedStepId={selectedStepId}
+            onSelectStep={onSelectStep}
+            onMoveStep={(stepId, direction) => onMoveStep(stepId, direction === 'up' ? -1 : 1)}
+            onMoveStepToChapter={onMoveStepToChapter}
+            onDeleteStep={onDeleteStep}
+            onAddChapter={() => void onAddChapter()}
+            onUpdateChapter={onUpdateChapter}
+            onDeleteChapter={onDeleteChapter}
+            onMoveChapter={onMoveChapter}
+            onAppendStepToChapter={onAppendStepToChapter}
             saving={saving}
           />
         ) : (

@@ -9,6 +9,7 @@ import {
   type GitHubTreeNode,
 } from './github-client';
 import type { SourceItemDraft } from '../drafts/create-draft-form-utils';
+import { GITHUB_IMPORT_MAX_FILES, GITHUB_IMPORT_MAX_TOTAL_LINES } from '@/lib/constants';
 
 // ─── Types ──────────────────────────────────────────────────────────
 
@@ -27,9 +28,6 @@ export interface GitHubImportState {
 }
 
 // ─── Controller ─────────────────────────────────────────────────────
-
-const MAX_FILES = 15;
-const MAX_TOTAL_LINES = 1500;
 
 export function useGitHubImportController() {
   const [state, setState] = useState<GitHubImportState>({
@@ -68,8 +66,8 @@ export function useGitHubImportController() {
       if (newSet.has(path)) {
         newSet.delete(path);
       } else {
-        if (newSet.size >= MAX_FILES) {
-          return { ...prev, error: `最多选择 ${MAX_FILES} 个文件` };
+        if (newSet.size >= GITHUB_IMPORT_MAX_FILES) {
+          return { ...prev, error: `最多选择 ${GITHUB_IMPORT_MAX_FILES} 个文件` };
         }
         newSet.add(path);
       }
@@ -99,7 +97,7 @@ export function useGitHubImportController() {
       } else {
         // Select all files in directory (respecting max limit)
         for (const fp of dirFiles) {
-          if (newSet.size >= MAX_FILES) break;
+          if (newSet.size >= GITHUB_IMPORT_MAX_FILES) break;
           newSet.add(fp);
         }
       }
@@ -142,10 +140,10 @@ export function useGitHubImportController() {
     if (state.selectedPaths.size === 0) return;
 
     // Check line limit estimate before fetching
-    if (state.totalLines > MAX_TOTAL_LINES) {
+    if (state.totalLines > GITHUB_IMPORT_MAX_TOTAL_LINES) {
       setState((prev) => ({
         ...prev,
-        error: `选中的文件估计总行数 (${state.totalLines}) 超过上限 (${MAX_TOTAL_LINES})`,
+        error: `选中的文件估计总行数 (${state.totalLines}) 超过上限 (${GITHUB_IMPORT_MAX_TOTAL_LINES})`,
       }));
       return;
     }

@@ -1,12 +1,16 @@
 import { buildTutorialSteps } from '../tutorial/assembler';
 import { findFirstInvalidStep } from '../tutorial/draft-code';
+import { validateChapterStructure, ensureDraftChapters } from '../tutorial/chapters';
 import type { TutorialDraft } from '../schemas/tutorial-draft';
 
 export async function validateTutorialDraft(
   tutorialDraft: TutorialDraft
 ): Promise<{ valid: boolean; errors: string[] }> {
+  // Ensure legacy drafts have chapters before validating
+  const draft = ensureDraftChapters(tutorialDraft);
+
   const firstInvalidStep = findFirstInvalidStep(
-    tutorialDraft as Parameters<typeof findFirstInvalidStep>[0]
+    draft as Parameters<typeof findFirstInvalidStep>[0]
   );
 
   if (firstInvalidStep) {
@@ -20,8 +24,12 @@ export async function validateTutorialDraft(
 
   const errors: string[] = [];
 
+  // Chapter structure validation
+  const chapterResult = validateChapterStructure(draft.chapters, draft.steps);
+  errors.push(...chapterResult.errors);
+
   try {
-    await buildTutorialSteps(tutorialDraft as Parameters<typeof buildTutorialSteps>[0]);
+    await buildTutorialSteps(draft as Parameters<typeof buildTutorialSteps>[0]);
   } catch (err: unknown) {
     const message =
       err instanceof Error ? err.message : String(err);

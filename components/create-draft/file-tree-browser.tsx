@@ -30,6 +30,8 @@ export function FileTreeBrowser({
   const selectedCount = selectedPaths.size;
   const isOverFiles = selectedCount > maxFiles;
   const isOverLines = estimatedLines > maxLines;
+  const warnLines = maxLines * 0.75; // yellow warning at 75%
+  const isWarnLines = !isOverLines && estimatedLines > warnLines;
 
   return (
     <div className="space-y-3">
@@ -39,7 +41,7 @@ export function FileTreeBrowser({
           <span className={isOverFiles ? 'text-destructive font-medium' : 'text-muted-foreground'}>
             已选 {selectedCount}/{maxFiles} 文件
           </span>
-          <span className={isOverLines ? 'text-destructive font-medium' : 'text-muted-foreground'}>
+          <span className={isOverLines ? 'text-destructive font-medium' : isWarnLines ? 'text-amber-600 font-medium' : 'text-muted-foreground'}>
             ~{estimatedLines}/{maxLines} 行
           </span>
         </div>
@@ -54,7 +56,7 @@ export function FileTreeBrowser({
       <div className="h-1.5 w-full rounded-full bg-muted overflow-hidden">
         <div
           className={`h-full rounded-full transition-all ${
-            isOverLines ? 'bg-destructive' : 'bg-primary/60'
+            isOverLines ? 'bg-destructive' : isWarnLines ? 'bg-amber-500' : 'bg-primary/60'
           }`}
           style={{ width: `${Math.min(100, (estimatedLines / maxLines) * 100)}%` }}
         />

@@ -20,6 +20,14 @@ import {
   updateDraftStepRequest,
 } from './draft-client';
 import { buildGenerationContext, resolveSelectedStepIndex } from './draft-workspace-utils';
+import { deriveChapterSections, ensureDraftChapters, DEFAULT_CHAPTER_ID } from '@/lib/tutorial/chapters';
+import {
+  addChapterRequest,
+  updateChapterRequest,
+  deleteChapterRequest,
+  updateDraftStructureRequest,
+} from './draft-client';
+import type { Chapter } from '@/lib/schemas/chapter';
 
 interface UseDraftWorkspaceControllerOptions {
   initialDraft: ClientDraftRecord;
@@ -46,6 +54,16 @@ export function useDraftWorkspaceController({
   const status = getDraftStatusInfo(draft);
   const firstInvalidStep = draft.tutorialDraft ? findFirstInvalidStep(draft.tutorialDraft) : null;
   const generationContext = buildGenerationContext(draft);
+
+  // Chapter-related computed state
+  const normalizedTutorialDraft = draft.tutorialDraft
+    ? ensureDraftChapters(draft.tutorialDraft as any)
+    : null;
+  const chapters: Chapter[] = normalizedTutorialDraft?.chapters ?? [];
+  const chapterSections = normalizedTutorialDraft
+    ? deriveChapterSections(normalizedTutorialDraft.chapters, normalizedTutorialDraft.steps)
+    : [];
+  const selectedChapterId = selectedStep?.chapterId ?? chapters[0]?.id ?? null;
 
   function applyDraftUpdate(
     updated: ClientDraftRecord,
@@ -97,8 +115,11 @@ export function useDraftWorkspaceController({
     if (!draft.tutorialDraft) return;
 
     const num = draft.tutorialDraft.steps.length + 1;
+    const steps = draft.tutorialDraft?.steps ?? [];
+    const lastStep = steps[steps.length - 1];
     const newStep = {
       id: createUuid(),
+      chapterId: lastStep?.chapterId ?? chapters[0]?.id ?? DEFAULT_CHAPTER_ID,
       title: `步骤 ${num}`,
       paragraphs: [''],
       patches: [],
@@ -366,12 +387,168 @@ export function useDraftWorkspaceController({
     setEditingMeta((current) => !current);
   }
 
+  // ── Chapter mutations ──
+
+  async function addChapter() {
+    setSaving(true);
+    try {
+      const updated = await addChapterRequest(draft.id);
+      applyDraftUpdate(updated, selectedStepId, selectedStepIndex);
+    } catch (error) {
+      console.error('添加章节失败:', error);
+      alert(error instanceof Error ? error.message : '添加章节失败，请重试');
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  async function updateChapter(
+    chapterId: string,
+    data: { title?: string; description?: string }
+  ) {
+    setSaving(true);
+    try {
+      const updated = await updateChapterRequest(draft.id, chapterId, data);
+      applyDraftUpdate(updated, selectedStepId, selectedStepIndex);
+    } catch (error) {
+      console.error('更新章节失败:', error);
+      alert(error instanceof Error ? error.message : '更新章节失败，请重试');
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  async function deleteChapter(chapterId: string, moveStepsToChapterId: string) {
+    setSaving(true);
+    try {
+      const updated = await deleteChapterRequest(draft.id, chapterId, moveStepsToChapterId);
+      applyDraftUpdate(updated, selectedStepId, selectedStepIndex);
+    } catch (error) {
+      console.error('删除章节失败:', error);
+      alert(error instanceof Error ? error.message : '删除章节失败，请重试');
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  async function moveStepToChapter(stepId: string, targetChapterId: string) {
+    if (!draft.tutorialDraft) return;
+
+    const td = ensureDraftChapters(draft.tutorialDraft as any);
+
+    // Find the step and its current index
+    const stepIdx = td.steps.findIndex((s) => s.id === stepId);
+    if (stepIdx === -1) return;
+
+    // Find the last step index belonging to the target chapter
+    let lastTargetIdx = -1;
+    for (let i = td.steps.length - 1; i >= 0; i--) {
+      if (td.steps[i].chapterId === targetChapterId) {
+        lastTargetIdx = i;
+        break;
+      }
+    }
+
+    // Reorder: remove step from original position, insert at end of target chapter
+    const reordered = [...td.steps];
+    const [moved] = reordered.splice(stepIdx, 1);
+    const insertIdx = lastTargetIdx >= stepIdx ? lastTargetIdx : lastTargetIdx + 1;
+    reordered.splice(insertIdx, 0, moved);
+
+    const stepOrder = reordered.map((step) => ({
+      stepId: step.id,
+      chapterId: step.id === stepId ? targetChapterId : step.chapterId,
+    }));
+
+    setSaving(true);
+    try {
+      const updated = await updateDraftStructureRequest(draft.id, {
+        chapters: td.chapters,
+        stepOrder,
+      });
+      applyDraftUpdate(updated, stepId, selectedStepIndex);
+    } catch (error) {
+      console.error('移动步骤到章节失败:', error);
+      alert(error instanceof Error ? error.message : '移动步骤到章节失败，请重试');
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  async function moveChapter(chapterId: string, direction: 'up' | 'down') {
+    if (!draft.tutorialDraft) return;
+
+    const td = ensureDraftChapters(draft.tutorialDraft as any);
+    const sortedChapters = [...td.chapters].sort((a, b) => a.order - b.order);
+    const chapterIndex = sortedChapters.findIndex((ch) => ch.id === chapterId);
+
+    if (chapterIndex === -1) return;
+
+    const swapIndex = direction === 'up' ? chapterIndex - 1 : chapterIndex + 1;
+    if (swapIndex < 0 || swapIndex >= sortedChapters.length) return;
+
+    // Swap chapters
+    const reordered = [...sortedChapters];
+    const [moved] = reordered.splice(chapterIndex, 1);
+    reordered.splice(swapIndex, 0, moved);
+
+    // Update orders
+    const updatedChapters = reordered.map((ch, i) => ({ ...ch, order: i }));
+
+    // Build stepOrder preserving existing chapter assignments
+    const stepOrder = td.steps.map((step) => ({
+      stepId: step.id,
+      chapterId: step.chapterId,
+    }));
+
+    setSaving(true);
+    try {
+      const updated = await updateDraftStructureRequest(draft.id, {
+        chapters: updatedChapters,
+        stepOrder,
+      });
+      applyDraftUpdate(updated, selectedStepId, selectedStepIndex);
+    } catch (error) {
+      console.error('移动章节失败:', error);
+      alert(error instanceof Error ? error.message : '移动章节失败，请重试');
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  async function appendStepToChapter(chapterId: string) {
+    if (!draft.tutorialDraft) return;
+
+    const num = draft.tutorialDraft.steps.length + 1;
+    const newStep = {
+      id: createUuid(),
+      chapterId,
+      title: `步骤 ${num}`,
+      paragraphs: [''],
+      patches: [],
+    };
+
+    setSaving(true);
+    try {
+      const updated = await appendDraftStepRequest(draft.id, newStep);
+      const nextSteps = updated.tutorialDraft?.steps ?? [];
+      const lastStepId = nextSteps[nextSteps.length - 1]?.id ?? null;
+      applyDraftUpdate(updated, lastStepId, Math.max(nextSteps.length - 1, 0));
+    } catch (error) {
+      console.error('追加步骤失败:', error);
+      alert(error instanceof Error ? error.message : '追加步骤失败，请重试');
+    } finally {
+      setSaving(false);
+    }
+  }
+
   return {
     draft,
     hasDraft,
     steps,
     selectedStep,
     selectedStepIndex,
+    selectedStepId,
     saving,
     editingMeta,
     showGenerationProgress,
@@ -380,6 +557,9 @@ export function useDraftWorkspaceController({
     status,
     firstInvalidStep,
     generationContext,
+    chapters,
+    chapterSections,
+    selectedChapterId,
     canPublish: saving || draft.syncState === 'stale' || !draft.validationValid,
     canDeleteDraft: saving || draft.generationState === 'running',
     selectStep: setSelectedStepIndex,
@@ -399,5 +579,11 @@ export function useDraftWorkspaceController({
     completeGeneration,
     openPreview,
     openPublishedTutorial,
+    addChapter,
+    updateChapter,
+    deleteChapter,
+    moveStepToChapter,
+    moveChapter,
+    appendStepToChapter,
   };
 }

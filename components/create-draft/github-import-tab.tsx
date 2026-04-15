@@ -7,6 +7,7 @@ import { Label } from '@/components/ui/label';
 import { FileTreeBrowser } from './file-tree-browser';
 import { useGitHubImportController, type ImportPhase } from './use-github-import-controller';
 import type { SourceItemDraft } from '../drafts/create-draft-form-utils';
+import { GITHUB_IMPORT_MAX_FILES, GITHUB_IMPORT_MAX_TOTAL_LINES } from '@/lib/constants';
 
 // ─── Types ──────────────────────────────────────────────────────────
 
@@ -104,9 +105,9 @@ export function GitHubImportTab({ onImportComplete }: GitHubImportTabProps) {
           selectedPaths={state.selectedPaths}
           onToggleFile={togglePath}
           onToggleDirectory={toggleDirectory}
-          maxFiles={15}
+          maxFiles={GITHUB_IMPORT_MAX_FILES}
           estimatedLines={state.totalLines}
-          maxLines={1500}
+          maxLines={GITHUB_IMPORT_MAX_TOTAL_LINES}
         />
       )}
 
@@ -117,7 +118,7 @@ export function GitHubImportTab({ onImportComplete }: GitHubImportTabProps) {
             type="button"
             onClick={handleImport}
             className="gap-2"
-            disabled={state.phase !== 'selecting' || state.totalLines > 1500}
+            disabled={state.phase !== 'selecting' || state.totalLines > GITHUB_IMPORT_MAX_TOTAL_LINES}
           >
             导入选中的 {state.selectedPaths.size} 个文件
             <ArrowRight className="h-4 w-4" />
@@ -158,7 +159,7 @@ export function GitHubImportTab({ onImportComplete }: GitHubImportTabProps) {
           <ul className="list-disc pl-4 space-y-1">
             <li>输入 GitHub 仓库 URL 或 owner/repo</li>
             <li>浏览仓库文件并选择需要的源码文件</li>
-            <li>最多选择 15 个文件，总计不超过 1500 行</li>
+            <li>最多选择 {GITHUB_IMPORT_MAX_FILES} 个文件，总计不超过 {GITHUB_IMPORT_MAX_TOTAL_LINES} 行</li>
             <li>支持 JavaScript、TypeScript、Python、Go、Rust 等语言</li>
           </ul>
         </div>

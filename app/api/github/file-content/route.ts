@@ -7,9 +7,7 @@ import {
   GitHubRepoNotFoundError,
   GitHubRateLimitError,
 } from '@/lib/services/github-repo-service';
-
-const MAX_FILES = 15;
-const MAX_TOTAL_LINES = 1500;
+import { GITHUB_IMPORT_MAX_FILES, GITHUB_IMPORT_MAX_TOTAL_LINES } from '@/lib/constants';
 
 export async function POST(req: Request) {
   try {
@@ -40,9 +38,9 @@ export async function POST(req: Request) {
       );
     }
 
-    if (paths.length > MAX_FILES) {
+    if (paths.length > GITHUB_IMPORT_MAX_FILES) {
       return NextResponse.json(
-        { message: `最多选择 ${MAX_FILES} 个文件`, code: 'VALIDATION_ERROR' },
+        { message: `最多选择 ${GITHUB_IMPORT_MAX_FILES} 个文件`, code: 'VALIDATION_ERROR' },
         { status: 400 }
       );
     }
@@ -64,10 +62,10 @@ export async function POST(req: Request) {
       totalLines += content.content.split('\n').length;
     }
 
-    if (totalLines > MAX_TOTAL_LINES) {
+    if (totalLines > GITHUB_IMPORT_MAX_TOTAL_LINES) {
       return NextResponse.json(
         {
-          message: `选中的文件总行数 (${totalLines}) 超过上限 (${MAX_TOTAL_LINES})，请减少选择`,
+          message: `选中的文件总行数 (${totalLines}) 超过上限 (${GITHUB_IMPORT_MAX_TOTAL_LINES})，请减少选择`,
           code: 'VALIDATION_ERROR',
           totalLines,
         },

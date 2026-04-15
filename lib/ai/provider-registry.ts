@@ -27,6 +27,14 @@ const PROVIDERS: Record<string, ProviderConfig> = {
     maxOutputTokens: 16384,
     supportsJsonResponse: true,
   },
+  zhipu: {
+    name: 'zhipu',
+    baseURL: process.env.ZHIPU_BASE_URL || 'https://open.bigmodel.cn/api/paas/v4',
+    apiKeyEnvVar: 'ZHIPU_API_KEY',
+    defaultModel: 'glm-5.1',
+    maxOutputTokens: 16384,
+    supportsJsonResponse: true,
+  },
 }
 
 // Cache provider instances by name

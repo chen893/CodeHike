@@ -1,10 +1,12 @@
 "use client"
 
-import { useState } from "react"
+import { Fragment, useState } from "react"
 import Link from "next/link"
 import { Selectable, SelectionProvider } from "codehike/utils/selection"
 import { MobileCodeFrame, SelectedCodeFrame } from "./scrolly-code-frame.jsx"
 import { StepRail } from "./scrolly-step-rail.jsx"
+import { ChapterDivider } from "./chapter-divider"
+import { ChapterRail } from "./chapter-rail.jsx"
 import { ShareDialog } from "./share-dialog"
 import { CreateCTA } from "./create-cta"
 
@@ -15,6 +17,8 @@ export function TutorialScrollyDemo({
   fileName,
   slug = undefined,
   showBreadcrumb = true,
+  chapters,
+  stepChapterMeta,
 }) {
   const [shareOpen, setShareOpen] = useState(false)
   return (
@@ -29,7 +33,11 @@ export function TutorialScrollyDemo({
       </aside>
 
       <div className="relative min-h-screen bg-[#f7f8fa] px-6 pb-12 lg:px-0 lg:pb-0">
-        <StepRail steps={steps} />
+        {chapters && chapters.length > 1 && stepChapterMeta ? (
+          <ChapterRail steps={steps} chapters={chapters} stepChapterMeta={stepChapterMeta} />
+        ) : (
+          <StepRail steps={steps} />
+        )}
 
         {showBreadcrumb && (
           <nav className="flex items-center gap-2 px-4 py-6 text-xs text-slate-400 sm:px-8 sm:text-sm lg:px-12 lg:pt-10">
@@ -92,46 +100,62 @@ export function TutorialScrollyDemo({
         ) : null}
 
         <div className="space-y-4">
-          {steps.map((step, index) => (
-            <Selectable
-              key={step.id || `step-${index}`}
-              index={index}
-              selectOn={["click", "scroll"]}
-              className="article-step scroll-mt-24 transition-all sm:pl-2 lg:flex lg:min-h-screen lg:items-start lg:pl-4 lg:pr-16"
-            >
-              <article className="w-full max-w-2xl py-12 pb-8 lg:py-20 lg:pb-32">
-                {step.eyebrow && (
-                  <p className="mb-4 text-xs font-bold uppercase text-[#2563eb]">
-                    {step.eyebrow}
-                  </p>
+          {steps.map((step, index) => {
+            // Determine if this step is the first in its chapter
+            const meta = stepChapterMeta?.[step.id]
+            const isFirstInChapter = meta && meta.stepIndexInChapter === 0
+
+            return (
+              <Fragment key={step.id || `step-${index}`}>
+                {isFirstInChapter && chapters && chapters.length > 1 && (
+                  <ChapterDivider
+                    title={meta.chapterTitle}
+                    description={meta.chapterDescription}
+                    chapterIndex={meta.chapterIndex}
+                    totalChapters={meta.totalChapters}
+                  />
                 )}
-                <h2 className="text-3xl font-bold leading-tight text-slate-900 sm:text-4xl lg:text-5xl">
-                  {step.title}
-                </h2>
-                {step.lead && (
-                  <p className="mt-8 text-lg font-medium leading-relaxed text-slate-800 sm:text-xl">
-                    {step.lead}
-                  </p>
-                )}
-                <div className="space-y-6">
-                  {step.paragraphs.map((paragraph, paragraphIndex) => (
-                    <p
-                      key={`step-${index}-p-${paragraphIndex}`}
-                      className="mt-6 text-base leading-relaxed text-slate-600 sm:text-lg"
-                    >
-                      {paragraph}
-                    </p>
-                  ))}
-                </div>
-                <MobileCodeFrame 
-                  step={step} 
-                  fileName={fileName} 
-                  index={index} 
-                  total={steps.length} 
-                />
-              </article>
-            </Selectable>
-          ))}
+                <Selectable
+                  index={index}
+                  selectOn={["click", "scroll"]}
+                  className="article-step scroll-mt-24 transition-all sm:pl-2 lg:flex lg:min-h-screen lg:items-start lg:pl-4 lg:pr-16"
+                  data-step-index={index}
+                >
+                  <article className="w-full max-w-2xl py-12 pb-8 lg:py-20 lg:pb-32">
+                    {step.eyebrow && (
+                      <p className="mb-4 text-xs font-bold uppercase text-[#2563eb]">
+                        {step.eyebrow}
+                      </p>
+                    )}
+                    <h2 className="text-3xl font-bold leading-tight text-slate-900 sm:text-4xl lg:text-5xl">
+                      {step.title}
+                    </h2>
+                    {step.lead && (
+                      <p className="mt-8 text-lg font-medium leading-relaxed text-slate-800 sm:text-xl">
+                        {step.lead}
+                      </p>
+                    )}
+                    <div className="space-y-6">
+                      {step.paragraphs.map((paragraph, paragraphIndex) => (
+                        <p
+                          key={`step-${index}-p-${paragraphIndex}`}
+                          className="mt-6 text-base leading-relaxed text-slate-600 sm:text-lg"
+                        >
+                          {paragraph}
+                        </p>
+                      ))}
+                    </div>
+                    <MobileCodeFrame
+                      step={step}
+                      fileName={fileName}
+                      index={index}
+                      total={steps.length}
+                    />
+                  </article>
+                </Selectable>
+              </Fragment>
+            )
+          })}
           
           <div className="px-4 pb-24 pt-16 sm:px-2 lg:pl-4 lg:pr-16">
             <div className="max-w-2xl border-t border-slate-200 pt-16">

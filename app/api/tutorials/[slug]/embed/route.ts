@@ -36,6 +36,7 @@ function buildEmbedHtml(tutorial: {
   description: string
   steps: Array<{
     id?: string
+    chapterId?: string
     eyebrow?: string
     title: string
     lead?: string
@@ -44,6 +45,25 @@ function buildEmbedHtml(tutorial: {
   }>
   intro?: string[]
   fileName?: string
+  chapters?: Array<{
+    id: string
+    title: string
+    description?: string
+    order: number
+    startIndex: number
+    endIndex: number
+    stepIds: string[]
+    stepCount: number
+  }>
+  stepChapterMeta?: Record<string, {
+    chapterId: string
+    chapterTitle: string
+    chapterDescription?: string
+    chapterIndex: number
+    totalChapters: number
+    stepIndexInChapter: number
+    totalStepsInChapter: number
+  }>
 }) {
   const stepsHtml = tutorial.steps
     .map((step, index) => {
@@ -60,7 +80,23 @@ function buildEmbedHtml(tutorial: {
         ? `<div class="code-block"><pre><code>${step.code}</code></pre></div>`
         : ""
 
-      return `
+      // Insert chapter divider if this is the first step in a chapter (skip chapter 0)
+      let chapterHeaderHtml = ""
+      if (tutorial.stepChapterMeta && step.id) {
+        const meta = tutorial.stepChapterMeta[step.id]
+        if (meta && meta.stepIndexInChapter === 0 && meta.chapterIndex > 0) {
+          chapterHeaderHtml = `
+        <div class="chapter-header">
+          <div class="chapter-divider-line"></div>
+          <span class="chapter-label">Chapter ${meta.chapterIndex + 1} of ${meta.totalChapters}</span>
+          <div class="chapter-divider-line"></div>
+          <h2 class="chapter-heading">${escapeHtml(meta.chapterTitle)}</h2>
+          ${meta.chapterDescription ? `<p class="chapter-description">${escapeHtml(meta.chapterDescription)}</p>` : ""}
+        </div>`
+        }
+      }
+
+      return `${chapterHeaderHtml}
         <section class="step" id="step-${index}">
           ${eyebrowHtml}
           <h3 class="step-title">${escapeHtml(step.title)}</h3>
@@ -190,6 +226,41 @@ function buildEmbedHtml(tutorial: {
     /* Syntax highlighting from CodeHike — pass through as-is */
     .code-block .ch-code-line { display: block; }
     .code-block .ch-code-word { color: inherit; }
+
+    /* Chapter headers */
+    .chapter-header {
+      margin-top: 40px;
+      padding: 24px 0 8px;
+    }
+    .chapter-divider-line {
+      display: inline-block;
+      width: 40px;
+      height: 1px;
+      background: var(--border);
+      vertical-align: middle;
+    }
+    .chapter-label {
+      display: inline;
+      font-size: 11px;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.1em;
+      color: #94a3b8;
+      margin: 0 8px;
+    }
+    .chapter-heading {
+      margin-top: 12px;
+      font-size: clamp(1.25rem, 2.5vw, 1.5rem);
+      font-weight: 700;
+      line-height: 1.2;
+      color: var(--text);
+    }
+    .chapter-description {
+      margin-top: 6px;
+      font-size: 0.9375rem;
+      line-height: 1.6;
+      color: var(--text-muted);
+    }
 
     /* Footer */
     .footer {

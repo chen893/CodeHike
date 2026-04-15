@@ -1,8 +1,14 @@
 export { sourceItemSchema, type SourceItem } from './source-item';
 export { teachingBriefSchema, type TeachingBrief } from './teaching-brief';
 export {
+  chapterSchema,
+  type Chapter,
+} from './chapter';
+export {
   tutorialDraftSchema,
   tutorialStepSchema,
+  legacyTutorialDraftSchema,
+  legacyTutorialStepSchema,
   contentPatchSchema,
   contentRangeSchema,
   contentMarkSchema,

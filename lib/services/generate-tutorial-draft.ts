@@ -2,6 +2,7 @@ import { createTutorialGenerationStream } from '../ai/tutorial-generator';
 import { createMultiPhaseGenerationStream, type MultiPhaseResult, type CancelToken } from '../ai/multi-phase-generator';
 import { validateTutorialDraft } from '../utils/validation';
 import { computeGenerationQuality } from './compute-generation-quality';
+import { ensureDraftChapters } from '../tutorial/chapters';
 import { db } from '../db';
 import * as draftRepo from '../repositories/draft-repository';
 import type { TutorialDraft } from '../schemas/tutorial-draft';
@@ -144,17 +145,20 @@ async function initiateV2Generation(
 
 async function persistV1Content(
   draftId: string,
-  outputPromise: PromiseLike<TutorialDraft>,
+  outputPromise: PromiseLike<any>,
   draft: any,
   model: string
 ) {
   try {
-    const output = await outputPromise;
+    const rawOutput = await outputPromise;
 
-    if (!output) {
+    if (!rawOutput) {
       await draftRepo.updateDraftGenerationState(draftId, 'failed', 'No output from AI');
       return;
     }
+
+    // Ensure legacy output has chapters + chapterId
+    const output = ensureDraftChapters(rawOutput);
 
     const validation = await validateTutorialDraft(output);
 

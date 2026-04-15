@@ -62,6 +62,8 @@ export function RemoteTutorialPage({ slug, title }) {
           fileName={state.data.fileName}
           slug={slug}
           showBreadcrumb={false}
+          chapters={state.data.chapters}
+          stepChapterMeta={state.data.stepChapterMeta}
         />
       </main>
     )

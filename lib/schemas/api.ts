@@ -5,7 +5,7 @@ import {
   contentMarkSchema,
   contentPatchSchema,
   contentRangeSchema,
-  tutorialStepSchema,
+  legacyTutorialStepSchema,
 } from './tutorial-draft';
 
 // POST /api/drafts
@@ -23,8 +23,9 @@ export const updateDraftRequestSchema = z.object({
 });
 
 // POST /api/drafts/[id]/steps
+// chapterId is optional here; server assigns it to the first chapter if omitted.
 export const appendStepRequestSchema = z.object({
-  step: tutorialStepSchema,
+  step: legacyTutorialStepSchema,
 });
 
 // PATCH /api/drafts/[id]/steps/[stepId]

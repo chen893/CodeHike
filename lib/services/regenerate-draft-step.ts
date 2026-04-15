@@ -47,6 +47,7 @@ export async function regenerateDraftStep(
       ...step,
       ...regeneratedStep,
       id: step.id,
+      chapterId: step.chapterId,
       teachingGoal: regeneratedStep.teachingGoal ?? step.teachingGoal,
       conceptIntroduced: regeneratedStep.conceptIntroduced ?? step.conceptIntroduced,
     };

@@ -10,6 +10,7 @@ import {
 } from '../tutorial/registry';
 import { estimateReadingTime } from '../utils/seo';
 import { trackTutorialViewed } from '../monitoring/analytics';
+import { deriveChapterSections, deriveStepChapterMeta, ensureDraftChapters } from '../tutorial/chapters';
 
 const loadTutorialSourceBySlug = cache(async (slug: string) => {
   try {
@@ -61,7 +62,12 @@ export async function getTutorialPageData(slug: string, userId?: string) {
     return null;
   }
 
-  const steps = await buildTutorialSteps(record.tutorial);
+  const normalizedDraft = ensureDraftChapters(record.tutorial);
+  const steps = await buildTutorialSteps(normalizedDraft);
+
+  // Compute chapter metadata for the reading page
+  const chapters = deriveChapterSections(normalizedDraft.chapters, normalizedDraft.steps);
+  const stepChapterMeta = deriveStepChapterMeta(normalizedDraft.chapters, normalizedDraft.steps);
 
   // Fire-and-forget view tracking (does not block rendering)
   trackTutorialViewed(slug, userId);
@@ -73,6 +79,8 @@ export async function getTutorialPageData(slug: string, userId?: string) {
     description: record.tutorial.meta.description,
     fileName: record.tutorial.meta.fileName,
     intro: record.tutorial.intro.paragraphs,
+    chapters,
+    stepChapterMeta,
   };
 }
 
