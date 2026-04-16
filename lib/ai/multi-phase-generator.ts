@@ -1,18 +1,23 @@
-import { generateText, Output } from 'ai';
+import { generateText, Output, stepCountIs } from 'ai';
 import { tutorialOutlineSchema } from '../schemas/tutorial-outline';
-import { tutorialStepSchema, legacyTutorialStepSchema, type TutorialStep, type TutorialDraft } from '../schemas/tutorial-draft';
+import { legacyTutorialStepSchema, type TutorialStep, type TutorialDraft } from '../schemas/tutorial-draft';
 import type { TutorialOutline } from '../schemas/tutorial-outline';
 import type { SourceItem } from '../schemas/source-item';
 import type { TeachingBrief } from '../schemas/teaching-brief';
-import { buildOutlinePrompt } from './outline-prompt';
-import { buildStepFillPrompt } from './step-fill-prompt';
+import { buildOutlinePrompt, buildRetrievalOutlinePrompt } from './outline-prompt';
+import { buildStepFillPrompt, buildRetrievalStepFillPrompt, buildCurrentSnapshotSummary } from './step-fill-prompt';
 import { adaptPromptForModel } from './prompt-adapters';
 import { applyContentPatches } from '../tutorial/draft-code';
 import { normalizeBaseCode, normalizeTutorialMeta } from '../tutorial/normalize';
 import { ensureDraftChapters, DEFAULT_CHAPTER_ID } from '../tutorial/chapters';
 import { validateTutorialDraft } from '../utils/validation';
 import { createProvider, getMaxOutputTokens } from './provider-registry';
+import { parseJsonFromText } from './parse-json-text';
 import { tryAutoFixPatches } from './patch-auto-fix';
+import { supportsRetrievalGeneration, RetrievalModelRequiredError, supportsNativeStructuredOutput } from './model-capabilities';
+import { createSourceTools, createScopedSourceTools, buildDirectorySummary } from './source-tools';
+import { createTokenBudgetSession, estimateTokens, getMaxInputTokens } from './token-budget';
+import { validateOutlineSourceScope, deriveStepSourceScope } from './outline-source-scope';
 
 const MAX_STEP_RETRIES = 3;
 
@@ -26,9 +31,67 @@ function sseEvent(event: string, data: unknown): string {
   return `event: ${event}\ndata: ${JSON.stringify(data)}\n\n`;
 }
 
+export type MultiPhaseLifecyclePhase = 'outline' | 'step_fill' | 'validate';
+
+export interface MultiPhasePhaseEvent {
+  phase: MultiPhaseLifecyclePhase;
+  stepIndex?: number | null;
+  totalSteps?: number | null;
+  retryCount?: number;
+}
+
+export interface MultiPhaseStepRetryEvent {
+  stepIndex: number;
+  totalSteps: number;
+  attempt: number;
+  retryCount: number;
+  errorMessage: string;
+}
+
+export interface MultiPhaseStepCompletedEvent {
+  stepIndex: number;
+  totalSteps: number;
+  retryCount: number;
+}
+
+export interface MultiPhaseLifecycleHooks {
+  onPhase?: (event: MultiPhasePhaseEvent) => Promise<void> | void;
+  onOutlineReady?: (outline: TutorialOutline) => Promise<void> | void;
+  onStepRetry?: (event: MultiPhaseStepRetryEvent) => Promise<void> | void;
+  onStepCompleted?: (event: MultiPhaseStepCompletedEvent) => Promise<void> | void;
+}
+
+export class GenerationCancelledError extends Error {
+  constructor(message = 'Generation cancelled') {
+    super(message);
+    this.name = 'GenerationCancelledError';
+  }
+}
+
+export class MultiPhaseGenerationError extends Error {
+  phase: MultiPhaseLifecyclePhase;
+  stepIndex: number | null;
+  cause: unknown;
+
+  constructor(
+    phase: MultiPhaseLifecyclePhase,
+    cause: unknown,
+    stepIndex: number | null = null
+  ) {
+    const message = cause instanceof Error ? cause.message : String(cause);
+    super(message);
+    this.name = 'MultiPhaseGenerationError';
+    this.phase = phase;
+    this.stepIndex = stepIndex;
+    this.cause = cause;
+  }
+}
+
 export interface MultiPhaseStream {
   stream: ReadableStream<Uint8Array>;
   result: Promise<MultiPhaseResult>;
+  /** Resolves with the outline as soon as Phase 1 completes, before step-fill begins. */
+  outlineReady: Promise<TutorialOutline>;
 }
 
 /**
@@ -51,12 +114,18 @@ export interface CancelToken {
  * Creates a multi-phase generation stream.
  * Returns both the SSE stream (for real-time frontend progress) and
  * a result promise (for the service layer to persist after completion).
+ *
+ * @param checkDbCancel Optional async callback that queries the DB for cancelRequested.
+ *                      When provided, the generation loop checks both the in-memory
+ *                      cancelToken AND this callback at step boundaries.
  */
 export function createMultiPhaseGenerationStream(
   sourceItems: SourceItem[],
   teachingBrief: TeachingBrief,
   modelId?: string,
-  cancelToken?: CancelToken
+  cancelToken?: CancelToken,
+  lifecycleHooks: MultiPhaseLifecycleHooks = {},
+  checkDbCancel?: () => Promise<boolean>
 ): MultiPhaseStream {
   const encoder = new TextEncoder();
   const model = createProvider(modelId);
@@ -68,48 +137,226 @@ export function createMultiPhaseGenerationStream(
     rejectResult = reject;
   });
 
+  let resolveOutline: (value: TutorialOutline) => void;
+  const outlineReadyPromise = new Promise<TutorialOutline>((resolve) => {
+    resolveOutline = resolve;
+  });
+
   const startTime = Date.now();
+
+  /**
+   * Check both in-memory cancelToken and DB cancelRequested flag.
+   * Returns true if cancellation has been requested via either path.
+   */
+  async function isCancelRequested(): Promise<boolean> {
+    if (cancelToken?.value) return true;
+    if (checkDbCancel) {
+      try {
+        return await checkDbCancel();
+      } catch {
+        // DB query failed — don't block generation, rely on in-memory only
+        return false;
+      }
+    }
+    return false;
+  }
 
   const stream = new ReadableStream<Uint8Array>({
     async pull(controller) {
+      let currentPhase: MultiPhaseLifecyclePhase = 'outline';
+      let currentStepIndex: number | null = null;
+
       try {
+        // ── Capability detection ──
+        const modelSupportsRetrieval = await supportsRetrievalGeneration(modelId ?? '');
+        const useNativeStructuredOutput = supportsNativeStructuredOutput(modelId);
+
+        // For large repos, check if retrieval is required
+        const totalSourceTokens = estimateTokens(sourceItems.map(s => s.content).join('\n'));
+        const isLargeRepo =
+          sourceItems.length > 30 ||
+          totalSourceTokens > getMaxInputTokens(modelId ?? '') * 0.6;
+
+        console.log('[DEBUG] Outline generation params:', {
+          modelId: modelId ?? '(default)',
+          modelSupportsRetrieval,
+          isLargeRepo,
+          sourceFileCount: sourceItems.length,
+          totalSourceTokens,
+          maxInputTokens: getMaxInputTokens(modelId ?? ''),
+          threshold60pct: Math.round(getMaxInputTokens(modelId ?? '') * 0.6),
+          maxOutputTokens: getMaxOutputTokens(modelId),
+        });
+
+        if (isLargeRepo && !modelSupportsRetrieval) {
+          throw new RetrievalModelRequiredError({
+            modelId: modelId ?? 'unknown',
+            fileCount: sourceItems.length,
+            estimatedTokens: totalSourceTokens,
+          });
+        }
+
         // ── Phase 1: Generate Outline ──
+        currentPhase = 'outline';
+        currentStepIndex = null;
         controller.enqueue(encoder.encode(
           sseEvent('phase', { phase: 'outline', status: 'started' })
         ));
+        await lifecycleHooks.onPhase?.({ phase: 'outline' });
 
-        let outline: TutorialOutline;
+        const OUTLINE_MAX_RETRIES = 3;
+
+        let outline: TutorialOutline | undefined;
         try {
-          const { systemPrompt, userPrompt } = buildOutlinePrompt(sourceItems, teachingBrief);
-          const result = await generateText({
-            model,
-            system: adaptPromptForModel(systemPrompt, modelId),
-            prompt: adaptPromptForModel(userPrompt, modelId),
-            output: Output.object({ schema: tutorialOutlineSchema }),
-            maxOutputTokens: getMaxOutputTokens(modelId),
-          });
-          outline = result.output;
+          if (modelSupportsRetrieval) {
+            // Retrieval-based outline: directory tree + tools
+            const directorySummary = buildDirectorySummary(sourceItems);
+            const budget = createTokenBudgetSession({
+              modelId: modelId ?? 'deepseek/deepseek-chat',
+              basePrompt: directorySummary,
+            });
+            const sourceTools = createSourceTools(sourceItems, { budget });
+            const { systemPrompt, userPrompt } = buildRetrievalOutlinePrompt(
+              sourceItems, teachingBrief, directorySummary,
+            );
+
+            console.log('[DEBUG] Retrieval outline prompt sizes:', {
+              systemPromptChars: systemPrompt.length,
+              userPromptChars: userPrompt.length,
+              systemPromptTokens: estimateTokens(systemPrompt),
+              userPromptTokens: estimateTokens(userPrompt),
+              budgetUsed: budget.usedInputTokens,
+              budgetRemaining: budget.remainingInputTokens,
+              budgetMax: budget.maxInputTokens,
+            });
+
+            // Retry loop for retrieval outline — DeepSeek and other providers
+            // may drop the connection ("terminated | other side closed") on
+            // large prompts with tools.
+            let lastOutlineError: unknown = null;
+            for (let attempt = 0; attempt < OUTLINE_MAX_RETRIES; attempt++) {
+              try {
+                console.log(`[DEBUG] Retrieval outline attempt ${attempt + 1}/${OUTLINE_MAX_RETRIES}`);
+                const generateStart = Date.now();
+
+                const result = await generateText({
+                  model,
+                  system: adaptPromptForModel(systemPrompt, modelId),
+                  prompt: adaptPromptForModel(userPrompt, modelId),
+                  tools: sourceTools,
+                  stopWhen: stepCountIs(20),
+                  maxOutputTokens: getMaxOutputTokens(modelId),
+                });
+
+                console.log('[DEBUG] generateText completed in', Date.now() - generateStart, 'ms, response length:', result.text?.length ?? 0);
+                outline = parseJsonFromText(result.text, tutorialOutlineSchema, 'outline-retrieval');
+                lastOutlineError = null;
+                break; // success
+              } catch (err: any) {
+                lastOutlineError = err;
+                const isConnectionError =
+                  err?.message?.includes('terminated') ||
+                  err?.message?.includes('other side closed') ||
+                  err?.cause?.message?.includes('terminated');
+                if (isConnectionError && attempt < OUTLINE_MAX_RETRIES - 1) {
+                  console.warn(`[multi-phase] Outline attempt ${attempt + 1} failed with connection error, retrying...`, err.message);
+                  continue;
+                }
+                throw err;
+              }
+            }
+            if (lastOutlineError) throw lastOutlineError;
+            if (!outline) throw new Error('Outline not generated — unreachable');
+
+          } else {
+            // Legacy full-injection outline (existing behavior)
+            const { systemPrompt, userPrompt } = buildOutlinePrompt(sourceItems, teachingBrief);
+
+            console.log('[DEBUG] Legacy outline prompt sizes:', {
+              systemPromptChars: systemPrompt.length,
+              userPromptChars: userPrompt.length,
+              systemPromptTokens: estimateTokens(systemPrompt),
+              userPromptTokens: estimateTokens(userPrompt),
+            });
+
+            const generateStart = Date.now();
+            const useStructuredOutput = useNativeStructuredOutput;
+            const generateOpts: Parameters<typeof generateText>[0] = {
+              model,
+              system: adaptPromptForModel(systemPrompt, modelId),
+              prompt: adaptPromptForModel(userPrompt, modelId),
+              maxOutputTokens: getMaxOutputTokens(modelId),
+            };
+            if (useStructuredOutput) {
+              generateOpts.output = Output.object({ schema: tutorialOutlineSchema });
+            }
+            const result = await generateText(generateOpts);
+            console.log('[DEBUG] generateText completed in', Date.now() - generateStart, 'ms, response length:', result.text?.length ?? 0);
+
+            if (useStructuredOutput && result.output) {
+              outline = result.output as TutorialOutline;
+            } else {
+              outline = parseJsonFromText(result.text, tutorialOutlineSchema, 'outline-legacy');
+            }
+          }
+
           // Ensure meta.lang/fileName are populated from baseCode
           outline.meta = normalizeTutorialMeta(outline.meta, outline.baseCode);
+
+          // Post-outline validation (only in retrieval mode, where targetFiles/contextFiles exist)
+          if (modelSupportsRetrieval) {
+            const { files: initialFiles } = normalizeBaseCode(outline.baseCode, outline.meta);
+            const primaryFile = Object.keys(initialFiles)[0] ?? sourceItems[0]?.label ?? '';
+            const scopeValidation = validateOutlineSourceScope(outline, sourceItems, primaryFile);
+            if (scopeValidation.shouldRetry) {
+              console.warn('[multi-phase] Outline scope validation: too many repairs, quality may be degraded', scopeValidation.errors);
+            }
+            outline = scopeValidation.outline;
+          }
+
           controller.enqueue(encoder.encode(sseEvent('outline', outline)));
+          await lifecycleHooks.onOutlineReady?.(outline);
+          resolveOutline!(outline);
         } catch (outlineErr: any) {
-          const cause = outlineErr.cause ? String(outlineErr.cause) : '';
-          console.error('[multi-phase] Outline generation failed:', outlineErr.message, cause);
+          // Walk the full cause chain for debugging
+          const causeChain: string[] = [];
+          let cursor: any = outlineErr;
+          while (cursor) {
+            if (cursor.message) causeChain.push(cursor.message);
+            if (cursor.cause) { cursor = cursor.cause; } else { break; }
+          }
+          const fullCause = causeChain.join(' | ');
+          console.error('[multi-phase] Outline generation failed:', outlineErr.message, '\nCause chain:', fullCause);
+          console.error('[DEBUG] Outline error details:', {
+            errorClass: outlineErr.constructor?.name,
+            errorMessage: outlineErr.message,
+            errorString: String(outlineErr),
+            causeType: outlineErr.cause?.constructor?.name,
+            causeMessage: outlineErr.cause?.message,
+            causeString: outlineErr.cause ? String(outlineErr.cause) : undefined,
+            stackPreview: outlineErr.stack?.split('\n').slice(0, 5).join('\n'),
+          });
+          if (outlineErr.cause?.issues) {
+            // Zod validation issues — log each one
+            console.error('[multi-phase] Zod issues:', JSON.stringify(outlineErr.cause.issues, null, 2));
+          }
           controller.enqueue(encoder.encode(
-            sseEvent('error', { phase: 'outline', message: outlineErr.message, cause })
+            sseEvent('error', { phase: 'outline', message: outlineErr.message, cause: fullCause })
           ));
           controller.close();
-          rejectResult(outlineErr);
+          rejectResult(new MultiPhaseGenerationError('outline', outlineErr));
           return;
         }
 
         // ── Phase 2: Step-by-step fill ──
-        if (cancelToken?.value) {
+        if (await isCancelRequested()) {
           controller.enqueue(encoder.encode(
             sseEvent('error', { message: 'Generation cancelled' })
           ));
           controller.close();
-          rejectResult(new Error('Cancelled'));
+          rejectResult(
+            new MultiPhaseGenerationError('step_fill', new GenerationCancelledError())
+          );
           return;
         }
 
@@ -123,19 +370,26 @@ export function createMultiPhaseGenerationStream(
           outline.meta
         );
 
+        // Snapshot cache: Map<stepIndex, filesSnapshot>
+        // Replaces O(N^2) replay — store snapshots[i] = files after step i
+        const snapshots: Map<number, Record<string, string>> = new Map();
+        snapshots.set(-1, initialFiles);
+
         for (let i = 0; i < totalSteps; i++) {
+          currentPhase = 'step_fill';
+          currentStepIndex = i;
           controller.enqueue(encoder.encode(
             sseEvent('phase', { phase: 'step-fill', stepIndex: i, totalSteps })
           ));
+          await lifecycleHooks.onPhase?.({
+            phase: 'step_fill',
+            stepIndex: i,
+            totalSteps,
+            retryCount: totalRetries,
+          });
 
-          // Compute previousFiles by applying all patches from steps 0..i-1
-          let previousFiles: Record<string, string> = { ...initialFiles };
-          for (let j = 0; j < i; j++) {
-            const step = filledSteps[j];
-            if (step.patches && step.patches.length > 0) {
-              previousFiles = applyContentPatches(previousFiles, step.patches, primaryFile);
-            }
-          }
+          // Use cached snapshot instead of O(N^2) replay
+          const previousFiles = snapshots.get(i - 1)!;
 
           // Generate step with retry
           let stepResult: TutorialStep | null = null;
@@ -143,24 +397,62 @@ export function createMultiPhaseGenerationStream(
 
           for (let attempt = 0; attempt < MAX_STEP_RETRIES; attempt++) {
             try {
-              const { systemPrompt, userPrompt } = buildStepFillPrompt(
-                sourceItems,
-                teachingBrief,
-                outline,
-                i,
-                previousFiles,
-                lastError ?? undefined
-              );
+              let step: TutorialStep;
 
-              const result = await generateText({
-                model,
-                system: adaptPromptForModel(systemPrompt, modelId),
-                prompt: adaptPromptForModel(userPrompt, modelId),
-                output: Output.object({ schema: legacyTutorialStepSchema }),
-                maxOutputTokens: getMaxOutputTokens(modelId),
-              });
+              if (modelSupportsRetrieval) {
+                // Retrieval-based step fill: scoped tools + target file injection
+                const stepScope = deriveStepSourceScope(outline.steps[i], previousFiles);
+                const budget = createTokenBudgetSession({
+                  modelId: modelId ?? 'deepseek/deepseek-chat',
+                  basePrompt: '',
+                });
+                const scopedTools = createScopedSourceTools(sourceItems, previousFiles, { budget });
+                const snapshotSummary = buildCurrentSnapshotSummary(previousFiles);
+                const { systemPrompt, userPrompt } = buildRetrievalStepFillPrompt(
+                  teachingBrief, outline, i, previousFiles, stepScope, snapshotSummary, lastError ?? undefined,
+                );
 
-              const step = result.output;
+                const result = await generateText({
+                  model,
+                  system: adaptPromptForModel(systemPrompt, modelId),
+                  prompt: adaptPromptForModel(userPrompt, modelId),
+                  tools: scopedTools,
+                  stopWhen: stepCountIs(6),
+                  maxOutputTokens: getMaxOutputTokens(modelId),
+                });
+                const parsedStep = parseJsonFromText(result.text, legacyTutorialStepSchema, `step-${i + 1}-retrieval`);
+                step = { ...parsedStep, chapterId: outline.steps[i]?.chapterId ?? parsedStep.chapterId ?? DEFAULT_CHAPTER_ID };
+              } else {
+                // Legacy full-injection step fill (existing behavior)
+                const { systemPrompt, userPrompt } = buildStepFillPrompt(
+                  sourceItems,
+                  teachingBrief,
+                  outline,
+                  i,
+                  previousFiles,
+                  lastError ?? undefined
+                );
+
+                const stepGenerateOpts: Parameters<typeof generateText>[0] = {
+                  model,
+                  system: adaptPromptForModel(systemPrompt, modelId),
+                  prompt: adaptPromptForModel(userPrompt, modelId),
+                  maxOutputTokens: getMaxOutputTokens(modelId),
+                };
+                if (useNativeStructuredOutput) {
+                  stepGenerateOpts.output = Output.object({ schema: legacyTutorialStepSchema });
+                }
+                const result = await generateText(stepGenerateOpts);
+
+                let parsedStep;
+                if (useNativeStructuredOutput && result.output) {
+                  // Output.object() validates against legacyTutorialStepSchema already
+                  parsedStep = result.output;
+                } else {
+                  parsedStep = parseJsonFromText(result.text, legacyTutorialStepSchema, `step-${i + 1}-legacy`);
+                }
+                step = { ...parsedStep, chapterId: outline.steps[i]?.chapterId ?? parsedStep.chapterId ?? DEFAULT_CHAPTER_ID };
+              }
 
               // Validate patches can be applied
               if (step.patches && step.patches.length > 0) {
@@ -189,12 +481,20 @@ export function createMultiPhaseGenerationStream(
                 }
               }
 
-              stepResult = { ...step, chapterId: step.chapterId ?? DEFAULT_CHAPTER_ID };
+              stepResult = step;
               break;
             } catch (stepErr: any) {
               totalRetries++;
-              lastError = stepErr.message || String(stepErr);
+              const errorMessage = stepErr.message || String(stepErr);
+              lastError = errorMessage;
               console.error(`[multi-phase] Step ${i + 1} attempt ${attempt + 1} failed:`, lastError);
+              await lifecycleHooks.onStepRetry?.({
+                stepIndex: i,
+                totalSteps,
+                attempt: attempt + 1,
+                retryCount: totalRetries,
+                errorMessage,
+              });
             }
           }
 
@@ -202,7 +502,7 @@ export function createMultiPhaseGenerationStream(
             console.error(`[multi-phase] Step ${i + 1} failed after ${MAX_STEP_RETRIES} retries`);
             stepResult = {
               id: outline.steps[i].id,
-              chapterId: DEFAULT_CHAPTER_ID,
+              chapterId: outline.steps[i].chapterId ?? DEFAULT_CHAPTER_ID,
               title: outline.steps[i].title,
               paragraphs: [`⚠️ 此步骤自动生成失败，请手动编辑。错误：${lastError}`],
             } as TutorialStep;
@@ -216,31 +516,56 @@ export function createMultiPhaseGenerationStream(
           controller.enqueue(encoder.encode(
             sseEvent('step', { stepIndex: i, step: stepResult })
           ));
+          await lifecycleHooks.onStepCompleted?.({
+            stepIndex: i,
+            totalSteps,
+            retryCount: totalRetries,
+          });
+
+          // Update snapshot cache for next step
+          if (stepResult.patches && stepResult.patches.length > 0) {
+            const newFiles = applyContentPatches(previousFiles, stepResult.patches, primaryFile);
+            snapshots.set(i, newFiles);
+          } else {
+            snapshots.set(i, previousFiles);
+          }
 
           // Check for cancellation between steps
-          if (cancelToken?.value) {
+          if (await isCancelRequested()) {
             controller.enqueue(encoder.encode(
               sseEvent('error', { message: 'Generation cancelled' })
             ));
             controller.close();
-            rejectResult(new Error('Cancelled'));
+            rejectResult(
+              new MultiPhaseGenerationError('step_fill', new GenerationCancelledError(), i)
+            );
             return;
           }
         }
 
         // ── Assemble final draft ──
         // ensureDraftChapters wraps legacy data with a default chapter + chapterId
+        // Pass outline.chapters so AI-generated chapter structure is preserved
         const draft: TutorialDraft = ensureDraftChapters({
           meta: outline.meta,
           intro: outline.intro,
           baseCode: outline.baseCode,
+          chapters: outline.chapters,
           steps: filledSteps,
         });
 
         // ── Phase 3: Validate ──
+        currentPhase = 'validate';
+        currentStepIndex = null;
         controller.enqueue(encoder.encode(
           sseEvent('phase', { phase: 'validate', status: 'started' })
         ));
+        await lifecycleHooks.onPhase?.({
+          phase: 'validate',
+          stepIndex: null,
+          totalSteps,
+          retryCount: totalRetries,
+        });
 
         let validationErrors: string[] = [];
         try {
@@ -270,10 +595,14 @@ export function createMultiPhaseGenerationStream(
           sseEvent('error', { message: err.message || String(err) })
         ));
         controller.close();
-        rejectResult(err);
+        rejectResult(
+          err instanceof MultiPhaseGenerationError || err instanceof GenerationCancelledError
+            ? err
+            : new MultiPhaseGenerationError(currentPhase, err, currentStepIndex)
+        );
       }
     },
   });
 
-  return { stream, result: resultPromise };
+  return { stream, result: resultPromise, outlineReady: outlineReadyPromise };
 }

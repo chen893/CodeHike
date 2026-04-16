@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, type FormEvent } from 'react';
+import { useRef, useState, type FormEvent } from 'react';
 import { useRouter } from 'next/navigation';
 import type { SourceItem, TeachingBrief } from '@/lib/schemas/index';
 import { AVAILABLE_MODELS } from '@/lib/schemas/model-config';
@@ -31,6 +31,8 @@ export function useCreateDraftFormController() {
   const [generating, setGenerating] = useState(false);
   const [draftId, setDraftId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const submittingRef = useRef(false);
+  const submissionIdempotencyKeyRef = useRef<string | null>(null);
 
   function updateSourceItem(id: string, patch: Partial<SourceItemDraft>) {
     setSourceItems((current) =>
@@ -61,17 +63,24 @@ export function useCreateDraftFormController() {
 
   async function handleSubmit(event: FormEvent) {
     event.preventDefault();
+    if (submittingRef.current) return;
+
+    submittingRef.current = true;
     setError(null);
 
     const normalizedItems = sourceItems.filter((item) => item.content.trim());
 
     if (normalizedItems.length === 0 || !brief.topic.trim() || !brief.core_question.trim()) {
       setError('请至少填写一个源码文件，以及主题和核心问题');
+      submittingRef.current = false;
       return;
     }
 
     try {
       setGenerating(true);
+      const idempotencyKey =
+        submissionIdempotencyKeyRef.current ?? crypto.randomUUID();
+      submissionIdempotencyKeyRef.current = idempotencyKey;
 
       const payload: SourceItem[] = normalizedItems.map((item, index) => ({
         id: item.id,
@@ -84,11 +93,13 @@ export function useCreateDraftFormController() {
       const draft = await createDraftRequest({
         sourceItems: payload,
         teachingBrief: brief,
-      });
+      }, { idempotencyKey });
       setDraftId(draft.id);
     } catch (error) {
       setError(error instanceof Error ? error.message : '发生错误');
       setGenerating(false);
+      submittingRef.current = false;
+      submissionIdempotencyKeyRef.current = null;
     }
   }
 

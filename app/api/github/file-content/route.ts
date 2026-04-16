@@ -4,20 +4,16 @@ import {
   getMultipleFileContents,
   parseRepoUrl,
   getGitHubTokenForUser,
+  GitHubForbiddenError,
   GitHubRepoNotFoundError,
   GitHubRateLimitError,
+  serializeGitHubFileBatchResult,
 } from '@/lib/services/github-repo-service';
-import { GITHUB_IMPORT_MAX_FILES, GITHUB_IMPORT_MAX_TOTAL_LINES } from '@/lib/constants';
+import { MAX_FILES_PER_REQUEST, MAX_LINES_PER_REQUEST } from '@/lib/constants/github-import';
 
 export async function POST(req: Request) {
   try {
     const session = await auth();
-    if (!session?.user?.id) {
-      return NextResponse.json(
-        { message: '请先登录', code: 'UNAUTHORIZED' },
-        { status: 401 }
-      );
-    }
 
     let body: unknown;
     try {
@@ -38,9 +34,9 @@ export async function POST(req: Request) {
       );
     }
 
-    if (paths.length > GITHUB_IMPORT_MAX_FILES) {
+    if (paths.length > MAX_FILES_PER_REQUEST) {
       return NextResponse.json(
-        { message: `最多选择 ${GITHUB_IMPORT_MAX_FILES} 个文件`, code: 'VALIDATION_ERROR' },
+        { message: `最多选择 ${MAX_FILES_PER_REQUEST} 个文件`, code: 'VALIDATION_ERROR' },
         { status: 400 }
       );
     }
@@ -53,40 +49,57 @@ export async function POST(req: Request) {
       );
     }
 
-    const token = await getGitHubTokenForUser(session.user.id);
-    const fileMap = await getMultipleFileContents(parsed.owner, parsed.repo, paths, token);
+    console.log('[github-import] file-content request', {
+      hasSessionUser: Boolean(session?.user?.id),
+      userId: session?.user?.id ?? null,
+      repoUrl: url,
+      pathCount: paths.length,
+    });
 
-    // Check total line count
-    let totalLines = 0;
-    for (const content of fileMap.values()) {
-      totalLines += content.content.split('\n').length;
-    }
+    const token = session?.user?.id ? await getGitHubTokenForUser(session.user.id) : null;
+    const result = await getMultipleFileContents(parsed.owner, parsed.repo, paths, token);
+    const payload = serializeGitHubFileBatchResult(parsed.owner, parsed.repo, result);
 
-    if (totalLines > GITHUB_IMPORT_MAX_TOTAL_LINES) {
+    if (result.files.size === 0 && result.failures.length > 0) {
+      const status = result.failures.every((failure) => failure.code === 'RATE_LIMITED') ? 429 : 502;
       return NextResponse.json(
         {
-          message: `选中的文件总行数 (${totalLines}) 超过上限 (${GITHUB_IMPORT_MAX_TOTAL_LINES})，请减少选择`,
+          message:
+            status === 429
+              ? 'GitHub API 速率限制已耗尽，请稍后重试'
+              : `文件获取失败: ${result.failures.map((failure) => failure.path).join(', ')}`,
+          code: status === 429 ? 'RATE_LIMITED' : 'UPSTREAM_ERROR',
+          failures: result.failures,
+          ...payload,
+        },
+        { status }
+      );
+    }
+
+    if (payload.totalLines > MAX_LINES_PER_REQUEST) {
+      return NextResponse.json(
+        {
+          message: `选中的文件总行数 (${payload.totalLines}) 超过上限 (${MAX_LINES_PER_REQUEST})，请减少选择`,
           code: 'VALIDATION_ERROR',
-          totalLines,
+          totalLines: payload.totalLines,
         },
         { status: 400 }
       );
     }
 
-    const files = Array.from(fileMap.entries()).map(([path, content]) => ({
-      path,
-      name: content.name,
-      content: content.content,
-      size: content.size,
-      lines: content.content.split('\n').length,
-    }));
+    if (result.failures.length > 0) {
+      return NextResponse.json(
+        {
+          message: `部分文件获取失败: ${result.failures.map((failure) => failure.path).join(', ')}`,
+          code: 'PARTIAL_FAILURE',
+          failures: result.failures,
+          ...payload,
+        },
+        { status: 207 }
+      );
+    }
 
-    return NextResponse.json({
-      owner: parsed.owner,
-      repo: parsed.repo,
-      totalLines,
-      files,
-    });
+    return NextResponse.json(payload);
   } catch (err) {
     if (err instanceof GitHubRepoNotFoundError) {
       return NextResponse.json(
@@ -96,8 +109,24 @@ export async function POST(req: Request) {
     }
     if (err instanceof GitHubRateLimitError) {
       return NextResponse.json(
-        { message: err.message, code: 'RATE_LIMITED' },
+        {
+          message: err.message,
+          code: 'RATE_LIMITED',
+          rateLimit: err.rateLimit
+            ? {
+                remaining: err.rateLimit.remaining,
+                limit: err.rateLimit.limit,
+                resetAt: err.rateLimit.resetAt.toISOString(),
+              }
+            : null,
+        },
         { status: 429 }
+      );
+    }
+    if (err instanceof GitHubForbiddenError) {
+      return NextResponse.json(
+        { message: err.message, code: 'FORBIDDEN' },
+        { status: 403 }
       );
     }
     console.error('获取文件内容失败:', err);

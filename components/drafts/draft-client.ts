@@ -11,18 +11,52 @@ import type {
 
 type ClientDraftStep = NonNullable<NonNullable<ClientDraftRecord['tutorialDraft']>['steps']>[number];
 
-async function readApiErrorMessage(response: Response, fallback: string) {
+/**
+ * Error thrown by draft-client API calls. Carries the structured `code`
+ * and `recoverability` fields from the API response so callers can make
+ * code-driven (not message-based) recovery decisions.
+ */
+export class DraftClientError extends Error {
+  public readonly code: string;
+  public readonly recoverability: 'none' | 'retry_full' | 'retry_from_step';
+
+  constructor(
+    message: string,
+    code: string,
+    recoverability: 'none' | 'retry_full' | 'retry_from_step' = 'retry_full',
+  ) {
+    super(message);
+    this.name = 'DraftClientError';
+    this.code = code;
+    this.recoverability = recoverability;
+  }
+}
+
+type Recoverability = 'none' | 'retry_full' | 'retry_from_step';
+
+const VALID_RECOVERABILITY = new Set<string>(['none', 'retry_full', 'retry_from_step']);
+
+async function readApiErrorPayload(response: Response, fallback: string): Promise<{ message: string; code: string; recoverability: Recoverability }> {
   try {
-    const payload = (await response.json()) as Partial<ClientApiErrorResponse>;
-    return typeof payload.message === 'string' ? payload.message : fallback;
+    const payload = (await response.json()) as Partial<ClientApiErrorResponse> & {
+      recoverability?: string;
+    };
+    const message = typeof payload.message === 'string' ? payload.message : fallback;
+    const code = typeof payload.code === 'string' ? payload.code : 'UNKNOWN';
+    const raw = payload.recoverability;
+    const recoverability: Recoverability = raw && VALID_RECOVERABILITY.has(raw)
+      ? (raw as Recoverability)
+      : 'retry_full';
+    return { message, code, recoverability };
   } catch {
-    return fallback;
+    return { message: fallback, code: 'UNKNOWN', recoverability: 'retry_full' };
   }
 }
 
 async function readJsonResponse<T>(response: Response, fallback: string): Promise<T> {
   if (!response.ok) {
-    throw new Error(await readApiErrorMessage(response, fallback));
+    const { message, code, recoverability } = await readApiErrorPayload(response, fallback);
+    throw new DraftClientError(message, code, recoverability);
   }
 
   return (await response.json()) as T;
@@ -31,10 +65,15 @@ async function readJsonResponse<T>(response: Response, fallback: string): Promis
 export async function createDraftRequest(input: {
   sourceItems: SourceItem[];
   teachingBrief: TeachingBrief;
-}) {
+}, options?: { idempotencyKey?: string }) {
   const response = await fetch(withBasePath('/api/drafts'), {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    headers: {
+      'Content-Type': 'application/json',
+      ...(options?.idempotencyKey
+        ? { 'Idempotency-Key': options.idempotencyKey }
+        : {}),
+    },
     body: JSON.stringify(input),
   });
 
@@ -118,7 +157,8 @@ export async function deleteDraftRequest(draftId: string) {
   });
 
   if (!response.ok) {
-    throw new Error(await readApiErrorMessage(response, '删除草稿失败'));
+    const { message, code, recoverability } = await readApiErrorPayload(response, '删除草稿失败');
+    throw new DraftClientError(message, code, recoverability);
   }
 }
 
@@ -138,7 +178,8 @@ export async function unpublishDraftRequest(draftId: string) {
   });
 
   if (!response.ok) {
-    throw new Error(await readApiErrorMessage(response, '取消发布失败'));
+    const { message, code, recoverability } = await readApiErrorPayload(response, '取消发布失败');
+    throw new DraftClientError(message, code, recoverability);
   }
 }
 
@@ -209,14 +250,65 @@ export async function startDraftGenerationStream(draftId: string, signal: AbortS
   const response = await fetch(withBasePath(`/api/drafts/${draftId}/generate`), {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ generationVersion: 'v2', modelId }),
+    body: JSON.stringify({ modelId }),
     signal,
   });
 
   if (!response.ok || !response.body) {
     const fallback = `请求失败，状态码 ${response.status}`;
-    throw new Error(await readApiErrorMessage(response, fallback));
+    const { message, code, recoverability } = await readApiErrorPayload(response, fallback);
+    throw new DraftClientError(message, code, recoverability);
   }
 
   return response.body;
+}
+
+export async function cancelDraftGeneration(draftId: string) {
+  const response = await fetch(withBasePath(`/api/drafts/${draftId}/cancel`), {
+    method: 'POST',
+  });
+
+  if (!response.ok) {
+    const { message, code, recoverability } = await readApiErrorPayload(response, '取消生成失败');
+    throw new DraftClientError(message, code, recoverability);
+  }
+}
+
+export type { Recoverability };
+
+export interface GenerationJobStatus {
+  id: string;
+  status: string;
+  phase: string | null;
+  currentStepIndex: number | null;
+  totalSteps: number | null;
+  modelId: string | null;
+  errorCode: string | null;
+  errorMessage: string | null;
+  recoverability: Recoverability;
+  startedAt: string | null;
+  finishedAt: string | null;
+  heartbeatAt: string | null;
+  outlineSnapshot: {
+    meta: { title: string; description: string };
+    steps: Array<{
+      id: string;
+      title: string;
+      teachingGoal: string;
+      conceptIntroduced: string;
+      estimatedLocChange: number;
+    }>;
+  } | null;
+  stepTitlesSnapshot: string[] | null;
+}
+
+export interface GenerationStatusResponse {
+  job: GenerationJobStatus | null;
+}
+
+export async function fetchGenerationStatus(draftId: string, lightweight?: boolean) {
+  const query = lightweight ? '?lightweight=true' : '';
+  const response = await fetch(withBasePath(`/api/drafts/${draftId}/generation-status${query}`));
+
+  return readJsonResponse<GenerationStatusResponse>(response, '获取生成状态失败');
 }

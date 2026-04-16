@@ -1,7 +1,5 @@
 import type {
-  LegacyStatus,
   OutlineData,
-  ProtocolVersion,
   StepTitles,
   V2Status,
 } from './generation-progress-types';
@@ -64,7 +62,14 @@ export function getV2Headline(status: V2Status, currentStepIndex: number, totalS
   if (status === 'stream-complete') {
     return {
       title: '保存中',
-      detail: '即将跳转到编辑页面。',
+      detail: '生成完成，正在保存并跳转。',
+    };
+  }
+
+  if (status === 'reconnecting') {
+    return {
+      title: '等待生成完成',
+      detail: '生成仍在进行中，页面将在完成后自动跳转。',
     };
   }
 
@@ -74,52 +79,21 @@ export function getV2Headline(status: V2Status, currentStepIndex: number, totalS
   };
 }
 
-export function getV1Headline(status: LegacyStatus) {
-  if (status === 'connecting') {
-    return {
-      title: '准备中',
-      detail: '正在启动生成...',
-    };
-  }
-
-  if (status === 'generating') {
-    return {
-      title: '生成中',
-      detail: '正在生成教程内容。',
-    };
-  }
-
-  if (status === 'stream-complete') {
-    return {
-      title: '保存中',
-      detail: '正在保存到服务器。',
-    };
-  }
-
-  return {
-    title: status.startsWith('failed') || status.startsWith('error') ? '生成失败' : '处理中',
-    detail: status,
-  };
+export function isIndeterminate(status: V2Status): boolean {
+  return status === 'connecting' || status === 'generating-outline';
 }
 
 export function getProgressValue(
-  protocol: ProtocolVersion,
-  status: V2Status | LegacyStatus,
+  status: V2Status,
   currentStepIndex: number,
   totalSteps: number,
   completedSteps: number[]
 ) {
-  if (protocol === 'v1') {
-    if (status === 'connecting') return 4;
-    if (status === 'generating') return 48;
-    if (status === 'stream-complete') return 92;
-    return 100;
-  }
-
   if (status === 'connecting') return 4;
   if (status === 'generating-outline') return 14;
   if (status === 'outline-received') return 20;
   if (status === 'validating' || status === 'stream-complete') return 96;
+  if (status === 'reconnecting') return 50;
   if (status === 'error') {
     return totalSteps > 0 ? Math.min(96, (completedSteps.length / totalSteps) * 100) : 14;
   }
@@ -191,21 +165,10 @@ export function getFocusStep(
 }
 
 export function getErrorText(
-  protocol: ProtocolVersion,
   v2Status: V2Status,
-  v1Status: string,
   errorMessage: string | null
 ) {
   if (errorMessage) return errorMessage;
-  if (protocol === 'v1' && (v1Status.startsWith('error') || v1Status.startsWith('failed'))) {
-    return v1Status.replace(/^(error|failed):\s*/, '');
-  }
-  if (
-    protocol === 'v2' &&
-    v2Status === 'error' &&
-    (v1Status.startsWith('error') || v1Status.startsWith('failed'))
-  ) {
-    return v1Status.replace(/^(error|failed):\s*/, '');
-  }
+  if (v2Status === 'error') return '生成失败';
   return null;
 }

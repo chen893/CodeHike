@@ -1,5 +1,7 @@
 'use client';
 
+import { useState } from 'react';
+import { createPortal } from 'react-dom';
 import Link from 'next/link';
 import { Badge } from '@/components/ui/badge';
 import { ChapteredStepList } from '@/components/drafts/chaptered-step-list';
@@ -33,6 +35,9 @@ interface DraftWorkspaceSidebarProps {
   onPublish: () => Promise<void>;
   onUnpublish: () => Promise<void>;
   onOpenPublished: () => void;
+  publishDialogOpen: boolean;
+  onConfirmPublish: (slug: string) => Promise<void>;
+  onCancelPublishDialog: () => void;
   onToggleEditingMeta: () => void;
   onDeleteDraft: () => Promise<void>;
   onAddChapter: () => Promise<void>;
@@ -69,6 +74,9 @@ export function DraftWorkspaceSidebar({
   onPublish,
   onUnpublish,
   onOpenPublished,
+  publishDialogOpen,
+  onConfirmPublish,
+  onCancelPublishDialog,
   onToggleEditingMeta,
   onDeleteDraft,
   onAddChapter,
@@ -169,6 +177,74 @@ export function DraftWorkspaceSidebar({
           </button>
         )}
       </div>
+
+      {publishDialogOpen && (
+        <PublishDialog
+          draftId={draft.id}
+          saving={saving}
+          onConfirm={onConfirmPublish}
+          onCancel={onCancelPublishDialog}
+        />
+      )}
     </div>
   );
+}
+
+interface PublishDialogProps {
+  draftId: string;
+  saving: boolean;
+  onConfirm: (slug: string) => Promise<void>;
+  onCancel: () => void;
+}
+
+function PublishDialog({
+  draftId,
+  saving,
+  onConfirm,
+  onCancel,
+}: PublishDialogProps) {
+  const [slug, setSlug] = useState('');
+
+  const dialog = (
+    <div className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/30 backdrop-blur-sm">
+      <div className="w-full max-w-md rounded-xl border border-slate-200 bg-white p-6 shadow-2xl">
+        <h3 className="text-lg font-semibold text-slate-900">发布教程</h3>
+        <p className="mt-2 text-sm text-slate-500">
+          输入自定义 URL slug，或留空自动生成。
+        </p>
+        <input
+          type="text"
+          className="mt-4 w-full rounded-md border border-slate-300 px-3 py-2 text-sm text-slate-900 placeholder:text-slate-400 focus:border-slate-500 focus:outline-none focus:ring-1 focus:ring-slate-500"
+          placeholder="例如: my-react-tutorial"
+          value={slug}
+          onChange={(e) => setSlug(e.target.value)}
+          autoFocus
+          onKeyDown={(e) => {
+            if (e.key === 'Enter') {
+              e.preventDefault();
+              void onConfirm(slug);
+            }
+          }}
+        />
+        <div className="mt-5 flex justify-end gap-3">
+          <button
+            className={secondaryButton}
+            onClick={onCancel}
+            disabled={saving}
+          >
+            取消
+          </button>
+          <button
+            className={primaryButton}
+            onClick={() => void onConfirm(slug)}
+            disabled={saving}
+          >
+            {saving ? '发布中...' : '确认发布'}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+
+  return createPortal(dialog, document.body);
 }

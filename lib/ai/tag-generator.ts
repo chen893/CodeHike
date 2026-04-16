@@ -4,8 +4,10 @@
  * Falls back to language-derived tags on AI failure.
  */
 
-import { generateText } from 'ai';
+import { generateText, Output } from 'ai';
 import { createProvider } from './provider-registry';
+import { supportsNativeStructuredOutput } from './model-capabilities';
+import { parseJsonFromText } from './parse-json-text';
 import { z } from 'zod';
 
 const tagListSchema = z.object({
@@ -48,23 +50,30 @@ export async function generateTags(
 ): Promise<string[]> {
   try {
     const model = createProvider();
+    const modelId = process.env.DEFAULT_AI_MODEL;
 
     const prompt = `Given this tutorial about "${title}" with description "${description}" written in ${lang}, suggest 3-5 relevant topic tags. The tags should be concise topic names that help readers find this tutorial. Mix Chinese and English tags as appropriate for a Chinese developer audience. Return as a JSON object with a "tags" field containing an array of strings. Example: {"tags": ["React", "前端开发", "Hooks"]}`;
 
-    const result = await generateText({
+    const useNative = supportsNativeStructuredOutput(modelId);
+
+    const generateOpts: Parameters<typeof generateText>[0] = {
       model,
       prompt,
       maxOutputTokens: 256,
-    });
+    };
 
-    // Parse the JSON from the response text
-    const text = result.text.trim();
-    const jsonMatch = text.match(/\{[\s\S]*\}/);
-    if (!jsonMatch) {
-      throw new Error('No JSON object found in response');
+    if (useNative) {
+      generateOpts.output = Output.object({ schema: tagListSchema });
     }
 
-    const parsed = tagListSchema.parse(JSON.parse(jsonMatch[0]));
+    const result = await generateText(generateOpts);
+
+    if (useNative && result.output) {
+      return result.output.tags;
+    }
+
+    // Fallback: manual parse from text
+    const parsed = parseJsonFromText(result.text, tagListSchema, 'tag-generator');
     return parsed.tags;
   } catch (err) {
     console.warn('[tag-generator] AI tag generation failed, using fallback:', err);

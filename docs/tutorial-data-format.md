@@ -736,6 +736,13 @@ function countOccurrences(text, search) {
 }
 ```
 
+### 9.3 运行时生成状态不属于 Tutorial DSL
+
+- `TutorialData` / `TutorialDraft` 只描述教程内容本身，不承载运行时生成任务状态。
+- 生成过程中的 `status / phase / heartbeat / retry / errorCode / modelId` 持久化在 `draft_generation_jobs` 表；`drafts.activeGenerationJobId` 只负责指向当前 active job。
+- 生成服务在开始时创建唯一 job；大纲、步骤填充、校验和持久化阶段只通过 job 记录推进运行态，进程内 cancel token 仅作为当前请求内的协作优化。
+- 这意味着“教程内容格式”和“生成恢复协议”是解耦的：即使后续增加重连、取消、stale recovery，也不需要修改 DSL 结构。
+
 ---
 
 ## 10. 方案对比与选型依据
@@ -925,6 +932,8 @@ Step 3 (hit-miss):
 | **多文件** | `Record<string, string>` | `{ "store.js": "...", "helpers.js": "..." }` | 教程跨多个文件 |
 
 系统内部通过 `normalizeBaseCode()` 统一处理：单文件 string 自动包装为 `{ [fileName]: string }` Record，下游代码只需处理 Record 一种格式。
+
+在创建草稿阶段，多文件 `baseCode` 也可能来自 GitHub 仓库导入。导入器保留仓库相对路径作为 Record key，因此后续 patch / focus / marks 的 `file` 字段必须继续引用这些相对路径，而不是仅写裸文件名。
 
 ### 12.2 主文件 (primaryFile)
 

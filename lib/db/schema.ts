@@ -1,4 +1,5 @@
 import {
+  AnyPgColumn,
   pgTable,
   uuid,
   varchar,
@@ -9,7 +10,11 @@ import {
   jsonb,
   pgEnum,
   primaryKey,
+  foreignKey,
+  index,
+  uniqueIndex,
 } from 'drizzle-orm/pg-core';
+import { sql } from 'drizzle-orm';
 import type { AdapterAccountType } from '@auth/core/adapters';
 
 export const draftStatusEnum = pgEnum('draft_status', ['draft', 'published']);
@@ -19,6 +24,33 @@ export const generationStateEnum = pgEnum('generation_state', [
   'running',
   'succeeded',
   'failed',
+]);
+export const draftGenerationJobStatusEnum = pgEnum('draft_generation_job_status', [
+  'queued',
+  'running',
+  'succeeded',
+  'failed',
+  'cancelled',
+  'abandoned',
+]);
+export const draftGenerationJobPhaseEnum = pgEnum('draft_generation_job_phase', [
+  'outline',
+  'step_fill',
+  'validate',
+  'persist',
+]);
+export const generationJobErrorCodeEnum = pgEnum('generation_job_error_code', [
+  'OUTLINE_GENERATION_FAILED',
+  'STEP_GENERATION_FAILED',
+  'PATCH_VALIDATION_FAILED',
+  'DRAFT_VALIDATION_FAILED',
+  'PERSIST_FAILED',
+  'JOB_CANCELLED',
+  'JOB_STALE',
+  'MODEL_CAPABILITY_MISMATCH',
+  'SOURCE_IMPORT_RATE_LIMITED',
+  'PREVIEW_BUILD_FAILED',
+  'PUBLISH_SLUG_CONFLICT',
 ]);
 
 // NextAuth tables
@@ -86,6 +118,43 @@ export const verificationTokens = pgTable(
   ],
 );
 
+export const draftGenerationJobs = pgTable('draft_generation_jobs', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  draftId: uuid('draft_id')
+    .notNull()
+    .references((): AnyPgColumn => drafts.id, { onDelete: 'cascade' }),
+  userId: text('user_id').references(() => users.id, { onDelete: 'set null' }),
+  status: draftGenerationJobStatusEnum('status').default('queued').notNull(),
+  phase: draftGenerationJobPhaseEnum('phase'),
+  startedAt: timestamp('started_at', { withTimezone: true }),
+  finishedAt: timestamp('finished_at', { withTimezone: true }),
+  heartbeatAt: timestamp('heartbeat_at', { withTimezone: true }),
+  leaseUntil: timestamp('lease_until', { withTimezone: true }),
+  currentStepIndex: integer('current_step_index'),
+  totalSteps: integer('total_steps'),
+  retryCount: integer('retry_count').default(0).notNull(),
+  modelId: varchar('model_id', { length: 64 }),
+  cancelRequested: boolean('cancel_requested').default(false).notNull(),
+  errorCode: generationJobErrorCodeEnum('error_code'),
+  errorMessage: text('error_message'),
+  failureDetail: jsonb('failure_detail').$type<Record<string, unknown> | null>(),
+  outlineSnapshot: jsonb('outline_snapshot').$type<unknown | null>(),
+  stepTitlesSnapshot: jsonb('step_titles_snapshot').$type<string[] | null>(),
+  createdAt: timestamp('created_at', { withTimezone: true })
+    .default(sql`clock_timestamp()`)
+    .notNull(),
+  updatedAt: timestamp('updated_at', { withTimezone: true })
+    .default(sql`clock_timestamp()`)
+    .notNull(),
+}, (table) => [
+  uniqueIndex('draft_generation_jobs_draft_id_id_unique').on(table.draftId, table.id),
+  uniqueIndex('draft_generation_jobs_single_active_per_draft').on(table.draftId)
+    .where(sql`${table.status} in ('queued', 'running')`),
+  index('draft_generation_jobs_draft_id_created_at_idx').on(table.draftId, table.createdAt),
+  index('draft_generation_jobs_active_lease_until_idx').on(table.leaseUntil)
+    .where(sql`${table.status} in ('queued', 'running')`),
+]);
+
 // Application tables
 
 export const drafts = pgTable('drafts', {
@@ -116,6 +185,7 @@ export const drafts = pgTable('drafts', {
   // v3.1: Multi-phase generation metadata
   generationOutline: jsonb('generation_outline').$type<unknown | null>(),
   generationQuality: jsonb('generation_quality').$type<unknown | null>(),
+  activeGenerationJobId: uuid('active_generation_job_id'),
 
   // Validation
   validationValid: boolean('validation_valid').default(false).notNull(),
@@ -138,7 +208,16 @@ export const drafts = pgTable('drafts', {
   updatedAt: timestamp('updated_at', { withTimezone: true })
     .defaultNow()
     .notNull(),
-});
+}, (table) => [
+  foreignKey({
+    name: 'drafts_active_generation_job_same_draft_fk',
+    columns: [table.id, table.activeGenerationJobId],
+    foreignColumns: [
+      draftGenerationJobs.draftId as AnyPgColumn,
+      draftGenerationJobs.id as AnyPgColumn,
+    ],
+  }),
+]);
 
 export const publishedTutorials = pgTable('published_tutorials', {
   id: uuid('id').primaryKey().defaultRandom(),

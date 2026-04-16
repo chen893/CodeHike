@@ -19,7 +19,7 @@
 ## 1. 核心原则
 
 1. 每次 review 先定义清楚范围，再截图，不要边看边补路由。
-2. 截图必须保留原始图和缩小图，后续需要回看原始细节。
+2. 截图直接使用原始图，无需额外缩小处理。
 3. 审查结果要按运行批次沉淀，避免把多轮结论混在一个文件里。
 4. 先做逐页问题记录，再做跨页总结，不要一开始就直接下“统一改造结论”。
 5. 修复任务必须按文件所有权拆分，避免共享文件冲突。
@@ -45,8 +45,7 @@
 
 ```text
 tmp/ui-review/<run_id>/
-  raw/          # 原始截图
-  small/        # 缩小后的审查图
+  screenshots/  # 截图（直接用于审查）
   prompts/      # 审查 prompt / 修复 prompt
   manifest.md   # 本轮路由清单、数据来源、viewport
 
@@ -243,10 +242,9 @@ EOF
 ```bash
 RUN_ID=2026-04-10-baseline
 BASE_URL=http://localhost:3100
-RAW_DIR=tmp/ui-review/$RUN_ID/raw
-SMALL_DIR=tmp/ui-review/$RUN_ID/small
+SCREENSHOT_DIR=tmp/ui-review/$RUN_ID/screenshots
 
-mkdir -p "$RAW_DIR" "$SMALL_DIR" "tmp/ui-review/$RUN_ID/prompts"
+mkdir -p "$SCREENSHOT_DIR" "tmp/ui-review/$RUN_ID/prompts"
 ```
 
 ### 7.2 推荐的 Playwright 截图函数
@@ -265,7 +263,7 @@ capture_desktop() {
     --wait-for-timeout=1800 \
     --full-page \
     "${BASE_URL}${path}" \
-    "${RAW_DIR}/${name}.png"
+    "${SCREENSHOT_DIR}/${name}.png"
 }
 ```
 
@@ -282,7 +280,24 @@ capture_mobile() {
     --wait-for-timeout=1800 \
     --full-page \
     "${BASE_URL}${path}" \
-    "${RAW_DIR}/${name}.png"
+    "${SCREENSHOT_DIR}/${name}.png"
+}
+```
+
+如果本机 Playwright 设备预设或浏览器依赖不完整，移动端截图可退回到固定 viewport，保持同一轮前后对比一致即可：
+
+```bash
+capture_mobile() {
+  local path="$1"
+  local name="$2"
+
+  npx -y playwright@latest screenshot \
+    --browser=chromium \
+    --viewport-size='390,844' \
+    --wait-for-timeout=1800 \
+    --full-page \
+    "${BASE_URL}${path}" \
+    "${SCREENSHOT_DIR}/${name}.png"
 }
 ```
 
@@ -314,32 +329,9 @@ capture_desktop "/drafts/$DRAFT_ID" "draft-workspace-desktop"
 - `draft-workspace-generation-running-desktop.png`
 - `tutorial-static-mobile-drawer-open.png`
 
-## 8. 缩小并标准化截图
+## 8. 用模型做视觉审查
 
-模型读图时，缩小版通常更稳定，但原图要保留。
-
-macOS 可用：
-
-```bash
-for f in "$RAW_DIR"/*.png; do
-  base=$(basename "$f")
-  cp "$f" "$SMALL_DIR/$base"
-  sips -Z 700 "$SMALL_DIR/$base" >/dev/null
-done
-```
-
-如果不是 macOS，可用 ImageMagick：
-
-```bash
-for f in "$RAW_DIR"/*.png; do
-  base=$(basename "$f")
-  magick "$f" -resize 700x700\> "$SMALL_DIR/$base"
-done
-```
-
-## 9. 用模型做视觉审查
-
-### 9.1 项目默认做法
+### 8.1 项目默认做法
 
 当前仓库默认沿用 Gemini CLI，规则如下：
 
@@ -354,12 +346,12 @@ done
 - 单页落盘
 - 先局部、后汇总
 
-### 9.2 单页 prompt 模板
+### 8.2 单页 prompt 模板
 
 把下面模板存成 `tmp/ui-review/<run_id>/prompts/<key>.md`：
 
 ```markdown
-请读取并审查这张截图：@{<small_png_path>}。
+请读取并审查这张截图：@{<screenshot_path>}。
 
 补充上下文：
 - 项目：VibeDocs
@@ -383,7 +375,7 @@ done
 7. 只基于截图发言，不猜测未展示区域。
 ```
 
-### 9.3 Gemini CLI 命令模板
+### 8.3 Gemini CLI 命令模板
 
 ```bash
 gemini -p "$(cat tmp/ui-review/$RUN_ID/prompts/<key>.md)" --output-format text
@@ -396,7 +388,7 @@ gemini -p "$(cat tmp/ui-review/$RUN_ID/prompts/<key>.md)" --output-format text
 3. 再看草稿工作区
 4. 最后看预览页和远程页
 
-### 9.4 网络或认证异常
+### 8.4 网络或认证异常
 
 如果 Gemini 没进入图片审查，而是重新触发认证或明显卡死：
 
@@ -413,7 +405,7 @@ pkill -9 -f '/Users/chen/.nvm/versions/node/v24.14.1/bin/gemini' || true
 sleep 35
 ```
 
-## 10. 沉淀结果
+## 9. 沉淀结果
 
 推荐新建本轮结果文件：
 
@@ -467,9 +459,9 @@ sleep 35
 - 截图目录
 - 对应 commit
 
-## 11. 从审查结果变成修复任务
+## 10. 从审查结果变成修复任务
 
-### 11.1 拆分原则
+### 10.1 拆分原则
 
 修复任务必须按文件所有权拆，而不是按“页面看起来差不多”拆。
 
@@ -479,8 +471,11 @@ sleep 35
 - 共享渲染器只给一个任务
 - 只要有交叉写文件，就不要并行
 - 每个任务都要写清楚允许修改哪些文件
+- 每个任务的 prompt 尽量做到“只读指定文件就能完成”，不要让模型自己全仓库搜索
+- 如果任务需要改共享组件，prompt 必须列出所有已知消费路径和需要人工验证的路由
+- 如果一个任务同时包含视觉改造、交互状态和数据流变化，先拆开；Gemini 一次只处理其中一个小目标
 
-### 11.2 当前项目的常见拆分面
+### 10.2 当前项目的常见拆分面
 
 | 修复面 | 常见文件 |
 |--------|----------|
@@ -489,9 +484,52 @@ sleep 35
 | 创建页表单 | `components/create-draft-form.tsx`, `components/code-mirror-editor.tsx` |
 | 草稿列表 | `components/drafts-page.tsx`, `lib/draft-status.ts` |
 | 草稿工作区 | `components/draft-workspace.tsx`, `components/step-list.tsx`, `components/step-editor.tsx`, `components/draft-meta-editor.tsx`, `components/markdown-editor.tsx`, `components/generation-progress.tsx` |
-| 教程展示 | `components/tutorial-scrolly-demo.jsx`, `components/remote-tutorial-page.jsx`, `components/remote-preview-page.tsx`, `app/[slug]/page.jsx`, `app/[slug]/request/page.jsx` |
+| 教程展示 | `components/tutorial/tutorial-scrolly-demo.jsx`, `components/tutorial/scrolly-code-frame.jsx`, `components/tutorial/scrolly-step-rail.jsx`, `components/tutorial/create-cta.tsx`, `components/remote-tutorial-page.jsx`, `components/remote-preview-page.tsx`, `app/[slug]/page.jsx`, `app/[slug]/request/page.jsx` |
 
-### 11.3 修复 prompt 模板
+### 10.3 先生成迭代计划
+
+不要把完整 review 结果一次性丢给 Gemini 改。先人工整理成 sprint 级计划，再逐个小任务执行。
+
+每个 sprint 至少写清楚：
+
+- `scope`：本轮只收敛哪一组页面或交互，例如 `tutorial`、`shell`、`creator`
+- `goal`：本轮结束时用户能感知到的变化
+- `included_findings`：来自 review 结果的具体问题编号或原文摘要
+- `task_order`：任务顺序，按共享文件优先、依赖关系优先排列
+- `allowed_files`：每个任务的文件所有权
+- `verification_routes`：本轮必须复测的路由、viewport、页面状态
+- `acceptance`：截图、构建、测试和人工检查标准
+
+示例：
+
+```markdown
+## Sprint 1: 教程阅读页收尾
+
+目标：改善教程消费页的定位感、结束反馈、代码可操作性和代码宽度。
+
+任务：
+1. 面包屑与顶部上下文
+   - allowed_files: `components/tutorial/tutorial-scrolly-demo.jsx`, `components/remote-tutorial-page.jsx`
+   - verify: `/sample`, `/sample/request`
+2. 教程完成区和底部 CTA
+   - allowed_files: `components/tutorial/tutorial-scrolly-demo.jsx`, `components/tutorial/create-cta.tsx`
+   - verify: `/sample`, `/sample/request`, draft preview if available
+3. 代码复制反馈
+   - allowed_files: `components/tutorial/scrolly-code-frame.jsx`
+   - verify: desktop code frame, mobile code block
+4. 代码宽度微调
+   - allowed_files: `components/tutorial/scrolly-code-frame.jsx`, `app/globals.css`
+   - verify: code focus/mark/change indicators still visible
+```
+
+经验规则：
+
+- 先改共享渲染器，再改入口页 wrapper，避免同一逻辑在静态页和远程页重复出现。
+- 对 `components/tutorial/tutorial-scrolly-demo.jsx` 这类共享渲染器，必须同时考虑静态直出、远程加载和草稿预览。
+- 对底部 CTA、面包屑这类“看起来像页面 chrome”的内容，要确认是否应该由共享渲染器负责，还是由入口页负责；不能两边都渲染。
+- 对“隐藏/透明/减少占位”的用户反馈，要明确写进任务目标，例如不要恢复左侧状态栏、不要重新挤压正文宽度。
+
+### 10.4 修复 prompt 模板
 
 每个任务一份 prompt，建议放到：
 
@@ -502,11 +540,9 @@ sleep 35
 ```markdown
 你是 UI/UX 修复专家。本仓库是 Next.js + Tailwind CSS 项目。
 
-## 先阅读
+## 只阅读这些文件
 @{<source_file_1>}
 @{<source_file_2>}
-@{docs/ui-review-workflow.md}
-@{docs/ui-reviews/<run_id>.md}
 
 ## 目标
 修复 <route/group> 的 UI 问题。
@@ -521,12 +557,39 @@ sleep 35
 
 ## 约束
 - 只修改上面列出的文件
+- 不要阅读或修改未列出的文件
+- 不要运行 shell/npm/git 命令
 - 不改变业务逻辑
 - 保持 Tailwind 方案
 - 不回退不相关页面
+- 不使用 `tracking-*`、`text-[clamp(...)]`、大圆角（超过 `rounded-lg`）或大面积深色卡片
+- 输出简短说明：改了哪些文件，解决了哪些问题
 ```
 
-## 12. 修复后验证
+如果任务需要 review 背景，不要让 Gemini 阅读整份 `docs/ui-reviews/<run_id>.md`。优先把相关 finding 摘要直接写入 prompt，减少模型误改范围。
+
+### 10.5 分配给 Gemini 执行
+
+推荐命令：
+
+```bash
+gemini --approval-mode auto_edit \
+  -p "$(cat tmp/ui-review/$RUN_ID/prompts/fix-<task>.md)" \
+  --output-format text
+```
+
+执行规则：
+
+- 一次只跑一个修复 prompt。
+- Gemini 返回网络错误、`ECONNRESET` 或 MCP warning 时，只重试当前任务，不顺手扩大范围。
+- Gemini 完成后先看 `git diff -- <allowed_files>`，确认没有越界修改。
+- 如果 Gemini 新增了 helper 但没有接入调用点，人工补齐接入，而不是继续把同一任务扩大重跑。
+- 如果 Gemini 改到了共享渲染器，人工检查所有入口是否出现重复 UI，例如重复面包屑、重复 CTA、重复 loading header。
+- 对带可选数据的 UI，例如 `slug`、`title`、`highlighted.code`，人工确认空值路径；需要时让 UI 条件渲染，不要让预览页出现无意义 CTA。
+- 对教程代码块，复制内容优先使用干净源码字段；如果只能拿到带注释或标注的 highlighted 值，宁可禁用复制按钮，也不要复制污染后的代码。
+- 每个任务结束后再进入下一个 prompt。不要让多个 Gemini 任务同时写同一文件。
+
+## 11. 修复后验证
 
 每轮修复结束后，至少做这 4 件事：
 
@@ -534,6 +597,14 @@ sleep 35
 2. 用同一类 prompt 再做一轮 focused review。
 3. 人工对比修复前后截图，确认不是“换了风格但没解决问题”。
 4. 如果改到了共享组件或共享样式，跑一次 `npm run build`。
+
+建议加一条快速 diff 检查：
+
+```bash
+git diff --stat
+git diff -- <allowed_file_1> <allowed_file_2>
+rg "tracking-|text-\\[clamp|rounded-2xl|rounded-3xl|bg-blue-" app components
+```
 
 再次截图时必须保持：
 
@@ -544,9 +615,18 @@ sleep 35
 
 否则前后对比没有意义。
 
-## 13. 项目级提醒
+教程阅读页专项验收清单：
 
-1. `components/tutorial-scrolly-demo.jsx` 同时服务于静态直出、远程加载、草稿预览，改它时必须把这三条消费链路一起审。
+- `/sample` 静态直出和 `/sample/request` 远程加载的阅读 UI 一致。
+- 草稿预览页如果没有 `slug`，不显示依赖 published slug 的 CTA。
+- 右侧章节切换栏保持透明，不重新占用正文宽度。
+- 文章步骤左侧不恢复粗色条状态栏。
+- 桌面代码面板和移动端代码块都有可用的复制反馈，且复制内容不是带 CodeHike 标注的展示文本。
+- focus、mark、change 指示仍可识别，没有为了省宽度把语义状态删掉。
+
+## 12. 项目级提醒
+
+1. `components/tutorial/tutorial-scrolly-demo.jsx` 同时服务于静态直出、远程加载、草稿预览，改它时必须把这三条消费链路一起审。
 2. `/drafts`、`/drafts/<id>`、`/drafts/<id>/preview*` 都依赖草稿数据，review 前先确认数据库和样例数据状态。
 3. 草稿 review 不只看“成功态”，还要至少覆盖一个失败态、一个空态或一个 loading 态。
 4. 如果某次 review 的目标是全局视觉系统，必须同时截图桌面端和移动端，否则抽屉导航、移动代码块、长列表折叠等问题会漏掉。

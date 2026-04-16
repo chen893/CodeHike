@@ -57,6 +57,7 @@ lib/ai/outline-prompt.ts       # 阶段一 prompt：教学大纲生成
 lib/ai/step-fill-prompt.ts     # 阶段二 prompt：单步内容填充
 lib/ai/multi-phase-generator.ts # SSE 流编排：outline → step-fill (with retry) → validate
 lib/services/generate-tutorial-draft.ts # v1/v2 入口分发 + 异步持久化
+lib/repositories/draft-generation-job-repository.ts # generation job 持久化读写，draft.activeGenerationJobId 指向当前任务
 lib/services/compute-generation-quality.ts # 质量指标计算
 ```
 
@@ -89,7 +90,7 @@ lib/services/compute-generation-quality.ts # 质量指标计算
 | 目录 | 用途 |
 |------|------|
 | `components/drafts/` | 草稿列表、创建、编辑、发布相关 client hooks / feature clients / 子视图 |
-| `components/create-draft/` | GitHub 仓库导入（API 客户端、导入状态机、文件树浏览器、导入 Tab 视图） |
+| `components/create-draft/` | GitHub 仓库导入（公开仓库免登录、OAuth 提升配额、懒加载文件树、导入 Tab 视图） |
 | `components/step-editor/` | 步骤编辑器子组件（diff 视图、patch 编辑、focus/marks 面板、代码预览、行选择交互） |
 | `components/tutorial/` | 教程阅读、远程加载、生成进度协议解析、渲染器子模块、标签编辑 |
 | `components/explore/` | 探索页面客户端交互（搜索输入、标签筛选、排序切换） |
@@ -150,10 +151,14 @@ lib/services/compute-generation-quality.ts # 质量指标计算
 - `app/[slug]/page.jsx` 通过 `lib/services/tutorial-queries.ts` 中的 `cache()` 包装函数避免重复 DB 查询和高亮计算
 - 混用 JS（`.js`/`.jsx`，渲染链路）和 TS（`.ts`/`.tsx`，新增功能），不要强行统一
 - 多阶段生成通过 SSE 流向客户端推送进度，前端 `GenerationProgress` 组件解析 v2 协议
+- generation 运行态的持久化真相源为 `draft_generation_jobs` + `drafts.activeGenerationJobId`；新增生成状态读写优先经过 repository / service，不要再扩展进程内 `Map` 作为唯一状态源
 - 生成质量评估（`GenerationQuality`）不阻塞发布，仅作数据监控
 - DB schema 中 `generationOutline`、`generationQuality` 为可选 jsonb，向后兼容 v3.0 草稿
 - `app/*` 入口主要依赖 `components/*` 和 `lib/services/*`；页面可额外依赖 `lib/utils/client-data.ts`（序列化）和 `lib/draft-status.ts`（状态 badge）；route handler 可额外依赖 `lib/api/route-errors.ts`（错误处理）；不要在页面或 route handler 中直接调用 `lib/repositories/*`、`lib/db/*`、`lib/tutorial/*`
 - client 侧 `fetch` 统一进入 feature client / hook / controller，不要散落在视图组件中
+- GitHub 导入默认支持**公开仓库免登录**；若用户已通过 GitHub OAuth 登录，则复用 access token 提升 rate limit，不要再把公开仓库导入强制绑到登录态
+- GitHub 导入的大仓库文件树必须支持 `truncated` 懒加载；不要假设 `git/trees?recursive=1` 一次就能返回完整仓库结构
+- GitHub 导入的部分成功场景必须保留成功文件结果返回给 client，不要把单文件失败升级成整批失败
 - 探索/搜索查询中用户表必须使用 `leftJoin(users)`，因为 `drafts.userId` 可能为 NULL（未关联用户的教程）
 - AI 标签生成（`lib/ai/tag-generator.ts`）为 fire-and-forget，发布失败不阻塞主流程
 - 监控埋点（`lib/monitoring/analytics.ts`）为 fire-and-forget，不得阻塞页面渲染
@@ -201,6 +206,7 @@ lib/services/compute-generation-quality.ts # 质量指标计算
 
 - 触及分层边界、请求竞态、patch 链、纯函数算法时，要同步补 `tests/*.test.js`；优先补结构约束测试和纯函数测试，不要求一开始就引入完整测试框架。
 - 新增顶层目录、修改默认分层模式、引入新的 feature folder 时，要同步更新 `AGENTS.md` 和 `docs/vibedocs-technical-handbook.md`。
+- **每次 commit 前必须同步更新三份文档：** `AGENTS.md`（目录/分层/规则变更）、`docs/vibedocs-technical-handbook.md`（组件清单/API 端点/服务层/UI 规格/实施阶段）、`docs/tutorial-data-format.md`（DSL 格式/编辑器交互行为）。聚焦 diff 直接影响的条目，不需要逐行比对全文。
 - 实施中如果出现新的结构性问题、竞态问题、框架约束坑，继续记录到 `docs/v3-implementation-issues.md`。
 
 ## Docs Index
@@ -210,6 +216,8 @@ lib/services/compute-generation-quality.ts # 质量指标计算
 | `docs/vibedocs-technical-handbook.md` | **主文档** — 产品、架构、数据、API、UI、AI 生成的技术手册 |
 | `docs/tutorial-data-format.md` | 教程 DSL 权威规范 — JSON 结构、Patch 机制、代码组装算法、校验规则 |
 | `docs/v3-implementation-issues.md` | 实施问题记录 — 技术决策和解决方案（活跃维护） |
+| `docs/20260416-fullflow-reliability-implementation-plan.md` | 全流程可靠性实施方案 — 新建、生成、编辑、预览、发布的失败恢复与一致性改造计划 |
+| `docs/20260416-fullflow-reliability-task-list.md` | 全流程可靠性任务清单 — 按 P0/P1/P2 拆分的可执行任务、依赖和验收标准 |
 | `docs/ui-review-workflow.md` | UI 审查流程 — 截图规范、模型审查、修复验证（已迁移至 `docs/workflow/`） |
 | `docs/mini-redux.js` | Redux 核心源码实现（简化版），测试用样本源码 |
 | `docs/archive/` | 已归档的 PRD、技术设计、实施计划、版本任务分解等历史文档 |

@@ -7,7 +7,7 @@ import { Label } from '@/components/ui/label';
 import { FileTreeBrowser } from './file-tree-browser';
 import { useGitHubImportController, type ImportPhase } from './use-github-import-controller';
 import type { SourceItemDraft } from '../drafts/create-draft-form-utils';
-import { GITHUB_IMPORT_MAX_FILES, GITHUB_IMPORT_MAX_TOTAL_LINES } from '@/lib/constants';
+import { MAX_FILES_TOTAL, MAX_TOTAL_LINES } from '@/lib/constants/github-import';
 
 // ─── Types ──────────────────────────────────────────────────────────
 
@@ -24,6 +24,7 @@ export function GitHubImportTab({ onImportComplete }: GitHubImportTabProps) {
     loadTree,
     togglePath,
     toggleDirectory,
+    expandDirectory,
     importFiles,
     reset,
   } = useGitHubImportController();
@@ -102,12 +103,16 @@ export function GitHubImportTab({ onImportComplete }: GitHubImportTabProps) {
       {(state.phase === 'selecting' || state.phase === 'loading-content' || state.phase === 'error') && state.tree.length > 0 && (
         <FileTreeBrowser
           tree={state.tree}
+          truncated={state.truncated}
+          lazyPaths={state.lazyPaths}
+          loadingDirectoryPaths={state.loadingDirectoryPaths}
           selectedPaths={state.selectedPaths}
           onToggleFile={togglePath}
           onToggleDirectory={toggleDirectory}
-          maxFiles={GITHUB_IMPORT_MAX_FILES}
+          onExpandDirectory={expandDirectory}
+          maxFiles={MAX_FILES_TOTAL}
           estimatedLines={state.totalLines}
-          maxLines={GITHUB_IMPORT_MAX_TOTAL_LINES}
+          maxLines={MAX_TOTAL_LINES}
         />
       )}
 
@@ -118,7 +123,7 @@ export function GitHubImportTab({ onImportComplete }: GitHubImportTabProps) {
             type="button"
             onClick={handleImport}
             className="gap-2"
-            disabled={state.phase !== 'selecting' || state.totalLines > GITHUB_IMPORT_MAX_TOTAL_LINES}
+            disabled={state.phase !== 'selecting' || state.totalLines > MAX_TOTAL_LINES}
           >
             导入选中的 {state.selectedPaths.size} 个文件
             <ArrowRight className="h-4 w-4" />
@@ -131,9 +136,24 @@ export function GitHubImportTab({ onImportComplete }: GitHubImportTabProps) {
 
       {/* Loading content state */}
       {state.phase === 'loading-content' && (
-        <div className="flex items-center gap-2 text-sm text-muted-foreground">
-          <Loader2 className="h-4 w-4 animate-spin" />
-          正在加载文件内容...
+        <div className="space-y-2">
+          <div className="flex items-center gap-2 text-sm text-muted-foreground">
+            <Loader2 className="h-4 w-4 animate-spin" />
+            正在加载文件内容...
+            {state.loadingProgress && (
+              <span className="ml-1">
+                ({state.loadingProgress.loaded}/{state.loadingProgress.total})
+              </span>
+            )}
+          </div>
+          {state.loadingProgress && state.loadingProgress.total > 0 && (
+            <div className="h-1.5 w-full rounded-full bg-muted overflow-hidden">
+              <div
+                className="h-full rounded-full bg-primary/60 transition-all"
+                style={{ width: `${(state.loadingProgress.loaded / state.loadingProgress.total) * 100}%` }}
+              />
+            </div>
+          )}
         </div>
       )}
 
@@ -158,8 +178,9 @@ export function GitHubImportTab({ onImportComplete }: GitHubImportTabProps) {
           <p className="font-medium text-foreground/70">支持公开仓库</p>
           <ul className="list-disc pl-4 space-y-1">
             <li>输入 GitHub 仓库 URL 或 owner/repo</li>
+            <li>公开仓库可直接导入；登录 GitHub 仅用于提升速率限制配额</li>
             <li>浏览仓库文件并选择需要的源码文件</li>
-            <li>最多选择 {GITHUB_IMPORT_MAX_FILES} 个文件，总计不超过 {GITHUB_IMPORT_MAX_TOTAL_LINES} 行</li>
+            <li>最多选择 {MAX_FILES_TOTAL} 个文件，总计不超过 {MAX_TOTAL_LINES} 行</li>
             <li>支持 JavaScript、TypeScript、Python、Go、Rust 等语言</li>
           </ul>
         </div>

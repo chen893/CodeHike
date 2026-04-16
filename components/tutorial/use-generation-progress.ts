@@ -1,17 +1,16 @@
 'use client';
 
 import { useEffect, useRef, useState } from 'react';
-import type { TutorialDraft } from '@/lib/schemas/tutorial-draft';
 import {
+  cancelDraftGeneration,
   fetchDraft,
+  fetchGenerationStatus,
+  regenerateDraftStepRequest,
   startDraftGenerationStream,
 } from '@/components/drafts/draft-client';
-import { classifyGenerationError } from '@/lib/errors/classify-error';
 import type {
   GenerationProgressViewModel,
-  LegacyStatus,
   OutlineData,
-  ProtocolVersion,
   StepTitles,
   V2Status,
 } from './generation-progress-types';
@@ -23,17 +22,38 @@ interface UseGenerationProgressOptions {
   modelId?: string;
 }
 
+interface SSEEventData {
+  jobId?: string;
+  phase?: string;
+  totalSteps?: number;
+  stepIndex?: number;
+  title?: string;
+  message?: string;
+  errorCode?: string;
+  errorMessage?: string;
+  step?: {
+    title?: string;
+  };
+  meta?: {
+    title?: string;
+    description?: string;
+  };
+  steps?: Array<{
+    id?: string;
+    title?: string;
+    teachingGoal?: string;
+    conceptIntroduced?: string;
+    estimatedLocChange?: number;
+  }>;
+}
+
 export function useGenerationProgress({
   draftId,
   onComplete,
   modelId,
 }: UseGenerationProgressOptions): GenerationProgressViewModel {
   const [runNonce, setRunNonce] = useState(0);
-  const [protocol, setProtocol] = useState<ProtocolVersion>('unknown');
-  const [v1Status, setV1Status] = useState<LegacyStatus>('connecting');
   const [v2Status, setV2Status] = useState<V2Status>('connecting');
-  const [fullText, setFullText] = useState('');
-  const [parsedDraft, setParsedDraft] = useState<Partial<TutorialDraft> | null>(null);
   const [outline, setOutline] = useState<OutlineData | null>(null);
   const [currentStepIndex, setCurrentStepIndex] = useState(-1);
   const [totalSteps, setTotalSteps] = useState(0);
@@ -50,13 +70,11 @@ export function useGenerationProgress({
   const controllerRef = useRef<AbortController | null>(null);
   // Distinguishes user-initiated cancel from unmount cleanup
   const isCancelledRef = useRef(false);
+  // Tracks the job ID emitted by the SSE stream for job-based reconnection
+  const jobIdRef = useRef<string | null>(null);
 
   useEffect(() => {
-    setProtocol('unknown');
-    setV1Status('connecting');
     setV2Status('connecting');
-    setFullText('');
-    setParsedDraft(null);
     setOutline(null);
     setCurrentStepIndex(-1);
     setTotalSteps(0);
@@ -67,85 +85,65 @@ export function useGenerationProgress({
     setFailedStepIndex(null);
     setErrorLabel(null);
     isCancelledRef.current = false;
+    jobIdRef.current = null;
 
     const controller = new AbortController();
     controllerRef.current = controller;
-    let v1Accumulated = '';
-    let localProtocol: ProtocolVersion = 'unknown';
     let currentEvent = '';
+    // When runNonce > 0, this is a user-initiated retry — skip reconnect check
+    // and go straight to starting a new SSE stream.
+    const isRetry = runNonce > 0;
 
-    function handleV1Event(data: any) {
-      if (data.error) {
-        setErrorMessage(data.error);
-        setV1Status(`error: ${data.error}`);
-      } else if (data.done) {
-        setV1Status('stream-complete');
-      } else if (data.text) {
-        v1Accumulated += data.text;
-        setFullText(v1Accumulated);
-
-        try {
-          const start = v1Accumulated.indexOf('{');
-          if (start === -1) return;
-
-          const partial = v1Accumulated.slice(start);
-          let obj: any;
-
-          try {
-            obj = JSON.parse(partial);
-          } catch {
-            let fixed = partial;
-            let opens = 0;
-            for (const char of fixed) {
-              if (char === '{' || char === '[') opens += 1;
-              if (char === '}' || char === ']') opens -= 1;
-            }
-            for (let index = 0; index < opens; index += 1) fixed += '}';
-            try {
-              obj = JSON.parse(fixed);
-            } catch {
-              obj = null;
-            }
-          }
-
-          if (obj) setParsedDraft(obj);
-        } catch {
-          return;
-        }
-      }
-    }
-
-    function handleV2Event(event: string, data: any) {
+    function handleV2Event(event: string, data: SSEEventData) {
       switch (event) {
+        case 'job':
+          jobIdRef.current = data?.jobId ?? null;
+          break;
         case 'phase':
           if (data.phase === 'outline') {
             setV2Status('generating-outline');
           } else if (data.phase === 'step-fill') {
             setV2Status('filling-step');
-            setCurrentStepIndex(data.stepIndex);
-            setTotalSteps(data.totalSteps);
+            if (typeof data.stepIndex === 'number') {
+              setCurrentStepIndex(data.stepIndex);
+            }
+            if (typeof data.totalSteps === 'number') {
+              setTotalSteps(data.totalSteps);
+            }
           } else if (data.phase === 'validate') {
             setV2Status('validating');
-          } else if (data.phase === 'fallback') {
-            localProtocol = 'v1';
-            setProtocol('v1');
-            setV1Status('generating');
           }
           break;
         case 'outline':
-          setOutline({
-            meta: data.meta,
-            steps: data.steps,
-          });
-          setTotalSteps(data.steps?.length ?? 0);
-          setV2Status('outline-received');
+          if (data.meta && data.steps) {
+            setOutline({
+              meta: {
+                title: data.meta.title ?? '',
+                description: data.meta.description ?? '',
+              },
+              steps: data.steps.map((s, i) => ({
+                id: s.id ?? `step-${i}`,
+                title: s.title ?? '',
+                teachingGoal: s.teachingGoal ?? '',
+                conceptIntroduced: s.conceptIntroduced ?? '',
+                estimatedLocChange: s.estimatedLocChange ?? 0,
+              })),
+            });
+            setTotalSteps(data.steps.length ?? 0);
+            setV2Status('outline-received');
+          }
           break;
         case 'step':
-          setCompletedSteps((prev) =>
-            prev.includes(data.stepIndex) ? prev : [...prev, data.stepIndex]
-          );
-          if (data.step?.title) {
-            setStepTitles((prev) => ({ ...prev, [data.stepIndex]: data.step.title }));
+          if (typeof data.stepIndex === 'number') {
+            const stepIndex = data.stepIndex;
+            setCompletedSteps((prev) =>
+              prev.includes(stepIndex) ? prev : [...prev, stepIndex]
+            );
+          }
+          if (data.step?.title && typeof data.stepIndex === 'number') {
+            const stepIndex = data.stepIndex;
+            const title = data.step.title;
+            setStepTitles((prev) => ({ ...prev, [stepIndex]: title }));
           }
           break;
         case 'done':
@@ -155,18 +153,14 @@ export function useGenerationProgress({
           setErrorMessage(data.message || '生成失败');
           setErrorPhase(typeof data.phase === 'string' ? data.phase : null);
           setV2Status('error');
-          setV1Status(`error: ${data.message || '生成失败'}`);
           {
-            const classified = classifyGenerationError(
-              data.message || '生成失败',
-              { phase: data.phase, stepIndex: data.stepIndex }
-            );
-            if (classified.type === 'generation_step_failed' && typeof data.stepIndex === 'number') {
-              setFailedStepIndex(data.stepIndex);
-              setErrorLabel(`步骤 ${data.stepIndex + 1} 填充失败`);
-            } else if (classified.type === 'generation_outline_failed') {
+            // Classify directly from the structured SSE fields, not message text
+            if (data.phase === 'outline') {
               setFailedStepIndex(null);
               setErrorLabel('大纲生成失败');
+            } else if (typeof data.stepIndex === 'number' && data.stepIndex >= 0) {
+              setFailedStepIndex(data.stepIndex);
+              setErrorLabel(`步骤 ${data.stepIndex + 1} 填充失败`);
             } else {
               setFailedStepIndex(null);
               setErrorLabel(null);
@@ -179,6 +173,88 @@ export function useGenerationProgress({
     }
 
     async function run() {
+      // ── Reconnect check: only on initial load (not retry) ──
+      if (!isRetry) {
+      try {
+        const { job } = await fetchGenerationStatus(draftId);
+
+        if (!job) {
+          // No active or recent job — start a new generation
+          // Fall through to SSE stream below
+        } else if (job.status === 'succeeded') {
+          onCompleteRef.current();
+          return;
+        } else if (job.status === 'cancelled') {
+          setErrorMessage(job.errorMessage || '生成已取消');
+          setV2Status('error');
+          return;
+        } else if (
+          job.status === 'failed' ||
+          job.status === 'abandoned'
+        ) {
+          // Terminal failure — derive error state from job's errorCode
+          setErrorMessage(job.errorMessage || '生成失败');
+          setV2Status('error');
+          if (job.errorCode === 'OUTLINE_GENERATION_FAILED') {
+            setErrorPhase('outline');
+            setErrorLabel('大纲生成失败');
+          } else if (
+            job.errorCode === 'STEP_GENERATION_FAILED' ||
+            job.errorCode === 'PATCH_VALIDATION_FAILED'
+          ) {
+            setErrorPhase('step-fill');
+            if (job.currentStepIndex != null && job.currentStepIndex >= 0) {
+              setFailedStepIndex(job.currentStepIndex);
+              setErrorLabel(`步骤 ${job.currentStepIndex + 1} 填充失败`);
+            }
+          } else if (job.errorCode === 'JOB_STALE') {
+            setErrorLabel('生成任务超时');
+          } else if (
+            job.errorCode === 'DRAFT_VALIDATION_FAILED' ||
+            job.errorCode === 'PERSIST_FAILED'
+          ) {
+            setErrorLabel('保存失败，请重试');
+          } else if (job.errorCode === 'MODEL_CAPABILITY_MISMATCH') {
+            setErrorLabel('模型能力不匹配，请更换模型重试');
+          } else if (job.errorCode === 'SOURCE_IMPORT_RATE_LIMITED') {
+            setErrorLabel('源码导入被限流，请稍后重试');
+          }
+          return;
+        } else {
+          // Job is running or queued — restore progress from job and enter reconnect mode
+          jobIdRef.current = job.id;
+          if (job.outlineSnapshot) {
+            setOutline({
+              meta: job.outlineSnapshot.meta,
+              steps: job.outlineSnapshot.steps,
+            });
+            setTotalSteps(job.outlineSnapshot.steps?.length ?? 0);
+          }
+          if (job.stepTitlesSnapshot) {
+            const titles: StepTitles = {};
+            job.stepTitlesSnapshot.forEach((title, i) => {
+              titles[i] = title;
+            });
+            setStepTitles(titles);
+          }
+          if (job.currentStepIndex != null && job.currentStepIndex >= 0) {
+            setCurrentStepIndex(job.currentStepIndex);
+            // Mark completed steps up to (but not including) the current one
+            const completed: number[] = [];
+            for (let i = 0; i < job.currentStepIndex; i++) {
+              completed.push(i);
+            }
+            setCompletedSteps(completed);
+          }
+          setV2Status('reconnecting'); // triggers the polling effect
+          return;
+        }
+      } catch {
+        // Fetch failed — proceed to start SSE stream, let it handle errors
+      }
+      } // end of reconnect check (only runs on initial load)
+
+      // ── Start a new SSE generation stream ──
       try {
         const stream = await startDraftGenerationStream(draftId, controller.signal, modelId);
         const reader = stream.getReader();
@@ -211,22 +287,7 @@ export function useGenerationProgress({
 
             try {
               const data = JSON.parse(jsonStr);
-
-              if (localProtocol === 'unknown') {
-                if (currentEvent === 'phase' || currentEvent === 'outline') {
-                  localProtocol = 'v2';
-                  setProtocol('v2');
-                  handleV2Event(currentEvent, data);
-                } else if (data.text !== undefined) {
-                  localProtocol = 'v1';
-                  setProtocol('v1');
-                  handleV1Event(data);
-                }
-              } else if (localProtocol === 'v2') {
-                handleV2Event(currentEvent, data);
-              } else {
-                handleV1Event(data);
-              }
+              handleV2Event(currentEvent, data);
             } catch {
               continue;
             }
@@ -234,13 +295,11 @@ export function useGenerationProgress({
         }
       } catch (err: any) {
         if (err.name === 'AbortError') {
-          // If the user explicitly cancelled (not just unmount cleanup), show a message
           if (isCancelledRef.current) {
             setErrorMessage('生成已取消');
             setErrorPhase(null);
             setFailedStepIndex(null);
             setErrorLabel(null);
-            setV1Status('error: 生成已取消');
             setV2Status('error');
           }
           // Otherwise it was an unmount cleanup — silently ignore
@@ -248,16 +307,9 @@ export function useGenerationProgress({
           const message = err instanceof Error ? err.message : '生成请求失败';
           setErrorMessage(message);
           setErrorPhase(null);
-          setV1Status(`error: ${message}`);
           setV2Status('error');
-          const classified = classifyGenerationError(err);
-          if (classified.type === 'generation_step_failed' && classified.stepIndex != null) {
-            setFailedStepIndex(classified.stepIndex);
-            setErrorLabel(`步骤 ${classified.stepIndex + 1} 填充失败`);
-          } else {
-            setFailedStepIndex(null);
-            setErrorLabel(null);
-          }
+          setFailedStepIndex(null);
+          setErrorLabel(null);
         }
       }
     }
@@ -270,12 +322,7 @@ export function useGenerationProgress({
   }, [draftId, runNonce]);
 
   useEffect(() => {
-    const isComplete =
-      protocol === 'v2'
-        ? v2Status === 'stream-complete'
-        : v1Status === 'stream-complete';
-
-    if (!isComplete) return;
+    if (v2Status !== 'stream-complete' && v2Status !== 'reconnecting') return;
 
     const BASE_POLL_MS = 1000;
     const MAX_POLL_MS = 8000;
@@ -285,22 +332,61 @@ export function useGenerationProgress({
 
     async function poll() {
       try {
-        const draft = await fetchDraft(draftId);
-        if (draft.generationState === 'succeeded') {
+        const { job } = await fetchGenerationStatus(draftId, true);
+
+        if (!job) {
+          // Job disappeared — treat as failure
+          setErrorMessage('生成任务丢失，请重试');
+          setV2Status('error');
+          return;
+        }
+
+        if (job.status === 'succeeded') {
           onCompleteRef.current();
           return;
         }
-        if (draft.generationState === 'failed') {
-          const message = draft.generationErrorMessage || '保存失败';
-          setErrorMessage(message);
-          if (!draft.tutorialDraft && !draft.generationOutline) {
-            setErrorPhase('outline');
-          }
-          setV1Status(`failed: ${message}`);
-          if (protocol === 'v2') {
-            setV2Status('error');
-          }
+
+        if (job.status === 'cancelled') {
+          setErrorMessage(job.errorMessage || '生成已取消');
+          setV2Status('error');
           return;
+        }
+
+        if (
+          job.status === 'failed' ||
+          job.status === 'abandoned'
+        ) {
+          setErrorMessage(job.errorMessage || '生成失败');
+          if (job.errorCode === 'OUTLINE_GENERATION_FAILED') {
+            setErrorPhase('outline');
+            setErrorLabel('大纲生成失败');
+          } else if (
+            job.errorCode === 'STEP_GENERATION_FAILED' ||
+            job.errorCode === 'PATCH_VALIDATION_FAILED'
+          ) {
+            setErrorPhase('step-fill');
+            if (job.currentStepIndex != null && job.currentStepIndex >= 0) {
+              setFailedStepIndex(job.currentStepIndex);
+              setErrorLabel(`步骤 ${job.currentStepIndex + 1} 填充失败`);
+            }
+          } else if (job.errorCode === 'JOB_STALE') {
+            setErrorLabel('生成任务超时');
+          } else if (
+            job.errorCode === 'DRAFT_VALIDATION_FAILED' ||
+            job.errorCode === 'PERSIST_FAILED'
+          ) {
+            setErrorLabel('保存失败，请重试');
+          }
+          setV2Status('error');
+          return;
+        }
+
+        // Job still running — update progress from job state
+        if (job.currentStepIndex != null && job.currentStepIndex >= 0) {
+          setCurrentStepIndex(job.currentStepIndex);
+        }
+        if (job.totalSteps != null && job.totalSteps > 0) {
+          setTotalSteps(job.totalSteps);
         }
       } catch {
         // ignore fetch errors, retry
@@ -319,42 +405,115 @@ export function useGenerationProgress({
     poll();
 
     return () => clearTimeout(pollTimeout);
-  }, [draftId, protocol, v1Status, v2Status]);
+  }, [draftId, v2Status]);
 
-  const showV2 = protocol === 'v2' || (protocol === 'unknown' && v2Status !== 'connecting');
   const progressValue = getProgressValue(
-    showV2 ? 'v2' : protocol,
-    showV2 ? v2Status : v1Status,
+    v2Status,
     currentStepIndex,
     totalSteps,
     completedSteps
   );
-  const displayError = getErrorText(protocol, v2Status, v1Status, errorMessage);
+  const displayError = getErrorText(v2Status, errorMessage);
   const canRetry =
-    showV2 &&
     v2Status === 'error' &&
     (!outline || errorPhase === 'outline' || errorPhase === 'step-fill');
 
   const canRetryFromStep =
-    showV2 &&
     v2Status === 'error' &&
     errorPhase === 'step-fill' &&
     failedStepIndex !== null &&
     failedStepIndex >= 0;
 
-  function handleRetry() {
+  async function handleRetry() {
+    // Poll for the draft to be ready before retrying, avoiding race condition
+    const maxAttempts = 15;
+    const pollInterval = 500;
+    let attempts = 0;
+
+    while (attempts < maxAttempts) {
+      await new Promise((resolve) => setTimeout(resolve, pollInterval));
+      attempts++;
+
+      try {
+        const { job } = await fetchGenerationStatus(draftId);
+        if (!job || job.status === 'failed' || job.status === 'abandoned' || job.status === 'cancelled') {
+          // Job is in a terminal state, safe to retry
+          break;
+        }
+      } catch {
+        // On error, assume it's safe to retry after a few attempts
+        if (attempts >= 3) break;
+      }
+    }
+
     setRunNonce((current) => current + 1);
   }
 
-  function handleRetryFromStep(stepIndex: number) {
+  async function handleRetryFromStep(stepIndex: number) {
+    // Fetch current draft to check if steps were persisted
+    let draft: Awaited<ReturnType<typeof fetchDraft>> | null = null;
+    try {
+      draft = await fetchDraft(draftId);
+    } catch {
+      // Can't fetch draft, fall back to full retry
+      await handleRetry();
+      return;
+    }
+
+    const steps = draft.tutorialDraft?.steps;
+    if (!steps || stepIndex < 0 || stepIndex >= steps.length) {
+      // No persisted steps to regenerate from, fall back to full retry
+      await handleRetry();
+      return;
+    }
+
+    // Reuse the same regeneration logic as the workspace controller:
+    // iterate from failed step and call regenerateDraftStepRequest for each.
+    setV2Status('filling-step');
+    setCurrentStepIndex(stepIndex);
+    setErrorMessage(null);
+    setErrorPhase(null);
     setFailedStepIndex(null);
     setErrorLabel(null);
-    setRunNonce((current) => current + 1);
-    void stepIndex;
+
+    try {
+      let latestDraft = draft;
+
+      for (let i = stepIndex; i < steps.length; i++) {
+        setCurrentStepIndex(i);
+        const step = latestDraft.tutorialDraft!.steps[i];
+        const instruction =
+          i === stepIndex
+            ? '生成在当前步骤失败。请基于最新的前文代码，重新生成当前步骤及其代码变化，确保教程从这里继续衔接。'
+            : '前面的步骤已经重新生成。请基于最新前文代码继续生成当前步骤，确保 patches、focus 和 marks 都与当前代码精确匹配。';
+
+        latestDraft = await regenerateDraftStepRequest(draftId, step.id, {
+          mode: 'step',
+          instruction,
+        });
+
+        setCompletedSteps((prev) =>
+          prev.includes(i) ? prev : [...prev, i]
+        );
+        if (latestDraft.tutorialDraft?.steps[i]?.title) {
+          setStepTitles((prev) => ({ ...prev, [i]: latestDraft.tutorialDraft!.steps[i].title }));
+        }
+      }
+
+      // Regeneration complete — trigger polling for final state
+      setV2Status('stream-complete');
+    } catch (err) {
+      setErrorMessage(err instanceof Error ? err.message : '从失败步骤重试失败');
+      setV2Status('error');
+    }
   }
 
-  function handleCancel() {
+  async function handleCancel() {
     isCancelledRef.current = true;
+    // Signal the server to stop at the next step boundary.
+    // Fire-and-forget — even if the API call fails, the client-side
+    // abort below still disconnects the SSE stream.
+    cancelDraftGeneration(draftId).catch(() => {});
     controllerRef.current?.abort();
   }
 
@@ -364,15 +523,11 @@ export function useGenerationProgress({
     v2Status === 'outline-received' ||
     v2Status === 'filling-step' ||
     v2Status === 'validating' ||
-    v1Status === 'connecting' ||
-    v1Status === 'generating';
+    v2Status === 'reconnecting';
 
   return {
-    showV2,
-    v1Status,
+    draftId,
     v2Status,
-    fullText,
-    parsedDraft,
     outline,
     currentStepIndex,
     totalSteps,

@@ -19,6 +19,7 @@ export interface DraftRecord {
   generationLastAt: Date | null;
   generationOutline: TutorialOutline | null;
   generationQuality: GenerationQuality | null;
+  activeGenerationJobId: string | null;
   validationValid: boolean;
   validationErrors: string[];
   validationCheckedAt: Date | null;

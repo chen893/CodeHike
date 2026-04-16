@@ -5,6 +5,7 @@ import {
   buildFileTree,
   parseRepoUrl,
   getGitHubTokenForUser,
+  GitHubForbiddenError,
   GitHubRepoNotFoundError,
   GitHubRateLimitError,
 } from '@/lib/services/github-repo-service';
@@ -12,12 +13,6 @@ import {
 export async function GET(req: Request) {
   try {
     const session = await auth();
-    if (!session?.user?.id) {
-      return NextResponse.json(
-        { message: '请先登录', code: 'UNAUTHORIZED' },
-        { status: 401 }
-      );
-    }
 
     const { searchParams } = new URL(req.url);
     const url = searchParams.get('url');
@@ -37,14 +32,22 @@ export async function GET(req: Request) {
       );
     }
 
-    const token = await getGitHubTokenForUser(session.user.id);
-    const treeItems = await getRepoTree(parsed.owner, parsed.repo, token);
-    const fileTree = buildFileTree(treeItems);
+    console.log('[github-import] repo-tree request', {
+      hasSessionUser: Boolean(session?.user?.id),
+      userId: session?.user?.id ?? null,
+      repoUrl: url,
+    });
+
+    const token = session?.user?.id ? await getGitHubTokenForUser(session.user.id) : null;
+    const treeResult = await getRepoTree(parsed.owner, parsed.repo, token);
+    const fileTree = buildFileTree(treeResult.tree);
 
     return NextResponse.json({
       owner: parsed.owner,
       repo: parsed.repo,
       tree: fileTree,
+      truncated: treeResult.truncated,
+      lazyNodes: treeResult.lazyNodes,
     });
   } catch (err) {
     if (err instanceof GitHubRepoNotFoundError) {
@@ -57,6 +60,12 @@ export async function GET(req: Request) {
       return NextResponse.json(
         { message: err.message, code: 'RATE_LIMITED' },
         { status: 429 }
+      );
+    }
+    if (err instanceof GitHubForbiddenError) {
+      return NextResponse.json(
+        { message: err.message, code: 'FORBIDDEN' },
+        { status: 403 }
       );
     }
     console.error('获取仓库树失败:', err);

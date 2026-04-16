@@ -3,13 +3,16 @@
 import { useState, useCallback } from 'react';
 import {
   fetchRepoTree,
-  fetchFileContents,
+  fetchSubdirectory,
+  fetchFileContentsBatched,
   fileResultsToSourceItems,
   getSelectedFileStats,
+  mergeLazyPathSet,
+  mergeSubdirectoryIntoTree,
   type GitHubTreeNode,
 } from './github-client';
 import type { SourceItemDraft } from '../drafts/create-draft-form-utils';
-import { GITHUB_IMPORT_MAX_FILES, GITHUB_IMPORT_MAX_TOTAL_LINES } from '@/lib/constants';
+import { MAX_FILES_TOTAL, MAX_TOTAL_LINES } from '@/lib/constants/github-import';
 
 // ─── Types ──────────────────────────────────────────────────────────
 
@@ -21,10 +24,14 @@ export interface GitHubImportState {
   owner: string;
   repo: string;
   tree: GitHubTreeNode[];
+  truncated: boolean;
+  lazyPaths: Set<string>;
+  loadingDirectoryPaths: Set<string>;
   selectedPaths: Set<string>;
   importedItems: SourceItemDraft[];
   error: string | null;
   totalLines: number;
+  loadingProgress: { loaded: number; total: number } | null;
 }
 
 // ─── Controller ─────────────────────────────────────────────────────
@@ -36,10 +43,14 @@ export function useGitHubImportController() {
     owner: '',
     repo: '',
     tree: [],
+    truncated: false,
+    lazyPaths: new Set(),
+    loadingDirectoryPaths: new Set(),
     selectedPaths: new Set(),
     importedItems: [],
     error: null,
     totalLines: 0,
+    loadingProgress: null,
   });
 
   const setRepoUrl = useCallback((url: string) => {
@@ -51,6 +62,9 @@ export function useGitHubImportController() {
       ...(url !== prev.repoUrl ? {
         phase: 'idle' as ImportPhase,
         tree: [],
+        truncated: false,
+        lazyPaths: new Set(),
+        loadingDirectoryPaths: new Set(),
         selectedPaths: new Set(),
         owner: '',
         repo: '',
@@ -66,8 +80,8 @@ export function useGitHubImportController() {
       if (newSet.has(path)) {
         newSet.delete(path);
       } else {
-        if (newSet.size >= GITHUB_IMPORT_MAX_FILES) {
-          return { ...prev, error: `最多选择 ${GITHUB_IMPORT_MAX_FILES} 个文件` };
+        if (newSet.size >= MAX_FILES_TOTAL) {
+          return { ...prev, error: `最多选择 ${MAX_FILES_TOTAL} 个文件` };
         }
         newSet.add(path);
       }
@@ -82,9 +96,58 @@ export function useGitHubImportController() {
     });
   }, []);
 
-  const toggleDirectory = useCallback((path: string, nodes: GitHubTreeNode[]) => {
+  const ensureDirectoryLoaded = useCallback(async (path: string, sha?: string) => {
+    if (!sha || !state.lazyPaths.has(path)) {
+      return state.tree;
+    }
+
+    if (state.loadingDirectoryPaths.has(path)) {
+      return state.tree;
+    }
+
+    setState((prev) => ({
+      ...prev,
+      error: null,
+      loadingDirectoryPaths: new Set(prev.loadingDirectoryPaths).add(path),
+    }));
+
+    try {
+      const result = await fetchSubdirectory(state.repoUrl, sha, path);
+      let nextTree = state.tree;
+
+      setState((prev) => {
+        nextTree = mergeSubdirectoryIntoTree(prev.tree, path, result.tree);
+        const nextLazyPaths = mergeLazyPathSet(prev.lazyPaths, path, result.lazyNodes);
+        const nextLoadingPaths = new Set(prev.loadingDirectoryPaths);
+        nextLoadingPaths.delete(path);
+        return {
+          ...prev,
+          tree: nextTree,
+          lazyPaths: nextLazyPaths,
+          loadingDirectoryPaths: nextLoadingPaths,
+        };
+      });
+
+      return nextTree;
+    } catch (err) {
+      setState((prev) => {
+        const nextLoadingPaths = new Set(prev.loadingDirectoryPaths);
+        nextLoadingPaths.delete(path);
+        return {
+          ...prev,
+          error: err instanceof Error ? err.message : '加载子目录失败',
+          loadingDirectoryPaths: nextLoadingPaths,
+        };
+      });
+      return state.tree;
+    }
+  }, [state.lazyPaths, state.loadingDirectoryPaths, state.repoUrl, state.tree]);
+
+  const toggleDirectory = useCallback(async (path: string, sha?: string) => {
+    const tree = await ensureDirectoryLoaded(path, sha);
+
     setState((prev) => {
-      const dirNode = findNodeByPath(nodes, path);
+      const dirNode = findNodeByPath(tree, path);
       if (!dirNode || dirNode.type !== 'directory') return prev;
 
       const dirFiles = collectFilePaths(dirNode);
@@ -97,20 +160,25 @@ export function useGitHubImportController() {
       } else {
         // Select all files in directory (respecting max limit)
         for (const fp of dirFiles) {
-          if (newSet.size >= GITHUB_IMPORT_MAX_FILES) break;
+          if (newSet.size >= MAX_FILES_TOTAL) break;
           newSet.add(fp);
         }
       }
 
-      const stats = getSelectedFileStats(prev.tree, newSet);
+      const stats = getSelectedFileStats(tree, newSet);
       return {
         ...prev,
+        tree,
         selectedPaths: newSet,
         error: null,
         totalLines: stats.estimatedLines,
       };
     });
-  }, []);
+  }, [ensureDirectoryLoaded]);
+
+  const expandDirectory = useCallback(async (path: string, sha?: string) => {
+    await ensureDirectoryLoaded(path, sha);
+  }, [ensureDirectoryLoaded]);
 
   const loadTree = useCallback(async () => {
     if (!state.repoUrl.trim()) return;
@@ -123,6 +191,9 @@ export function useGitHubImportController() {
         ...prev,
         phase: 'selecting',
         tree: result.tree,
+        truncated: result.truncated,
+        lazyPaths: new Set(result.lazyNodes.map((node) => node.path)),
+        loadingDirectoryPaths: new Set(),
         owner: result.owner,
         repo: result.repo,
         error: null,
@@ -132,6 +203,7 @@ export function useGitHubImportController() {
         ...prev,
         phase: 'error',
         error: err instanceof Error ? err.message : '加载仓库失败',
+        loadingDirectoryPaths: new Set(),
       }));
     }
   }, [state.repoUrl]);
@@ -140,27 +212,46 @@ export function useGitHubImportController() {
     if (state.selectedPaths.size === 0) return;
 
     // Check line limit estimate before fetching
-    if (state.totalLines > GITHUB_IMPORT_MAX_TOTAL_LINES) {
+    if (state.totalLines > MAX_TOTAL_LINES) {
       setState((prev) => ({
         ...prev,
-        error: `选中的文件估计总行数 (${state.totalLines}) 超过上限 (${GITHUB_IMPORT_MAX_TOTAL_LINES})`,
+        error: `选中的文件估计总行数 (${state.totalLines}) 超过上限 (${MAX_TOTAL_LINES})`,
       }));
       return;
     }
 
-    setState((prev) => ({ ...prev, phase: 'loading-content', error: null }));
+    setState((prev) => ({
+      ...prev,
+      phase: 'loading-content',
+      error: null,
+      loadingProgress: { loaded: 0, total: prev.selectedPaths.size },
+    }));
 
     try {
       const paths = Array.from(state.selectedPaths);
-      const result = await fetchFileContents(state.repoUrl, paths);
+      const result = await fetchFileContentsBatched(
+        state.repoUrl,
+        paths,
+        state.tree,
+        (loaded, total) => {
+          setState((prev) => ({ ...prev, loadingProgress: { loaded, total } }));
+        },
+      );
+
       const items = fileResultsToSourceItems(result.files);
+
+      const failureWarning =
+        result.failures.length > 0
+          ? `${result.failures.length} 个文件获取失败: ${result.failures.map((f) => f.path).join(', ')}`
+          : null;
 
       setState((prev) => ({
         ...prev,
         phase: 'done',
         importedItems: items,
         totalLines: result.totalLines,
-        error: null,
+        loadingProgress: null,
+        error: failureWarning,
       }));
 
       return items;
@@ -169,10 +260,11 @@ export function useGitHubImportController() {
         ...prev,
         phase: 'error',
         error: err instanceof Error ? err.message : '导入文件失败',
+        loadingProgress: null,
       }));
       return undefined;
     }
-  }, [state.selectedPaths, state.repoUrl, state.totalLines]);
+  }, [state.selectedPaths, state.repoUrl, state.totalLines, state.tree]);
 
   const reset = useCallback(() => {
     setState({
@@ -181,10 +273,14 @@ export function useGitHubImportController() {
       owner: '',
       repo: '',
       tree: [],
+      truncated: false,
+      lazyPaths: new Set(),
+      loadingDirectoryPaths: new Set(),
       selectedPaths: new Set(),
       importedItems: [],
       error: null,
       totalLines: 0,
+      loadingProgress: null,
     });
   }, []);
 
@@ -194,6 +290,7 @@ export function useGitHubImportController() {
     loadTree,
     togglePath,
     toggleDirectory,
+    expandDirectory,
     importFiles,
     reset,
   };

@@ -80,13 +80,13 @@
 
 ## 当前可用的 AI 供应商配置
 
-| 供应商 | Provider 包 | 端点 | response_format | SSE 流式 |
+| 供应商 | Provider 包 | 端点 | 结构化输出 | SSE 流式 |
 |---|---|---|---|---|
-| DeepSeek | `@ai-sdk/openai-compatible` | `/chat/completions` | 支持 | 支持 |
-| MiniMax | `@ai-sdk/openai-compatible` | `/chat/completions` | 不支持 | 不确定 |
-| OpenAI | `@ai-sdk/openai` | `/responses` 或 `/chat/completions` | 支持 | 支持 |
+| DeepSeek | `@ai-sdk/deepseek` | `/chat/completions` | `json_object` 模式（需 prompt 含 "json"），不支持 `json_schema` | 支持 |
+| OpenAI | `@ai-sdk/openai` | `/chat/completions` | 原生 `json_schema`（`Output.object()`） | 支持 |
+| 智谱 GLM | `@ai-sdk/openai-compatible`（兜底） | `/chat/completions` | 不确定，按 manual 处理 | 支持 |
 
-**推荐**：使用 DeepSeek + `@ai-sdk/openai-compatible`，兼容性最好。
+**推荐**：OpenAI 走原生结构化输出，DeepSeek 走手动解析，未知 provider 走 `openai-compatible` 兜底。
 
 ---
 
@@ -218,6 +218,42 @@
 - 然后重启 dev server，使 Tailwind 重新建立扫描结果。
 
 **验证**：
+
+---
+
+## 问题 14：GitHub 公开仓库导入把“登录态、限流、部分成功、大仓库树截断”混成同一个失败面
+
+**现象**：
+- 未登录用户导入公开 GitHub 仓库时直接返回 401，无法完成基础试用。
+- 用户已登录但 token 失效、权限不足或 GitHub secondary rate limit 触发时，前端统一看到“速率限制”，定位困难。
+- `POST /api/github/file-content` 某些文件失败时返回 207，但响应体没有携带成功文件，client 的 partial-success 聚合逻辑无法真正保留成功结果。
+- 大仓库 `git/trees?recursive=1` 返回 `truncated=true` 后，服务端虽然暴露了 `lazyNodes` 和子目录 API，前端文件树却没有继续加载完整子树，用户看到的是不完整目录。
+
+**根因**：
+1. route handler 先强制 `auth()`，把“获取 OAuth token”错误地实现成了“没有登录就禁止访问公开仓库”。
+2. GitHub 错误分类过粗，代码把所有 `403` 都归并成 `GitHubRateLimitError`，没有区分真实 rate limit、forbidden、token 问题和 secondary limit。
+3. file-content route 的 207 协议只回传 `failures`，没有把成功文件、总代码行数和 rate-limit 信息一起返回。
+4. client 侧的文件树只消费了初始 `repo-tree` 响应，没有把 `repo-tree/subdirectory` 真正接到目录展开交互里。
+
+**解决**：
+1. GitHub 导入改为“公开仓库免登录”，如果当前 session 有 GitHub OAuth token，则仅作为增强配额的可选能力。
+2. 新增更细的 GitHub 错误分类和重试/降级逻辑：
+   - `403 + rate-limit headers/message` → `GitHubRateLimitError`
+   - 非限流 `403` → `GitHubForbiddenError`
+   - token 导致的 `401/403/404` 自动回退到匿名 public-repo 请求
+3. `serializeGitHubFileBatchResult()` 统一组装 file-content 响应，207 partial success 必须带回成功文件、`totalLines` 和 `rateLimit`。
+4. `use-github-import-controller` + `file-tree-browser` 接通 lazy subtree loading：目录展开时按 `sha` 请求完整子树并 merge 回现有 tree。
+
+**影响文件**：
+- `lib/services/github-repo-service.ts`
+- `app/api/github/repo-tree/route.ts`
+- `app/api/github/repo-tree/subdirectory/route.ts`
+- `app/api/github/file-content/route.ts`
+- `components/create-draft/github-client.ts`
+- `components/create-draft/use-github-import-controller.ts`
+- `components/create-draft/file-tree-browser.tsx`
+- `components/create-draft/github-import-tab.tsx`
+- `tests/github-import.test.js`
 
 ---
 
@@ -525,3 +561,209 @@
 - React 组件超过 300 行就应考虑拆分，按 UI 区块（而非功能层）拆分最自然
 - `useMemo` 的真正收益不在于"少算一次"，而在于**让子组件的 `React.memo` 生效**——如果 memo 返回的引用每次都变，子组件的 `React.memo` 等于白加
 - 拆分子组件时优先选择 props 少的边界（`PatchItem` 6 个 props vs `CodePreviewPanel` 22 个 props）；props 过多说明边界选得不好或状态管理需要上提
+
+---
+
+## 问题 27：GitHub 重新登录后 `accounts.access_token` 仍是旧值，导入继续掉回匿名限流
+
+**现象**：用户已经重新走过 GitHub OAuth，但 GitHub 导入仍然在 `/api/github/repo-tree` / `/api/github/file-content` 中表现为匿名请求，随后命中 `API rate limit exceeded for <IP>`。本地排查发现数据库 `accounts.access_token` 存在，但直接调用 GitHub `/rate_limit` 返回 `401 Bad credentials`。
+
+**根因**：
+- 当前项目使用 `next-auth@5.0.0-beta.30` + `@auth/drizzle-adapter@1.11.1`
+- Auth.js 在 OAuth callback 中，如果 `(provider, providerAccountId)` 对应的 account 已经存在，会直接把该用户登录成功，不会再次调用 adapter 的 `linkAccount()`
+- `@auth/drizzle-adapter` 的 `linkAccount()` 只有 insert，没有 update 逻辑，因此“再次登录同一个 GitHub 账号”不会刷新 `accounts.access_token`
+- 结果是服务端虽然拿到了 session user，也能从 `accounts` 表查到 token，但查到的是旧 token；请求 GitHub 401 后代码 fallback 到匿名请求，最终触发 IP 级 60/h 限流
+
+**解决方案**：
+1. 在 `auth.ts` 的 `callbacks.jwt` 中捕获 `trigger === 'signIn'` 且 `account.type === 'oauth'` 的场景
+2. 用 `(provider, providerAccountId)` 精确定位 `accounts` 记录
+3. 显式把本次 OAuth 返回的 `access_token`、`refresh_token`、`expires_at`、`token_type`、`scope`、`id_token`、`session_state` 写回数据库
+4. 保留结构化 debug log，区分“GitHub 返回了新 token”和“数据库记录已更新”
+
+**影响文件**：
+- `auth.ts`
+- `docs/vibedocs-technical-handbook.md`
+
+**经验**：
+- 在 Auth.js/NextAuth 里，OAuth “登录成功”不等于 provider token 已同步刷新；只要业务依赖 `accounts.access_token` 做后续 API 调用，就不能把 token 持久化完全托付给 adapter 默认行为
+- 对外部 provider token 有业务依赖时，必须把“重新授权后的 token 回写”视为显式业务逻辑，而不是隐式框架副作用
+
+---
+
+## 问题 28：生成任务状态依赖进程内内存，跨实例取消与重连不可靠
+
+**现象**：
+- `POST /api/drafts/[id]/cancel` 只有在请求命中启动生成的同一进程时才稳定生效。
+- 页面刷新后虽然客户端会尝试根据 `draft.generationState === "running"` 进入 reconnect 流程，但如果原进程已经重启，草稿可能永久停留在 `running`。
+- 多实例部署下，一个实例开启生成、另一个实例处理 cancel 或后续读取时，内存中的 `activeGenerations` 无法共享。
+
+**根因**：
+- `lib/services/generate-tutorial-draft.ts` 用模块级 `Map<string, CancelToken>` 存储活跃任务。
+- 任务生命周期、取消信号、是否仍在运行都依赖进程内状态，而不是数据库中的持久化 job 记录。
+- `drafts.generationState` 只能表达“上次写库时的状态”，不是当前真实运行状态。
+
+**解决方案**：
+1. 新增持久化 generation job 表，记录 `status / phase / stepIndex / heartbeatAt / leaseUntil / errorCode / modelId`。
+2. `generate`、`cancel`、`reconnect`、`polling` 都基于 job 状态，而不再依赖内存 `Map`。
+3. 增加 `stale-running` 回收逻辑：超过 lease 且无 heartbeat 的 job 自动标记为 `failed` 或 `abandoned`，同步修正 draft 状态。
+4. `drafts.activeGenerationJobId` 只通过受控 repository 写入，要求目标 job 属于同一 draft 且仍为 `queued/running`；非空写入会在事务内锁定目标 job 行，避免和终态迁移竞态。
+5. job 进入 `succeeded/failed/cancelled/abandoned` 终态时，同事务清空仍指向该 job 的 `activeGenerationJobId`。
+6. 保留进程内 token 仅用于“当前请求内的协作优化”，不再作为唯一真相源。
+
+**影响文件**：
+- `lib/services/generate-tutorial-draft.ts`
+- `lib/ai/multi-phase-generator.ts`
+- `components/tutorial/use-generation-progress.ts`
+- `app/api/drafts/[id]/generate/route.ts`
+- `app/api/drafts/[id]/cancel/route.ts`
+
+---
+
+## 问题 29：生成失败恢复入口分散，前端依赖文本猜测失败语义
+
+**现象**：
+- 生成页有“全量重试”和“从失败步骤开始重试”，工作区里又有“单步 regenerate”和“修复失效尾部”。
+- 不同页面对错误类型的判断方式不同，有的依赖 `errorPhase`，有的依赖 `message.includes(...)`，有的重新 fetch draft 后自行推断。
+- 某些 persist/validation 失败场景下，用户能看到错误提示，但拿不到明确恢复动作。
+
+**根因**：
+- 当前失败协议缺少统一的 `errorCode / recoverability` 枚举。
+- `components/tutorial/use-generation-progress.ts`、`components/drafts/use-draft-workspace-controller.ts`、`lib/errors/classify-error.ts` 各自维护一套恢复分支。
+- 恢复动作编排分散在多个 controller，而不是由服务层统一输出建议。
+
+**解决方案**：
+1. 为生成、预览、发布等关键失败定义结构化错误码和恢复策略枚举。
+2. 新增 `draft-recovery` 服务，根据 `draft + job + validation + snapshots` 输出统一恢复动作。
+3. 前端只渲染有限几类动作：重连、全量重试、从失败步骤修复、回滚快照、放弃当前任务。
+4. 去掉基于 message 文本的隐式分支，统一改为 code 驱动。
+
+**影响文件**：
+- `components/tutorial/use-generation-progress.ts`
+- `components/drafts/use-draft-workspace-controller.ts`
+- `lib/errors/classify-error.ts`
+- `lib/services/*` 新增恢复编排层
+
+---
+
+## 问题 30：创建草稿缺少幂等保护，网络抖动或连点会制造重复草稿
+
+**现象**：
+- 在 `/new` 页面提交后，如果请求超时、浏览器卡顿或用户重复点击提交按钮，可能连续创建多个内容相同的 draft。
+- 当前 UI 没有提交锁，API 也没有 `Idempotency-Key` 语义。
+
+**根因**：
+- `components/drafts/use-create-draft-form-controller.ts` 提交时虽然会设置 `generating`，但没有在请求发出前做严格的一次性提交保护。
+- `POST /api/drafts` 只做普通创建，没有 request-level 去重协议。
+
+**解决方案**：
+1. client 端用 `submittingRef` 在事件处理同步阶段锁定提交，避免 React state 尚未刷新时的快速双击。
+2. 每次提交尝试生成一个稳定 `Idempotency-Key`，同一次提交链路内的重试复用同一个 key，而不是每次 `fetch` 都重新生成。
+3. `POST /api/drafts` 支持 `Idempotency-Key`，同 key 的已完成请求返回同一个 draft；同 key 的并发请求共享同一个 in-flight promise，避免同时 miss 后重复创建。
+4. 将 `inputHash + userId + recent window` 作为服务端兜底去重辅助条件，减少重复草稿污染。
+
+**影响文件**：
+- `components/drafts/use-create-draft-form-controller.ts`
+- `components/create-draft-form.tsx`
+- `components/drafts/draft-client.ts`
+- `app/api/drafts/route.ts`
+- `lib/services/create-draft.ts`
+
+---
+
+## 问题 31：发布 slug 检查先读后写，冲突错误映射不稳定
+
+**现象**：
+- 两个请求同时发布同一个 slug 时，理论上都可能通过 `isSlugTaken(slug)` 检查。
+- 最终由数据库唯一约束兜底，但 route handler 未必能稳定把这类冲突返回为 `409`，可能落成通用 `500`。
+
+**根因**：
+- `lib/services/publish-draft.ts` 采用“先查是否存在，再 insert”的乐观流程，不是原子操作。
+- `app/api/drafts/[id]/publish/route.ts` 的错误映射主要基于 message 文本，无法稳定识别底层 unique violation。
+
+**解决方案**：
+1. 移除发布前的显式 `isSlugTaken()` 作为最终判断依据，直接依赖数据库唯一约束。
+2. repository / service 层捕获 unique violation，映射为结构化 `PUBLISH_SLUG_CONFLICT`。
+3. route handler 稳定返回 `409`，前端据此提示用户更换 slug。
+
+**影响文件**：
+- `lib/services/publish-draft.ts`
+- `app/api/drafts/[id]/publish/route.ts`
+- `lib/repositories/published-tutorial-repository.ts`
+
+---
+
+## 问题 32：手工修正 migration 后，Drizzle snapshot 容易与真实约束漂移
+
+**现象**：
+- `drizzle/0003_cynical_daredevil.sql` 已经补上“同 draft 复合外键”和“单 active job 部分唯一索引”，但 `drizzle/meta/0003_snapshot.json` 仍保留旧的单列外键定义。
+- 如果后续继续基于这个 snapshot 生成 migration，Drizzle diff 可能错误地尝试回滚或重建约束。
+
+**根因**：
+- 当前 `0003` migration 是先手工修正 SQL，再补 schema 约束。
+- Drizzle 的 snapshot 不会自动跟随手工 SQL 修改；如果不显式同步，`schema.ts`、migration SQL、snapshot 三者会失去一致性。
+
+**解决方案**：
+1. 以当前 `schema.ts` 为准，在临时目录用 `drizzle-kit generate` 生成探针快照，对齐 `draft_generation_jobs` 和 `drafts` 两段元数据。
+2. 将 `0003_snapshot.json` 补齐：
+   - `draft_generation_jobs_draft_id_id_unique`
+   - `draft_generation_jobs_single_active_per_draft`
+   - `draft_generation_jobs_draft_id_created_at_idx`
+   - `draft_generation_jobs_active_lease_until_idx`
+   - `drafts_active_generation_job_same_draft_fk`
+3. 将 migration 中的 `(draft_id, id)` 唯一性改为 `CREATE UNIQUE INDEX`，和 schema/snapshot 的 unique index 建模保持一致。
+4. 将 job 表 `created_at/updated_at` 默认值改为 `clock_timestamp()`，避免同事务连续插入时 `now()` 产生相同时间戳导致 latest 查询不稳定。
+5. 增加自动化测试，直接校验 snapshot 中存在上述索引和复合外键，防止后续回归。
+6. 增加可选 DB 集成测试，使用临时数据库实际验证复合外键、部分唯一索引、repository active pointer guard、终态清 pointer 和 latest 排序。
+
+**影响文件**：
+- `drizzle/meta/0003_snapshot.json`
+- `tests/generation-job-schema.test.js`
+- `tests/generation-job-db.test.js`
+
+---
+
+## 问题 33：所有 provider 统一走 openai-compatible，浪费结构化输出能力
+
+**现象**：
+- `provider-registry.ts` 对 DeepSeek、OpenAI、智谱三个 provider 全部使用 `@ai-sdk/openai-compatible`（`createOpenAICompatible`）。
+- 所有 `generateText` 调用走纯文本模式，JSON 解析完全依赖手写的 `parseJsonFromText()`，没有使用 AI SDK 的 `Output.object()` 原生结构化输出。
+- `parseJsonFromText()` 在 `multi-phase-generator.ts` 和 `tutorial-generator.ts` 中各复制了一份，`tag-generator.ts` 又有独立的正则解析逻辑。
+- `model-capabilities.ts` 定义了 `supportsStructuredOutput` 字段但从未在生成流程中使用。
+
+**根因**：
+- 项目早期 DeepSeek 不支持 `json_schema` 结构化输出（仅支持 `json_object` 模式），当时用 `openai-compatible` 绕过了问题 2（`@ai-sdk/openai` v3 默认走 `/responses` 端点导致 DeepSeek 404）。
+- 后续 OpenAI 和智谱 provider 添加时沿用了同一模式，没有按 provider 能力区分。
+- DeepSeek 的 `json_object` 模式有已知限制：prompt 必须含 "json" 关键词、偶尔返回空内容、经常把 JSON 包裹在 markdown code fence 中（[vercel/ai#7913](https://github.com/vercel/ai/issues/7913)、[vercel/ai#4710](https://github.com/vercel/ai/issues/4710)）。
+
+**解决方案**：
+
+### 1. Provider 分流
+
+| Provider | 包 | 结构化输出策略 |
+|---|---|---|
+| DeepSeek | `@ai-sdk/deepseek` | `manual`（`parseJsonFromText`，覆盖 code fence / 空响应等边界） |
+| OpenAI | `@ai-sdk/openai` | `native_json_schema`（`Output.object()`，SDK 自动验证） |
+| 智谱 / 其他 | `@ai-sdk/openai-compatible` | `manual`（兜底） |
+
+### 2. 结构化输出策略枚举
+
+`model-capabilities.ts` 新增 `StructuredOutputStrategy = 'native_json_schema' | 'json_object' | 'manual'`，每个模型标记策略，新增 `supportsNativeStructuredOutput()` 函数。
+
+### 3. 生成流程分路径
+
+- **Legacy outline / step-fill（不带 tools）**：如果模型策略为 `native_json_schema`，使用 `Output.object({ schema })`；否则 fallback 到 `parseJsonFromText`。
+- **Retrieval outline / step-fill（带 tools）**：保持 `parseJsonFromText`（tools + Output 组合需要额外 step，暂不启用）。
+- **Tag generator**：同上，支持则走 `Output.object()`，否则走 `parseJsonFromText`。
+
+### 4. 共享解析模块
+
+提取 `parseJsonFromText()` 到 `lib/ai/parse-json-text.ts`，消除三处重复实现。
+
+**影响文件**：
+- `lib/ai/provider-registry.ts` — DeepSeek 用 `@ai-sdk/deepseek`，OpenAI 用 `@ai-sdk/openai`
+- `lib/ai/parse-json-text.ts` — 新增共享模块
+- `lib/ai/model-capabilities.ts` — 新增 `structuredOutputStrategy` 和 `supportsNativeStructuredOutput()`
+- `lib/ai/multi-phase-generator.ts` — legacy 路径接入 `Output.object()`，retrieval 路径保持手动解析
+- `lib/ai/tutorial-generator.ts` — 引用共享 `parseJsonFromText`
+- `lib/ai/tag-generator.ts` — 接入 `Output.object()` + 共享解析
+- `package.json` — 新增 `@ai-sdk/deepseek` 依赖

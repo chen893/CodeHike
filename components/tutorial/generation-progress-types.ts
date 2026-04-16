@@ -1,5 +1,3 @@
-import type { TutorialDraft } from '@/lib/schemas/tutorial-draft';
-
 export interface OutlineStep {
   id: string;
   title: string;
@@ -13,7 +11,7 @@ export interface OutlineData {
   steps: OutlineStep[];
 }
 
-export type ProtocolVersion = 'unknown' | 'v1' | 'v2';
+export type ProtocolVersion = 'unknown' | 'v2';
 
 export type V2Status =
   | 'connecting'
@@ -22,9 +20,8 @@ export type V2Status =
   | 'filling-step'
   | 'validating'
   | 'stream-complete'
+  | 'reconnecting'
   | 'error';
-
-export type LegacyStatus = 'connecting' | 'generating' | 'stream-complete' | string;
 
 export interface GenerationContext {
   topic: string;
@@ -40,11 +37,8 @@ export interface GenerationContext {
 export type StepTitles = Record<number, string>;
 
 export interface GenerationProgressViewModel {
-  showV2: boolean;
-  v1Status: LegacyStatus;
+  draftId: string;
   v2Status: V2Status;
-  fullText: string;
-  parsedDraft: Partial<TutorialDraft> | null;
   outline: OutlineData | null;
   currentStepIndex: number;
   totalSteps: number;

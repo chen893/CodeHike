@@ -18,6 +18,7 @@ import {
   unpublishDraftRequest,
   updateDraftRequest,
   updateDraftStepRequest,
+  DraftClientError,
 } from './draft-client';
 import { buildGenerationContext, resolveSelectedStepIndex } from './draft-workspace-utils';
 import { deriveChapterSections, ensureDraftChapters, DEFAULT_CHAPTER_ID } from '@/lib/tutorial/chapters';
@@ -41,6 +42,7 @@ export function useDraftWorkspaceController({
   const [selectedStepIndex, setSelectedStepIndex] = useState<number>(0);
   const [saving, setSaving] = useState(false);
   const [editingMeta, setEditingMeta] = useState(false);
+  const [publishDialogOpen, setPublishDialogOpen] = useState(false);
   const [showGenerationProgress, setShowGenerationProgress] = useState(
     !initialDraft.tutorialDraft && initialDraft.generationState === 'running'
   );
@@ -273,10 +275,12 @@ export function useDraftWorkspaceController({
     }
   }
 
-  async function publishDraft() {
-    const slug = window.prompt('输入发布 slug（留空自动生成）:');
-    if (slug === null) return;
+  async function openPublishDialog() {
+    setPublishDialogOpen(true);
+  }
 
+  async function confirmPublish(slug: string) {
+    setPublishDialogOpen(false);
     setSaving(true);
     try {
       const published = await publishDraftRequest(draft.id, slug || undefined);
@@ -287,6 +291,10 @@ export function useDraftWorkspaceController({
     } finally {
       setSaving(false);
     }
+  }
+
+  function cancelPublishDialog() {
+    setPublishDialogOpen(false);
   }
 
   async function unpublishDraftAction() {
@@ -354,7 +362,10 @@ export function useDraftWorkspaceController({
         applyDraftUpdate(latestDraft, currentStep.id, currentIndex);
       }
     } catch (error) {
-      const classified = classifyError(error);
+      // Pass structured errorCode when available so classifyError uses
+      // code-driven classification instead of fragile message matching.
+      const errorCode = error instanceof DraftClientError ? (error.code as any) : undefined;
+      const classified = classifyError(error, { errorCode });
       console.error('从失败步骤重试失败:', classified.message);
       alert(classified.message || '从失败步骤重试失败，请重试');
     } finally {
@@ -572,7 +583,10 @@ export function useDraftWorkspaceController({
     moveStep,
     deleteStep,
     deleteDraft,
-    publishDraft,
+    publishDraft: openPublishDialog,
+    publishDialogOpen,
+    confirmPublish,
+    cancelPublishDialog,
     unpublishDraft: unpublishDraftAction,
     retryGeneration,
     retryFromFailedStep,

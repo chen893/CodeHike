@@ -1,4 +1,10 @@
 import { createOpenAICompatible } from '@ai-sdk/openai-compatible'
+import { createOpenAI } from '@ai-sdk/openai'
+import { createDeepSeek } from '@ai-sdk/deepseek'
+
+// ---------------------------------------------------------------------------
+// Provider configs — keyed by provider name
+// ---------------------------------------------------------------------------
 
 interface ProviderConfig {
   name: string
@@ -6,10 +12,8 @@ interface ProviderConfig {
   apiKeyEnvVar: string
   defaultModel: string
   maxOutputTokens: number
-  supportsJsonResponse: boolean
 }
 
-// Provider configurations — keyed by provider name
 const PROVIDERS: Record<string, ProviderConfig> = {
   deepseek: {
     name: 'deepseek',
@@ -17,7 +21,6 @@ const PROVIDERS: Record<string, ProviderConfig> = {
     apiKeyEnvVar: 'DEEPSEEK_API_KEY',
     defaultModel: 'deepseek-chat',
     maxOutputTokens: 8192,
-    supportsJsonResponse: true,
   },
   openai: {
     name: 'openai',
@@ -25,7 +28,6 @@ const PROVIDERS: Record<string, ProviderConfig> = {
     apiKeyEnvVar: 'OPENAI_API_KEY',
     defaultModel: 'gpt-4o',
     maxOutputTokens: 16384,
-    supportsJsonResponse: true,
   },
   zhipu: {
     name: 'zhipu',
@@ -33,35 +35,86 @@ const PROVIDERS: Record<string, ProviderConfig> = {
     apiKeyEnvVar: 'ZHIPU_API_KEY',
     defaultModel: 'glm-5.1',
     maxOutputTokens: 16384,
-    supportsJsonResponse: true,
   },
 }
 
-// Cache provider instances by name
-const providerCache: Record<string, ReturnType<typeof createOpenAICompatible>> = {}
+// ---------------------------------------------------------------------------
+// Provider instances — cached per provider name
+// ---------------------------------------------------------------------------
 
-function getProvider(providerName: string) {
-  if (!providerCache[providerName]) {
-    const config = PROVIDERS[providerName]
-    if (!config) {
-      throw new Error(`Unknown provider: ${providerName}. Available: ${Object.keys(PROVIDERS).join(', ')}`)
-    }
-    const apiKey = process.env[config.apiKeyEnvVar]
-    if (!apiKey) {
-      throw new Error(`Missing API key: ${config.apiKeyEnvVar}`)
-    }
-    providerCache[providerName] = createOpenAICompatible({
-      name: config.name,
-      baseURL: config.baseURL,
-      apiKey,
-    })
+type LanguageModel = ReturnType<ReturnType<typeof createDeepSeek>>
+
+const providerCache: Record<string, (model: string) => LanguageModel> = {}
+
+function getProviderFactory(providerName: string): (model: string) => LanguageModel {
+  if (providerCache[providerName]) return providerCache[providerName]
+
+  const config = PROVIDERS[providerName]
+  if (!config) {
+    throw new Error(
+      `Unknown provider: ${providerName}. Available: ${Object.keys(PROVIDERS).join(', ')}`,
+    )
   }
+
+  const apiKey = process.env[config.apiKeyEnvVar]
+  if (!apiKey) {
+    throw new Error(`Missing API key: ${config.apiKeyEnvVar}`)
+  }
+
+  switch (providerName) {
+    case 'deepseek': {
+      const provider = createDeepSeek({
+        apiKey,
+        baseURL: config.baseURL,
+        // DeepSeek retrieval calls (tools + large prompts) can take 2-3 minutes.
+        // Default Node.js fetch has no timeout, but some environments (e.g.
+        // Vercel serverless) impose a 60s limit. Custom fetch with an explicit
+        // 5-minute timeout ensures the connection stays alive.
+        fetch: (url, init) => {
+          const controller = new AbortController()
+          const timeout = setTimeout(() => controller.abort(), 300_000) // 5 min
+          return globalThis.fetch(url, { ...init, signal: controller.signal })
+            .finally(() => clearTimeout(timeout))
+        },
+      })
+      providerCache[providerName] = (model: string) => provider(model)
+      break
+    }
+    case 'openai': {
+      const provider = createOpenAI({
+        apiKey,
+        baseURL: config.baseURL,
+      })
+      providerCache[providerName] = (model: string) => provider(model)
+      break
+    }
+    default: {
+      // zhipu and unknown providers: openai-compatible fallback
+      const provider = createOpenAICompatible({
+        name: config.name,
+        baseURL: config.baseURL,
+        apiKey,
+      })
+      providerCache[providerName] = (model: string) => provider(model)
+      break
+    }
+  }
+
   return providerCache[providerName]
 }
+
+// ---------------------------------------------------------------------------
+// Public API
+// ---------------------------------------------------------------------------
 
 /**
  * Parse a model ID in the format "provider/model" or just "model".
  * Returns the AI SDK model instance.
+ *
+ * Uses provider-specific packages when available:
+ *   deepseek  → @ai-sdk/deepseek
+ *   openai    → @ai-sdk/openai
+ *   others    → @ai-sdk/openai-compatible (fallback)
  */
 export function createProvider(modelId?: string) {
   const id = modelId || process.env.DEFAULT_AI_MODEL || 'deepseek/deepseek-chat'
@@ -79,7 +132,7 @@ export function createProvider(modelId?: string) {
     modelName = id
   }
 
-  return getProvider(providerName)(modelName)
+  return getProviderFactory(providerName)(modelName)
 }
 
 /**

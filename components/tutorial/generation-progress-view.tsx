@@ -1,18 +1,17 @@
 'use client';
 
-import type { TutorialDraft } from '@/lib/schemas/tutorial-draft';
+import { useRouter } from 'next/navigation';
 import type {
   GenerationContext,
   GenerationProgressViewModel,
-  LegacyStatus,
 } from './generation-progress-types';
 import {
   cardClass,
   getDisplaySteps,
   getFocusStep,
-  getV1Headline,
   getV2Headline,
   heroClass,
+  isIndeterminate,
   mutedText,
   progressListClass,
   secondaryButton,
@@ -21,6 +20,20 @@ import {
   softCardClass,
   titleClass,
 } from './generation-progress-utils';
+import type { V2Status } from './generation-progress-types';
+
+const PLACEHOLDER_STEPS = [
+  { id: 'ph-parse', title: '解析源码' },
+  { id: 'ph-outline', title: '设计教学大纲' },
+  { id: 'ph-generate', title: '生成核心章节' },
+  { id: 'ph-validate', title: '编译测试代码' },
+];
+
+function getPlaceholderCompletedCount(status: V2Status): number {
+  if (status === 'connecting') return 0;
+  if (status === 'generating-outline') return 1;
+  return 2;
+}
 
 interface GenerationProgressViewProps {
   draftId: string;
@@ -34,43 +47,27 @@ export function GenerationProgressView({
   controller,
 }: GenerationProgressViewProps) {
   return (
-    <div className="w-full">
-      {controller.showV2 ? (
-        <V2ProgressUI
-          context={context}
-          draftId={draftId}
-          status={controller.v2Status}
-          outline={controller.outline}
-          currentStepIndex={controller.currentStepIndex}
-          totalSteps={controller.totalSteps}
-          completedSteps={controller.completedSteps}
-          stepTitles={controller.stepTitles}
-          progressValue={controller.progressValue}
-          errorMessage={controller.errorMessage}
-          errorPhase={controller.errorPhase}
-          errorLabel={controller.errorLabel}
-          canRetry={controller.canRetry}
-          canRetryFromStep={controller.canRetryFromStep}
-          failedStepIndex={controller.failedStepIndex}
-          onRetry={controller.onRetry}
-          onRetryFromStep={controller.onRetryFromStep}
-          onCancel={controller.onCancel}
-          isGenerating={controller.isGenerating}
-        />
-      ) : (
-        <V1ProgressUI
-          context={context}
-          draftId={draftId}
-          status={controller.v1Status}
-          fullText={controller.fullText}
-          parsedDraft={controller.parsedDraft}
-          progressValue={controller.progressValue}
-          errorMessage={controller.errorMessage}
-          onCancel={controller.onCancel}
-          isGenerating={controller.isGenerating}
-        />
-      )}
-    </div>
+    <V2ProgressUI
+      context={context}
+      draftId={draftId}
+      status={controller.v2Status}
+      outline={controller.outline}
+      currentStepIndex={controller.currentStepIndex}
+      totalSteps={controller.totalSteps}
+      completedSteps={controller.completedSteps}
+      stepTitles={controller.stepTitles}
+      progressValue={controller.progressValue}
+      errorMessage={controller.errorMessage}
+      errorPhase={controller.errorPhase}
+      errorLabel={controller.errorLabel}
+      canRetry={controller.canRetry}
+      canRetryFromStep={controller.canRetryFromStep}
+      failedStepIndex={controller.failedStepIndex}
+      onRetry={controller.onRetry}
+      onRetryFromStep={controller.onRetryFromStep}
+      onCancel={controller.onCancel}
+      isGenerating={controller.isGenerating}
+    />
   );
 }
 
@@ -115,6 +112,7 @@ function V2ProgressUI({
   onCancel: () => void;
   isGenerating: boolean;
 }) {
+  const router = useRouter();
   const headline = getV2Headline(status, currentStepIndex, totalSteps);
   const displaySteps = getDisplaySteps(
     outline,
@@ -129,6 +127,7 @@ function V2ProgressUI({
     status === 'validating' || status === 'stream-complete'
       ? totalSteps
       : completedSteps.length;
+  const indeterminate = isIndeterminate(status);
 
   return (
     <div className={shellClass}>
@@ -153,10 +152,14 @@ function V2ProgressUI({
 
             <div className="space-y-2">
               <div className="h-1.5 overflow-hidden rounded-full bg-slate-200" aria-hidden="true">
-                <div
-                  className="h-full rounded-full bg-slate-900 transition-[width] duration-500"
-                  style={{ width: `${progressValue}%` }}
-                />
+                {indeterminate ? (
+                  <div className="h-full w-full animate-[indeterminate-slide_1.5s_ease-in-out_infinite] rounded-full bg-gradient-to-r from-slate-200 via-slate-900 to-slate-200 bg-[length:200%_100%]" />
+                ) : (
+                  <div
+                    className="h-full rounded-full bg-slate-900 transition-[width] duration-500"
+                    style={{ width: `${progressValue}%` }}
+                  />
+                )}
               </div>
               <div className="flex items-center justify-between text-[10px] font-bold uppercase tracking-wider text-slate-400">
                 <div className="flex items-center gap-2">
@@ -165,26 +168,24 @@ function V2ProgressUI({
                   )}
                   <span>{headline.title}</span>
                 </div>
-                <div className="flex items-center gap-2">
-                  <span>{totalSteps > 0 ? `${completedCount} / ${totalSteps} 步` : '排队中'}</span>
-                  {isGenerating && (
-                    <button
-                      type="button"
-                      className="inline-flex items-center justify-center rounded-md border border-slate-200 bg-white px-2.5 py-1 text-[10px] font-medium text-slate-500 transition-colors hover:bg-slate-50 hover:text-slate-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-slate-400 focus-visible:ring-offset-2"
-                      onClick={onCancel}
-                    >
-                      取消生成
-                    </button>
-                  )}
-                </div>
+                <span>{totalSteps > 0 ? `${completedCount} / ${totalSteps} 步` : '准备中'}</span>
               </div>
+              {isGenerating && (
+                <div className="pt-1">
+                  <button
+                    type="button"
+                    className="inline-flex items-center justify-center rounded-md border border-slate-300 bg-white px-3 py-1.5 text-xs font-medium text-slate-600 transition-colors hover:border-rose-300 hover:bg-rose-50 hover:text-rose-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-slate-400 focus-visible:ring-offset-2"
+                    onClick={onCancel}
+                  >
+                    取消生成
+                  </button>
+                </div>
+              )}
             </div>
           </div>
 
-          <div className="mt-6 grid gap-2 sm:grid-cols-2 xl:grid-cols-3">
-            <ContextStat label="源码" value={context.sourceSummary} />
-            <ContextStat label="文件数" value={`${context.sourceCount}`} />
-            <ContextStat label="语言" value={context.sourceLanguageSummary} />
+          <div className="mt-6 grid gap-2 grid-cols-2 sm:grid-cols-3 xl:grid-cols-5">
+            <ContextStat label="源文件" value={`${context.sourceCount} ${context.sourceLanguageSummary} 文件`} />
             <ContextStat label="读者" value={context.audienceLabel} />
             <ContextStat label="输出" value={context.outputLanguage} />
             <ContextStat label="规模" value={`${context.codeLineCount} LOC`} />
@@ -199,7 +200,9 @@ function V2ProgressUI({
                 <h3 className={titleClass}>生成进度</h3>
                 <p className={mutedText}>
                   {outline
-                    ? '大纲已就绪，正在逐步填充内容。'
+                    ? status === 'reconnecting'
+                      ? '生成仍在进行中，正在等待服务端完成。'
+                      : '大纲已就绪，正在逐步填充内容。'
                     : totalSteps > 0
                       ? '大纲还未返回，可以追踪当前进度。'
                       : '正在等待大纲。'}
@@ -248,13 +251,44 @@ function V2ProgressUI({
                 ))}
               </div>
             ) : (
-              <div className={`${progressListClass} space-y-3`} aria-hidden="true">
-                {Array.from({ length: 4 }, (_, index) => (
-                  <div
-                    key={index}
-                    className="h-20 animate-pulse rounded-3xl border border-slate-200 bg-gradient-to-r from-slate-100 via-slate-50 to-slate-100"
-                  />
-                ))}
+              <div className={`${progressListClass} space-y-3`}>
+                {PLACEHOLDER_STEPS.map((step, index) => {
+                  const completedIdx = getPlaceholderCompletedCount(status);
+                  const isDone = index < completedIdx;
+                  const isActive = index === completedIdx;
+                  return (
+                    <div
+                      key={step.id}
+                      className={`flex gap-4 rounded-3xl border px-4 py-4 transition ${
+                        isDone
+                          ? 'border-emerald-200 bg-emerald-50/80'
+                          : isActive
+                            ? 'border-cyan-200 bg-cyan-50/80'
+                            : 'border-slate-200 bg-white'
+                      }`}
+                    >
+                      <div
+                        className={`mt-0.5 flex h-10 w-10 shrink-0 items-center justify-center rounded-full text-sm font-semibold ${
+                          isDone
+                            ? 'bg-emerald-500 text-white'
+                            : isActive
+                              ? 'bg-cyan-500 text-white'
+                              : 'bg-slate-100 text-slate-500'
+                        }`}
+                      >
+                        {isDone ? '✓' : index + 1}
+                      </div>
+                      <div className="min-w-0">
+                        <h4 className={`font-medium ${isDone ? 'text-slate-500' : isActive ? 'text-slate-900' : 'text-slate-400'}`}>
+                          {step.title}
+                        </h4>
+                        <p className={`mt-1 text-sm leading-6 ${isDone ? 'text-slate-400' : isActive ? 'text-slate-600' : 'text-slate-400'}`}>
+                          {isDone ? '已完成' : isActive ? '进行中...' : '等待中'}
+                        </p>
+                      </div>
+                    </div>
+                  );
+                })}
               </div>
             )}
           </section>
@@ -292,7 +326,7 @@ function V2ProgressUI({
                 <PhaseItem
                   label="设计大纲"
                   status={
-                    ['outline-received', 'filling-step', 'validating', 'stream-complete'].includes(status)
+                    ['outline-received', 'filling-step', 'validating', 'stream-complete', 'reconnecting'].includes(status)
                       ? 'done'
                       : status === 'generating-outline'
                         ? 'active'
@@ -304,7 +338,7 @@ function V2ProgressUI({
                   status={
                     ['validating', 'stream-complete'].includes(status)
                       ? 'done'
-                      : status === 'filling-step'
+                      : ['filling-step', 'reconnecting'].includes(status)
                         ? 'active'
                         : 'idle'
                   }
@@ -345,151 +379,17 @@ function V2ProgressUI({
                         {errorPhase === 'step-fill' ? '从当前进度重新生成' : '重新生成目录'}
                       </button>
                     )}
+                    <button
+                      type="button"
+                      className={secondaryButton}
+                      onClick={() => router.push(`/drafts/${draftId}`)}
+                    >
+                      前往草稿编辑器
+                    </button>
                   </div>
                 </div>
               )}
             </div>
-          </section>
-        </div>
-      </div>
-    </div>
-  );
-}
-
-function V1ProgressUI({
-  context,
-  draftId,
-  status,
-  parsedDraft,
-  progressValue,
-  errorMessage,
-  onCancel,
-  isGenerating,
-}: {
-  context: GenerationContext;
-  draftId: string;
-  status: LegacyStatus;
-  fullText: string;
-  parsedDraft: Partial<TutorialDraft> | null;
-  progressValue: number;
-  errorMessage: string | null;
-  onCancel: () => void;
-  isGenerating: boolean;
-}) {
-  const headline = getV1Headline(status);
-  const stepCount = parsedDraft?.steps?.length ?? 0;
-
-  return (
-    <div className={shellClass}>
-      <div className="grid gap-5 p-5 lg:grid-cols-[1fr_1.2fr] lg:p-6">
-        <section className={heroClass}>
-          <div className="space-y-4">
-            <div className="flex flex-wrap items-center gap-2">
-              <span className="inline-flex items-center rounded-md border border-slate-200 bg-white px-2 py-0.5 text-[10px] font-bold uppercase tracking-widest text-slate-500">
-                兼容模式
-              </span>
-              <span className="inline-flex items-center rounded-md border border-slate-200 bg-white px-2 py-0.5 text-[10px] font-medium text-slate-400">
-                {draftId.slice(0, 8)}
-              </span>
-            </div>
-
-            <div className="space-y-2">
-              <h2 className="text-xl font-bold tracking-tight text-slate-900">
-                {context.topic ? `正在生成《${context.topic}》` : headline.title}
-              </h2>
-              <p className="max-w-2xl text-xs leading-5 text-slate-500">{headline.detail}</p>
-            </div>
-
-            <div className="space-y-2">
-              <div className="h-1.5 overflow-hidden rounded-full bg-slate-200" aria-hidden="true">
-                <div
-                  className="h-full rounded-full bg-slate-900 transition-[width] duration-500"
-                  style={{ width: `${progressValue}%` }}
-                />
-              </div>
-              <div className="flex items-center justify-between text-[10px] font-bold uppercase tracking-wider text-slate-400">
-                <div className="flex items-center gap-2">
-                  {!errorMessage && status !== 'stream-complete' && (
-                    <span className="inline-flex h-2 w-2 animate-pulse rounded-full bg-slate-900" />
-                  )}
-                  <span>{headline.title}</span>
-                </div>
-                <div className="flex items-center gap-2">
-                  <span>{stepCount > 0 ? `${stepCount} 步` : '等待中'}</span>
-                  {isGenerating && (
-                    <button
-                      type="button"
-                      className="inline-flex items-center justify-center rounded-md border border-slate-200 bg-white px-2.5 py-1 text-[10px] font-medium text-slate-500 transition-colors hover:bg-slate-50 hover:text-slate-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-slate-400 focus-visible:ring-offset-2"
-                      onClick={onCancel}
-                    >
-                      取消生成
-                    </button>
-                  )}
-                </div>
-              </div>
-            </div>
-          </div>
-
-          <div className="mt-6 space-y-3">
-            <div className="grid grid-cols-2 gap-2">
-              <ContextStat label="语言" value={context.sourceLanguageSummary} />
-              <ContextStat label="读者" value={context.audienceLabel} />
-            </div>
-            <div className={softCardClass}>
-              <span className="text-[10px] font-bold uppercase tracking-widest text-slate-400">
-                核心问题
-              </span>
-              <p className="mt-1 line-clamp-2 text-xs leading-5 text-slate-700">{context.coreQuestion}</p>
-            </div>
-          </div>
-        </section>
-
-        <div className="space-y-5">
-          <section className={cardClass}>
-            <div className="space-y-1">
-              <p className={sectionLabel}>实时预览</p>
-              <h3 className={titleClass}>内容解析</h3>
-              <p className={mutedText}>正在解析生成内容...</p>
-            </div>
-
-            {parsedDraft?.steps && parsedDraft.steps.length > 0 ? (
-              <div className={`${progressListClass} space-y-3`}>
-                {parsedDraft.steps.map((step, index) => (
-                  <article
-                    key={step?.id || index}
-                    className="flex gap-4 rounded-xl border border-slate-100 bg-slate-50/50 p-4"
-                  >
-                    <div className="mt-0.5 flex h-7 w-7 shrink-0 items-center justify-center rounded bg-slate-900 text-[10px] font-bold text-white">
-                      {index + 1}
-                    </div>
-                    <div className="min-w-0">
-                      <h4 className="text-sm font-bold text-slate-900">{step?.title || `步骤 ${index + 1}`}</h4>
-                      <p className="mt-1 line-clamp-2 text-xs leading-5 text-slate-500">
-                        {step?.paragraphs?.[0] || '...'}
-                      </p>
-                    </div>
-                  </article>
-                ))}
-              </div>
-            ) : (
-              <div className={`${progressListClass} space-y-3`} aria-hidden="true">
-                {Array.from({ length: 3 }, (_, index) => (
-                  <div
-                    key={index}
-                    className="h-16 animate-pulse rounded-xl border border-slate-100 bg-slate-50/50"
-                  />
-                ))}
-              </div>
-            )}
-
-            {errorMessage && (
-              <div className="mt-4 rounded-lg border border-red-200 bg-red-50 p-4 text-red-950">
-                <span className="text-[10px] font-bold uppercase tracking-widest text-red-600">
-                  错误详情
-                </span>
-                <p className="mt-1 text-xs leading-5 text-red-900">{errorMessage}</p>
-              </div>
-            )}
           </section>
         </div>
       </div>

@@ -5,22 +5,8 @@
     {
       "idx": 0,
       "version": "7",
-      "when": 1775691536290,
-      "tag": "0000_jittery_spencer_smythe",
-      "breakpoints": true
-    },
-    {
-      "idx": 1,
-      "version": "7",
-      "when": 1776038556885,
-      "tag": "0001_noisy_revanche",
-      "breakpoints": true
-    },
-    {
-      "idx": 2,
-      "version": "7",
-      "when": 1776089494634,
-      "tag": "0002_motionless_tarot",
+      "when": 1776367205875,
+      "tag": "0000_goofy_lorna_dane",
       "breakpoints": true
     }
   ]

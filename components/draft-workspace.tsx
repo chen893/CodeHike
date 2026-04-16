@@ -39,6 +39,9 @@ export function DraftWorkspace({ draft }: DraftWorkspaceProps) {
       onPublish={controller.publishDraft}
       onUnpublish={controller.unpublishDraft}
       onOpenPublished={controller.openPublishedTutorial}
+      publishDialogOpen={controller.publishDialogOpen}
+      onConfirmPublish={controller.confirmPublish}
+      onCancelPublishDialog={controller.cancelPublishDialog}
       onToggleEditingMeta={controller.toggleEditingMeta}
       onDeleteDraft={controller.deleteDraft}
       onAddChapter={controller.addChapter}

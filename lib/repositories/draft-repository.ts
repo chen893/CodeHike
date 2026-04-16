@@ -1,6 +1,16 @@
-import { and, desc, eq, sql } from 'drizzle-orm';
+import { and, desc, eq, inArray, sql, gte } from 'drizzle-orm';
 import { db } from '../db';
-import { drafts, type draftStatusEnum, type syncStateEnum, type generationStateEnum } from '../db/schema';
+import {
+  draftGenerationJobs,
+  drafts,
+  type draftStatusEnum,
+  type syncStateEnum,
+  type generationStateEnum,
+} from '../db/schema';
+import {
+  ACTIVE_DRAFT_GENERATION_JOB_STATUSES,
+  isActiveDraftGenerationJobStatus,
+} from '../types/generation-job';
 
 type TransactionClient = Parameters<Parameters<typeof db.transaction>[0]>[0];
 import type { DraftRecord, DraftSummary } from '../types/api';
@@ -45,6 +55,7 @@ function toDraftRecord(row: DraftRow): DraftRecord {
     generationLastAt: row.generationLastAt ?? null,
     generationOutline: (row.generationOutline as TutorialOutline | null) ?? null,
     generationQuality: (row.generationQuality as GenerationQuality | null) ?? null,
+    activeGenerationJobId: row.activeGenerationJobId ?? null,
     validationValid: row.validationValid,
     validationErrors: (row.validationErrors as string[]) ?? [],
     validationCheckedAt: row.validationCheckedAt ?? null,
@@ -225,7 +236,7 @@ export async function updateDraftGenerationState(
   if (state === 'failed' && errorMessage) {
     updates.generationErrorMessage = errorMessage;
   }
-  if (state === 'succeeded') {
+  if (state === 'running' || state === 'succeeded') {
     updates.generationErrorMessage = null;
   }
 
@@ -327,6 +338,66 @@ export async function updateDraftGenerationQuality(
   return row ? toDraftRecord(row) : null;
 }
 
+async function applyDraftActiveGenerationJobIdUpdate(
+  id: string,
+  activeGenerationJobId: string | null,
+  executor: typeof db | TransactionClient
+): Promise<DraftRecord | null> {
+  if (activeGenerationJobId !== null) {
+    const [job] = await executor
+      .select({
+        id: draftGenerationJobs.id,
+        draftId: draftGenerationJobs.draftId,
+        status: draftGenerationJobs.status,
+      })
+      .from(draftGenerationJobs)
+      .where(
+        and(
+          eq(draftGenerationJobs.id, activeGenerationJobId),
+          eq(draftGenerationJobs.draftId, id),
+          inArray(draftGenerationJobs.status, [...ACTIVE_DRAFT_GENERATION_JOB_STATUSES])
+        )
+      )
+      .limit(1)
+      .for('update');
+
+    if (!job || !isActiveDraftGenerationJobStatus(job.status)) {
+      throw new Error(
+        'Active generation job pointer must target a queued or running job on the same draft'
+      );
+    }
+  }
+
+  const [row] = await executor
+    .update(drafts)
+    .set({
+      activeGenerationJobId,
+      updatedAt: new Date(),
+    })
+    .where(eq(drafts.id, id))
+    .returning();
+
+  return row ? toDraftRecord(row) : null;
+}
+
+export async function updateDraftActiveGenerationJobId(
+  id: string,
+  activeGenerationJobId: string | null,
+  tx?: TransactionClient
+): Promise<DraftRecord | null> {
+  if (tx) {
+    return applyDraftActiveGenerationJobIdUpdate(id, activeGenerationJobId, tx);
+  }
+
+  if (activeGenerationJobId !== null) {
+    return db.transaction((transaction) =>
+      applyDraftActiveGenerationJobIdUpdate(id, activeGenerationJobId, transaction)
+    );
+  }
+
+  return applyDraftActiveGenerationJobIdUpdate(id, activeGenerationJobId, db);
+}
+
 export async function deleteDraft(id: string): Promise<boolean> {
   const rows = await db
     .delete(drafts)
@@ -334,4 +405,26 @@ export async function deleteDraft(id: string): Promise<boolean> {
     .returning({ id: drafts.id });
 
   return rows.length > 0;
+}
+
+/** Find a draft for the same user with the same inputHash created within the last hour. */
+export async function findRecentDraftByInputHash(
+  userId: string,
+  inputHash: string
+): Promise<DraftRecord | null> {
+  const oneHourAgo = new Date(Date.now() - 60 * 60 * 1000);
+  const [row] = await db
+    .select()
+    .from(drafts)
+    .where(
+      and(
+        eq(drafts.userId, userId),
+        eq(drafts.inputHash, inputHash),
+        gte(drafts.createdAt, oneHourAgo)
+      )
+    )
+    .orderBy(desc(drafts.createdAt))
+    .limit(1);
+
+  return row ? toDraftRecord(row) : null;
 }

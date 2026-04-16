@@ -28,6 +28,17 @@ export {
   type GenerationQuality,
 } from './generation-quality';
 export {
+  generationJobStatusSchema,
+  generationJobPhaseSchema,
+  generationJobErrorCodeSchema,
+  generationJobFailureDetailSchema,
+  generationJobSchema,
+  type GenerationJobStatus,
+  type GenerationJobPhase,
+  type GenerationJobErrorCode,
+  type GenerationJobFailureDetail,
+} from './generation-job';
+export {
   createDraftRequestSchema,
   updateDraftRequestSchema,
   appendStepRequestSchema,

@@ -41,12 +41,14 @@ export function CreateDraftForm() {
 
   if (generating && draftId) {
     return (
-      <GenerationProgress
-        draftId={draftId}
-        onComplete={handleGenerationComplete}
-        context={generationContext}
-        modelId={modelId}
-      />
+      <div className="mx-auto w-full max-w-6xl">
+        <GenerationProgress
+          draftId={draftId}
+          onComplete={handleGenerationComplete}
+          context={generationContext}
+          modelId={modelId}
+        />
+      </div>
     );
   }
 
@@ -63,6 +65,14 @@ export function CreateDraftForm() {
       onSubmit={handleSubmit}
       className="mx-auto flex w-full max-w-4xl flex-col gap-8"
     >
+      <header className="space-y-2">
+        <h1 className="text-2xl font-bold tracking-tight text-foreground">
+          创建新教程
+        </h1>
+        <p className="text-sm leading-relaxed text-muted-foreground">
+          贴入源码，描述你想教什么，我们会生成一份逐步构建式教程。
+        </p>
+      </header>
       <div className="flex items-center gap-3">
         <button
           type="button"
@@ -336,6 +346,7 @@ export function CreateDraftForm() {
           type="submit"
           size="lg"
           className="rounded-md px-8 shadow-md"
+          disabled={generating}
         >
           创建并生成
         </Button>

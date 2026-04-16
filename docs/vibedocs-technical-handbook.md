@@ -45,6 +45,7 @@
 - Tailwind v4 需要 `@tailwindcss/postcss` 和 `@import "tailwindcss"`，且需要显式 `@source` 指令
 - NextAuth v5 使用 `AUTH_SECRET` 环境变量（不是 `NEXTAUTH_SECRET`），不过 v5 同时接受两者
 - NextAuth v5 middleware 必须用轻量级实例（无 DB adapter），因为 Edge Runtime 不支持 Node.js crypto
+- `next-auth@5 beta` + `@auth/drizzle-adapter` 在“已存在 OAuth account 再次登录”场景下不会自动刷新 `accounts.access_token`；如果业务依赖 provider token（如 GitHub 导入提额），必须在 `callbacks.jwt` 或等价服务端钩子里显式同步 token 字段
 
 ---
 
@@ -264,6 +265,7 @@ DraftRecord {
   // v3.1 新增
   generationOutline: jsonb?
   generationQuality: jsonb?
+  activeGenerationJobId: string?   // FK → draft_generation_jobs.id，指向当前活跃任务
 
   // 同步追踪
   syncState: "empty" | "fresh" | "stale"
@@ -284,7 +286,45 @@ DraftRecord {
 }
 ```
 
-### 6.2 SourceItem
+### 6.2 DraftGenerationJob（生成任务）
+
+```
+DraftGenerationJob {
+  id: string (UUID)
+  draftId: string                 // FK → drafts.id
+  userId: string?                 // FK → users.id，nullable
+
+  status: "queued" | "running" | "succeeded" | "failed" | "cancelled" | "abandoned"
+  phase: "outline" | "step_fill" | "validate" | "persist" | null
+
+  startedAt: Date?
+  finishedAt: Date?
+  heartbeatAt: Date?
+  leaseUntil: Date?
+
+  currentStepIndex: number?
+  totalSteps: number?
+  retryCount: number
+  modelId: string?
+
+  errorCode: string?
+  errorMessage: string?
+  failureDetail: jsonb?
+
+  outlineSnapshot: jsonb?
+  stepTitlesSnapshot: string[]?
+
+  timestamps: createdAt, updatedAt
+}
+```
+
+说明：
+- `drafts.activeGenerationJobId` 指向当前 active job，但通过 `(drafts.id, drafts.activeGenerationJobId) -> (draft_generation_jobs.draftId, draft_generation_jobs.id)` 复合外键保证“只能指向同一 draft 的 job”
+- `draft_generation_jobs` 额外有部分唯一索引，约束同一 draft 同时最多只有一个 `queued/running` job
+- `updateDraftActiveGenerationJobId()` 是受控写入口，只允许把指针设置为同 draft 且 `queued/running` 的 job；非空指针写入会在事务内 `FOR UPDATE` 锁定目标 job 行，避免和终态迁移竞态
+- `updateDraftGenerationJob()` 将 job 更新为 `succeeded/failed/cancelled/abandoned` 时，会在同一事务内清空仍指向该 job 的 `drafts.activeGenerationJobId`
+
+### 6.3 SourceItem
 
 ```
 SourceItem {
@@ -296,7 +336,7 @@ SourceItem {
 }
 ```
 
-### 6.3 PublishedTutorial（已发布教程）
+### 6.4 PublishedTutorial（已发布教程）
 
 ```
 PublishedTutorial {
@@ -309,7 +349,7 @@ PublishedTutorial {
 }
 ```
 
-### 6.4 DraftSnapshot（版本快照）
+### 6.5 DraftSnapshot（版本快照）
 
 ```
 DraftSnapshot {
@@ -322,7 +362,7 @@ DraftSnapshot {
 }
 ```
 
-### 6.5 同步状态规则
+### 6.6 同步状态规则
 
 - `inputHash` = SHA-256(sourceItems + teachingBrief)
 - `tutorialDraftInputHash` = 成功生成时捕获的 inputHash
@@ -379,8 +419,9 @@ DraftSnapshot {
 | POST | `/api/events` | 事件追踪（fire-and-forget 埋点） |
 | GET | `/api/tutorials/[slug]/export-markdown` | 导出教程为 Markdown 文件 |
 | GET | `/api/tutorials/[slug]/export-html` | 导出教程为 HTML 文件 |
-| GET | `/api/github/repo-tree?url=` | GitHub 仓库文件树（需认证，代理 GitHub Trees API） |
-| POST | `/api/github/file-content` | GitHub 仓库文件内容批量获取（需认证，代理 Contents API，≤15 文件 ≤1500 行） |
+| GET | `/api/github/repo-tree?url=` | GitHub 仓库文件树（公开仓库免登录；登录后复用 OAuth token 提升配额；代理 GitHub Trees API） |
+| GET | `/api/github/repo-tree/subdirectory?url=&sha=&path=` | GitHub 大仓库子目录懒加载（公开仓库免登录；代理 GitHub Trees API） |
+| POST | `/api/github/file-content` | GitHub 仓库文件内容批量获取（公开仓库免登录；登录后复用 OAuth token；支持 partial success；≤30 文件/批 ≤5000 行/批） |
 
 **关键设计决策：**
 - 只用 Route Handlers，不用 tRPC、不用 Server Actions
@@ -492,6 +533,7 @@ DraftSnapshot {
 | 文件 | 用途 |
 |------|------|
 | `lib/repositories/draft-repository.ts` | 草稿 CRUD + `listDraftSummaries()` 摘要查询 |
+| `lib/repositories/draft-generation-job-repository.ts` | generation job CRUD + 最新 job / 列表查询 |
 | `lib/repositories/published-tutorial-repository.ts` | 已发布教程 CRUD + slug 查询 |
 | `lib/repositories/draft-snapshot-repository.ts` | 版本快照 CRUD |
 | `lib/repositories/tag-repository.ts` | 标签 CRUD + `getOrCreateTag()` 并发安全 |
@@ -629,8 +671,8 @@ DraftSnapshot {
 
 GitHub 导入（v3.9 新增）：
 - `components/create-draft/github-client.ts` — GitHub API 客户端调用封装
-- `components/create-draft/use-github-import-controller.ts` — 导入状态机（idle → loading-tree → selecting → loading-content → done）
-- `components/create-draft/file-tree-browser.tsx` — 文件树多选 UI（递归渲染 + 目录全选 + 文件统计）
+- `components/create-draft/use-github-import-controller.ts` — 导入状态机（idle → loading-tree → selecting → loading-content → done）+ truncated 子树懒加载
+- `components/create-draft/file-tree-browser.tsx` — 文件树多选 UI（递归渲染 + 目录全选 + 文件统计 + 大仓库按目录加载）
 - `components/create-draft/github-import-tab.tsx` — GitHub 导入 Tab 视图
 
 教程相关：
@@ -675,6 +717,7 @@ GitHub 导入（v3.9 新增）：
 - `generationLastAt` timestamp
 - `generationOutline` jsonb (v3.1，大纲数据)
 - `generationQuality` jsonb (v3.1，质量指标)
+- `activeGenerationJobId` uuid（nullable，当前活跃 generation job 指针）
 - `validationValid` boolean (default false)
 - `validationErrors` jsonb (default [])
 - `validationCheckedAt` timestamp
@@ -682,6 +725,28 @@ GitHub 导入（v3.9 新增）：
 - `publishedTutorialId` uuid（FK → published_tutorials.id）
 - `publishedAt` timestamp
 - `createdAt`、`updatedAt` timestamp
+
+**`draft_generation_jobs` 表（可靠性真相源）：**
+- `id` uuid PK
+- `draftId` uuid FK → drafts.id (cascade)
+- `userId` text FK → users.id (set null)
+- `status` pgEnum `draft_generation_job_status` (`queued`|`running`|`succeeded`|`failed`|`cancelled`|`abandoned`)
+- `phase` pgEnum `draft_generation_job_phase` (`outline`|`step_fill`|`validate`|`persist`)
+- `startedAt`、`finishedAt`、`heartbeatAt`、`leaseUntil` timestamp
+- `currentStepIndex`、`totalSteps`、`retryCount`
+- `modelId` varchar(64)
+- `errorCode` pgEnum `generation_job_error_code`
+- `errorMessage` text
+- `failureDetail` jsonb
+- `outlineSnapshot` jsonb
+- `stepTitlesSnapshot` jsonb
+- `createdAt`、`updatedAt` timestamp
+- 关键约束：
+  - 复合关系约束 `drafts(id, active_generation_job_id) -> draft_generation_jobs(draft_id, id)`，避免跨 draft 指针
+  - 非 partial 唯一索引 `draft_generation_jobs_draft_id_id_unique` 支撑上述复合外键，与 Drizzle snapshot 保持同一建模方式
+  - 部分唯一索引 `draft_generation_jobs_single_active_per_draft`，约束同一 draft 最多一个 `queued/running` job
+  - 活跃查询索引：`(draft_id, created_at)` 与 `lease_until where status in ('queued', 'running')`
+  - `createdAt/updatedAt` 默认使用 `clock_timestamp()`，避免同事务内连续插入时全部落到同一个 `now()` 时间戳
 
 **`published_tutorials` 表：**
 - `id` uuid PK
@@ -705,6 +770,7 @@ GitHub 导入（v3.9 新增）：
 - `type` text、`provider` text、`providerAccountId` text
 - Token 字段：`refresh_token`、`access_token`、`expires_at`、`token_type`、`scope`、`id_token`、`session_state`
 - PK: compound(provider, providerAccountId)
+- 注意：当前项目不能假设“重新走一次 GitHub OAuth 后 adapter 会自动刷新旧 token”；`auth.ts` 的 `callbacks.jwt` 负责把本次登录返回的 token 显式写回这张表
 
 **`sessions` 表（NextAuth）：**
 - `sessionToken` text PK
@@ -878,7 +944,7 @@ GitHub 导入（v3.9 新增）：
 | `lib/services/user-profile-service.ts` | 用户档案（公开 profile + username 设置 + profile 更新） |
 | `lib/services/export-markdown.ts` | 教程导出为 Markdown |
 | `lib/services/export-html.ts` | 教程导出为 HTML |
-| `lib/services/github-repo-service.ts` | GitHub 仓库导入（文件树获取 + 文件内容拉取 + OAuth token 检索） |
+| `lib/services/github-repo-service.ts` | GitHub 仓库导入（公开仓库匿名访问 + OAuth token 复用 + Trees/Contents API 封装 + 速率限制/partial failure 处理） |
 
 ---
 
@@ -909,6 +975,7 @@ GitHub 导入（v3.9 新增）：
 | `lib/schemas/teaching-brief.ts` | TeachingBrief 校验 |
 | `lib/schemas/tutorial-draft.ts` | TutorialDraft 校验（核心：AI 输出 + API + DB 三用） |
 | `lib/schemas/tutorial-outline.ts` | 教学大纲校验 |
+| `lib/schemas/generation-job.ts` | DraftGenerationJob 校验（DB/domain 三用） |
 | `lib/schemas/generation-quality.ts` | GenerationQuality 校验 |
 | `lib/schemas/api.ts` | API 请求校验 |
 | `lib/schemas/model-config.ts` | 模型配置校验 |
@@ -938,6 +1005,7 @@ GitHub 导入（v3.9 新增）：
 16. **leftJoin(users) 必须：** 探索/搜索查询中 `drafts.userId` 可能为 NULL（未关联用户的草稿），必须用 `leftJoin(users)` 而非 `innerJoin`，否则会过滤掉无作者的教程
 17. **全文搜索配置：** 使用 PostgreSQL `simple` 配置（不分词、不词干化），适合中英混合场景。搜索 `ts_vector` 基于 `tutorialDraftSnapshot->meta->title` 和 `slug`
 18. **AI 标签生成 fire-and-forget：** `tag-generator.ts` 在教程发布后异步调用，失败不阻塞发布主流程。`getOrCreateTag` 处理并发竞争（unique constraint catch + fallback select）
+19. **generation job 约束必须双层保持：** SQL migration、Drizzle snapshot、schema 定义必须同时包含“同 draft 复合外键”和“单 active job 部分唯一索引”，否则后续 diff 会把约束漂掉
 
 ### 16.2 发布前置条件
 
@@ -963,8 +1031,18 @@ OPENAI_API_KEY=...                  # OpenAI API Key（可选，多 provider 支
 OPENAI_BASE_URL=...                 # OpenAI API 端点（可选）
 DEFAULT_AI_MODEL=...                # 默认 AI 模型（可选，覆盖 DEEPSEEK_MODEL）
 AUTH_SECRET=...                     # NextAuth v5 密钥（生产环境必须更换）
+AUTH_URL=https://example.com        # Auth.js canonical origin（不要包含 path）
+AUTH_REDIRECT_PROXY_URL=https://example.com/vibedocs/api/auth  # 子路径部署下 OAuth redirect_uri 基础路径
+NEXTAUTH_URL=https://example.com/vibedocs/api/auth  # NextAuth client base URL（子路径部署时包含 /api/auth）
+NEXT_BASE_PATH=/vibedocs            # 子路径部署 base path（可选）
+NEXT_PUBLIC_BASE_PATH=/vibedocs     # 客户端可见 base path（可选）
 GITHUB_ID=...                       # GitHub OAuth App Client ID
 GITHUB_SECRET=...                   # GitHub OAuth App Client Secret
+LINUXDO_ID=...                      # Linux.do OAuth Client ID
+LINUXDO_SECRET=...                  # Linux.do OAuth Client Secret
+LINUXDO_AUTHORIZATION_ENDPOINT=https://connect.linuxdo.org/oauth2/authorize
+LINUXDO_TOKEN_ENDPOINT=https://connect.linuxdo.org/oauth2/token
+LINUXDO_USERINFO_ENDPOINT=https://connect.linuxdo.org/api/user
 NEXT_PUBLIC_BASE_URL=https://...    # 公开访问基础 URL（SEO 生成用）
 ```
 
@@ -1026,6 +1104,12 @@ NEXT_PUBLIC_BASE_URL=https://...    # 公开访问基础 URL（SEO 生成用）
 - 测试覆盖率提升（分层边界 + 纯函数 smoke tests）
 - CI/CD 部署自动化（GitHub Actions）
 
+### Phase 8：v3.8 可靠性基础设施 🚧 进行中
+- `draft_generation_jobs` 表 + `drafts.activeGenerationJobId`
+- generation job schema / type / repository
+- 生成运行态从进程内内存迁移到持久化真相源
+- `generate-tutorial-draft.ts` 启动生成时创建唯一 running job，并在 `outline / step_fill / validate / persist` 阶段写入 phase、heartbeat、retry 和终态
+
 ### Phase 8：v3.7 发现、标签与创作者身份 ✅ 已完成
 - 探索页面（/explore — 全文搜索 + 标签筛选 + 排序 + 分页）
 - 标签系统（tutorial_tags + tutorial_tag_relations 表、AI 自动生成 + 手动编辑）
@@ -1044,12 +1128,13 @@ NEXT_PUBLIC_BASE_URL=https://...    # 公开访问基础 URL（SEO 生成用）
 
 ### Phase 10：v3.9 GitHub 仓库导入 + 编辑器增强 ✅ 已完成
 - GitHub 仓库文件树浏览（`/api/github/repo-tree`，代理 GitHub Trees API）
-- GitHub 仓库文件内容批量获取（`/api/github/file-content`，代理 Contents API）
-- OAuth token 复用（从 accounts 表取已存储的 GitHub token）
+- GitHub 大仓库子目录懒加载（`/api/github/repo-tree/subdirectory`，按目录 `sha` 继续拉取树）
+- GitHub 仓库文件内容批量获取（`/api/github/file-content`，代理 Contents API，返回 partial success 成功文件）
+- 公开仓库免登录导入；GitHub OAuth token 仅用于提升配额和降低限流概率
 - 文件树多选 UI（递归树渲染 + 目录全选 + 文件大小显示）
 - 导入状态机（URL 输入 → 树加载 → 文件选择 → 内容拉取 → 映射 SourceItem[]）
 - 创建表单 Tab 切换（手动粘贴 / GitHub 导入）
-- 导入限制（≤15 文件、≤1500 行）前端 + 后端双重校验
+- 导入限制（总计 ≤200 文件、≤15000 行；单批 ≤30 文件、≤5000 行）前端 + 后端双重校验
 - 步骤编辑器子组件重构：CodePreviewPanel、PatchItem、FocusMarksPanel 独立拆分
 - 交互式行选择：focus/mark 模式下点击 diff 行自动填充 find 文本（Shift+点击扩展范围）
 - diff 视图 memo 化 + useCallback 优化，避免不必要的重渲染

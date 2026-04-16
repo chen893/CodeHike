@@ -1,16 +1,20 @@
 'use client';
 
-import { useState, useCallback } from 'react';
-import { ChevronRight, ChevronDown, File, Folder, FolderOpen } from 'lucide-react';
+import { useState, useCallback, useRef, useEffect } from 'react';
+import { ChevronRight, ChevronDown, File, Folder, FolderOpen, Loader2 } from 'lucide-react';
 import type { GitHubTreeNode } from './github-client';
 
 // ─── Types ──────────────────────────────────────────────────────────
 
 interface FileTreeBrowserProps {
   tree: GitHubTreeNode[];
+  truncated: boolean;
+  lazyPaths: Set<string>;
+  loadingDirectoryPaths: Set<string>;
   selectedPaths: Set<string>;
   onToggleFile: (path: string) => void;
-  onToggleDirectory: (path: string, nodes: GitHubTreeNode[]) => void;
+  onToggleDirectory: (path: string, sha?: string) => Promise<void>;
+  onExpandDirectory: (path: string, sha?: string) => Promise<void>;
   maxFiles: number;
   estimatedLines: number;
   maxLines: number;
@@ -20,9 +24,13 @@ interface FileTreeBrowserProps {
 
 export function FileTreeBrowser({
   tree,
+  truncated,
+  lazyPaths,
+  loadingDirectoryPaths,
   selectedPaths,
   onToggleFile,
   onToggleDirectory,
+  onExpandDirectory,
   maxFiles,
   estimatedLines,
   maxLines,
@@ -52,6 +60,12 @@ export function FileTreeBrowser({
         )}
       </div>
 
+      {truncated && (
+        <div className="rounded-md border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-xs text-amber-700">
+          大仓库已切换为按目录懒加载。展开目录时会继续向 GitHub 请求完整子树。
+        </div>
+      )}
+
       {/* Progress bar for line count */}
       <div className="h-1.5 w-full rounded-full bg-muted overflow-hidden">
         <div
@@ -75,10 +89,12 @@ export function FileTreeBrowser({
                 key={node.path}
                 node={node}
                 depth={0}
+                lazyPaths={lazyPaths}
+                loadingDirectoryPaths={loadingDirectoryPaths}
                 selectedPaths={selectedPaths}
                 onToggleFile={onToggleFile}
                 onToggleDirectory={onToggleDirectory}
-                allNodes={tree}
+                onExpandDirectory={onExpandDirectory}
               />
             ))}
           </div>
@@ -93,24 +109,37 @@ export function FileTreeBrowser({
 interface TreeNodeProps {
   node: GitHubTreeNode;
   depth: number;
+  lazyPaths: Set<string>;
+  loadingDirectoryPaths: Set<string>;
   selectedPaths: Set<string>;
   onToggleFile: (path: string) => void;
-  onToggleDirectory: (path: string, nodes: GitHubTreeNode[]) => void;
-  allNodes: GitHubTreeNode[];
+  onToggleDirectory: (path: string, sha?: string) => Promise<void>;
+  onExpandDirectory: (path: string, sha?: string) => Promise<void>;
 }
 
 function TreeNode({
   node,
   depth,
+  lazyPaths,
+  loadingDirectoryPaths,
   selectedPaths,
   onToggleFile,
   onToggleDirectory,
-  allNodes,
+  onExpandDirectory,
 }: TreeNodeProps) {
   const [expanded, setExpanded] = useState(depth < 1);
+  const isMountedRef = useRef(true);
+
+  useEffect(() => {
+    return () => {
+      isMountedRef.current = false;
+    };
+  }, []);
 
   const isDirectory = node.type === 'directory';
   const isSelected = selectedPaths.has(node.path);
+  const isLazyDirectory = isDirectory && lazyPaths.has(node.path);
+  const isLoadingDirectory = isDirectory && loadingDirectoryPaths.has(node.path);
 
   // For directories: check if all children are selected
   const childPaths = isDirectory ? collectPaths(node) : [];
@@ -119,18 +148,22 @@ function TreeNode({
 
   const handleToggle = useCallback(() => {
     if (isDirectory) {
-      setExpanded((prev) => !prev);
-      onToggleDirectory(node.path, allNodes);
+      void onToggleDirectory(node.path, node.sha);
     } else {
       onToggleFile(node.path);
     }
-  }, [isDirectory, node.path, allNodes, onToggleFile, onToggleDirectory]);
+  }, [isDirectory, node.path, node.sha, onToggleFile, onToggleDirectory]);
 
-  const handleExpand = useCallback(() => {
+  const handleExpand = useCallback(async () => {
     if (isDirectory) {
-      setExpanded((prev) => !prev);
+      const nextExpanded = !expanded;
+      setExpanded(nextExpanded);
+      if (nextExpanded && isLazyDirectory) {
+        await onExpandDirectory(node.path, node.sha);
+      }
+      if (!isMountedRef.current) return;
     }
-  }, [isDirectory]);
+  }, [expanded, isDirectory, isLazyDirectory, node.path, node.sha, onExpandDirectory]);
 
   return (
     <div>
@@ -146,12 +179,14 @@ function TreeNode({
           <button
             type="button"
             className="flex-shrink-0 p-0"
-            onClick={(e) => {
+            onClick={async (e) => {
               e.stopPropagation();
-              handleExpand();
+              await handleExpand();
             }}
           >
-            {expanded ? (
+            {isLoadingDirectory ? (
+              <Loader2 className="h-3.5 w-3.5 animate-spin text-muted-foreground" />
+            ) : expanded ? (
               <ChevronDown className="h-3.5 w-3.5 text-muted-foreground" />
             ) : (
               <ChevronRight className="h-3.5 w-3.5 text-muted-foreground" />
@@ -198,9 +233,10 @@ function TreeNode({
 
         {/* File count for directories */}
         {isDirectory && (
-          <span className="ml-auto flex-shrink-0 text-xs text-muted-foreground">
-            {childPaths.length} 文件
-          </span>
+          <div className="ml-auto flex items-center gap-2 text-xs text-muted-foreground">
+            {isLazyDirectory && !isLoadingDirectory ? <span>展开加载</span> : null}
+            <span>{childPaths.length} 文件</span>
+          </div>
         )}
       </div>
 
@@ -212,10 +248,12 @@ function TreeNode({
               key={child.path}
               node={child}
               depth={depth + 1}
+              lazyPaths={lazyPaths}
+              loadingDirectoryPaths={loadingDirectoryPaths}
               selectedPaths={selectedPaths}
               onToggleFile={onToggleFile}
               onToggleDirectory={onToggleDirectory}
-              allNodes={allNodes}
+              onExpandDirectory={onExpandDirectory}
             />
           ))}
         </div>

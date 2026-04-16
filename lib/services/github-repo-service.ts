@@ -1,6 +1,16 @@
 import { db } from '@/lib/db';
 import { accounts } from '@/lib/db/schema';
 import { eq, and } from 'drizzle-orm';
+import {
+  GITHUB_API_BATCH_CONCURRENCY,
+  MAX_FILE_BYTES,
+  RETRY_ATTEMPTS,
+} from '@/lib/constants/github-import';
+import {
+  buildRepoTreeResult,
+  type RepoTreeResult,
+  type LazyNode,
+} from './github-repo-tree';
 
 // ─── Types ───────────────────────────────────────────────────────────
 
@@ -18,6 +28,8 @@ export interface GitHubTreeNode {
   path: string;
   type: 'file' | 'directory';
   size?: number;
+  /** Git tree SHA for lazy loading subdirectories. Only present for directories in truncated trees. */
+  sha?: string;
   children: GitHubTreeNode[];
 }
 
@@ -29,6 +41,49 @@ export interface GitHubFileContent {
   size: number;
 }
 
+export interface RateLimitInfo {
+  remaining: number;
+  limit: number;
+  resetAt: Date;
+}
+
+export interface GitHubFileFailure {
+  path: string;
+  message: string;
+  code: 'NOT_FOUND' | 'RATE_LIMITED' | 'DECODE_ERROR' | 'FORBIDDEN' | 'UNKNOWN';
+}
+
+export interface GitHubFileBatchResult {
+  files: Map<string, GitHubFileContent>;
+  failures: GitHubFileFailure[];
+  rateLimit: RateLimitInfo | null;
+}
+
+export interface ParsedRepoUrl {
+  owner: string;
+  repo: string;
+}
+
+export interface SerializedGitHubFileContent {
+  path: string;
+  name: string;
+  content: string;
+  size: number;
+  lines: number;
+}
+
+export interface SerializedGitHubFileBatchResult {
+  owner: string;
+  repo: string;
+  totalLines: number;
+  files: SerializedGitHubFileContent[];
+  rateLimit: {
+    remaining: number;
+    limit: number;
+    resetAt: string;
+  } | null;
+}
+
 // ─── Token Retrieval ────────────────────────────────────────────────
 
 export async function getGitHubTokenForUser(userId: string): Promise<string | null> {
@@ -38,7 +93,14 @@ export async function getGitHubTokenForUser(userId: string): Promise<string | nu
     .where(and(eq(accounts.userId, userId), eq(accounts.provider, 'github')))
     .limit(1);
 
-  return result[0]?.access_token ?? null;
+  const token = result[0]?.access_token ?? null;
+  console.log('[github-import] resolved token', {
+    userId,
+    hasToken: Boolean(token),
+    tokenLength: token?.length ?? 0,
+  });
+
+  return token;
 }
 
 // ─── GitHub REST API Helpers ────────────────────────────────────────
@@ -61,24 +123,87 @@ interface GitHubApiError {
   message: string;
 }
 
+async function parseGitHubError(response: Response): Promise<GitHubApiError> {
+  const body = await response.json().catch(() => ({}));
+  return {
+    status: response.status,
+    message: (body as Record<string, unknown>).message as string || response.statusText,
+  };
+}
+
+function isRateLimitedResponse(response: Response, message: string): boolean {
+  if (response.status === 429) return true;
+  if (response.status !== 403) return false;
+
+  const rateLimit = extractRateLimitInfo(response.headers);
+  if (rateLimit.remaining <= 0) return true;
+
+  const lowered = message.toLowerCase();
+  return lowered.includes('rate limit') || lowered.includes('secondary rate limit') || lowered.includes('abuse detection');
+}
+
 async function handleGitHubResponse<T>(response: Response, context: string): Promise<T> {
   if (!response.ok) {
-    const body = await response.json().catch(() => ({}));
-    const error: GitHubApiError = {
-      status: response.status,
-      message: (body as Record<string, unknown>).message as string || response.statusText,
-    };
+    const error = await parseGitHubError(response);
 
     if (response.status === 404) {
       throw new GitHubRepoNotFoundError(context);
     }
+    if (isRateLimitedResponse(response, error.message)) {
+      throw new GitHubRateLimitError(error.message, extractRateLimitInfo(response.headers));
+    }
     if (response.status === 403) {
-      throw new GitHubRateLimitError(error.message);
+      throw new GitHubForbiddenError(error.message);
     }
     throw new GitHubApiErrorImpl(response.status, `GitHub API 错误: ${error.message}`);
   }
 
   return response.json() as Promise<T>;
+}
+
+// ─── Rate Limit & Failure Helpers ────────────────────────────────────
+
+function extractRateLimitInfo(headers: Headers): RateLimitInfo {
+  return {
+    remaining: parseInt(headers.get('X-RateLimit-Remaining') ?? '5000'),
+    limit: parseInt(headers.get('X-RateLimit-Limit') ?? '5000'),
+    resetAt: new Date(parseInt(headers.get('X-RateLimit-Reset') ?? '0') * 1000),
+  };
+}
+
+function classifyFailure(err: unknown): GitHubFileFailure['code'] {
+  if (err instanceof GitHubRepoNotFoundError) return 'NOT_FOUND';
+  if (err instanceof GitHubRateLimitError) return 'RATE_LIMITED';
+  if (err instanceof GitHubForbiddenError) return 'FORBIDDEN';
+  if (err instanceof Error && err.message.includes('base64')) return 'DECODE_ERROR';
+  return 'UNKNOWN';
+}
+
+function shouldFallbackWithoutToken(err: unknown): boolean {
+  if (err instanceof GitHubForbiddenError) return true;
+  if (err instanceof GitHubRepoNotFoundError) return true;
+  return err instanceof GitHubApiErrorImpl && [401, 403, 404].includes(err.status);
+}
+
+function shouldRetryGitHubError(err: unknown): boolean {
+  if (err instanceof GitHubRateLimitError) {
+    if (!err.rateLimit) return true;
+    return err.rateLimit.resetAt.getTime() - Date.now() <= 10_000;
+  }
+
+  return err instanceof GitHubApiErrorImpl && err.status >= 500;
+}
+
+function computeRetryDelayMs(err: unknown, attempt: number): number {
+  if (err instanceof GitHubRateLimitError && err.rateLimit) {
+    return Math.max(0, Math.min(err.rateLimit.resetAt.getTime() - Date.now() + 1000, 10_000));
+  }
+
+  return Math.min(1000 * 2 ** attempt, 5000);
+}
+
+async function sleep(ms: number): Promise<void> {
+  await new Promise((resolve) => setTimeout(resolve, ms));
 }
 
 // ─── Error Types ────────────────────────────────────────────────────
@@ -91,9 +216,19 @@ export class GitHubRepoNotFoundError extends Error {
 }
 
 export class GitHubRateLimitError extends Error {
-  constructor(detail: string) {
+  rateLimit: RateLimitInfo | null;
+
+  constructor(detail: string, rateLimit: RateLimitInfo | null = null) {
     super(`GitHub API 速率限制: ${detail}`);
     this.name = 'GitHubRateLimitError';
+    this.rateLimit = rateLimit;
+  }
+}
+
+export class GitHubForbiddenError extends Error {
+  constructor(detail: string) {
+    super(`GitHub API 拒绝访问: ${detail}`);
+    this.name = 'GitHubForbiddenError';
   }
 }
 
@@ -117,7 +252,7 @@ interface GitHubTreeResponse {
 /**
  * Parse "owner/repo" from a GitHub URL or return the string as-is if already in that format.
  */
-export function parseRepoUrl(input: string): { owner: string; repo: string } | null {
+export function parseRepoUrl(input: string): ParsedRepoUrl | null {
   const trimmed = input.trim();
 
   // Direct "owner/repo" format
@@ -142,33 +277,76 @@ export function parseRepoUrl(input: string): { owner: string; repo: string } | n
   return null;
 }
 
+async function requestGitHubJson<T>(
+  url: string,
+  context: string,
+  token?: string | null
+): Promise<{ data: T; rateLimit: RateLimitInfo }> {
+  const tokenCandidates = token ? [token, null] : [null];
+  let lastError: unknown = null;
+
+  for (const currentToken of tokenCandidates) {
+    for (let attempt = 0; attempt < RETRY_ATTEMPTS; attempt++) {
+      try {
+        const response = await fetch(url, { headers: githubHeaders(currentToken) });
+        const rateLimit = extractRateLimitInfo(response.headers);
+        console.log('[github-import] github response', {
+          context,
+          url,
+          attempt,
+          usingToken: Boolean(currentToken),
+          status: response.status,
+          remaining: rateLimit.remaining,
+          limit: rateLimit.limit,
+          resetAt: rateLimit.resetAt.toISOString(),
+        });
+        const data = await handleGitHubResponse<T>(response, context);
+        return { data, rateLimit };
+      } catch (err) {
+        lastError = err;
+        console.warn('[github-import] github request failed', {
+          context,
+          url,
+          attempt,
+          usingToken: Boolean(currentToken),
+          errorName: err instanceof Error ? err.name : typeof err,
+          errorMessage: err instanceof Error ? err.message : String(err),
+        });
+
+        if (currentToken && shouldFallbackWithoutToken(err)) {
+          console.warn('[github-import] falling back to anonymous GitHub request', {
+            context,
+            url,
+          });
+          break;
+        }
+
+        if (!shouldRetryGitHubError(err) || attempt === RETRY_ATTEMPTS - 1) {
+          throw err;
+        }
+
+        await sleep(computeRetryDelayMs(err, attempt));
+      }
+    }
+  }
+
+  throw lastError instanceof Error ? lastError : new Error('GitHub 请求失败');
+}
+
 /**
  * Fetch the file tree for a public GitHub repository.
- * Returns a flat list of tree items (files and directories).
+ * Returns a flat list of tree items along with truncation status.
+ * When the tree is truncated, top-level directory SHAs are collected for lazy loading.
  */
 export async function getRepoTree(
   owner: string,
   repo: string,
   token?: string | null
-): Promise<GitHubTreeItem[]> {
+): Promise<RepoTreeResult> {
   const url = `${GITHUB_API_BASE}/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/git/trees/HEAD?recursive=1`;
+  const { data } = await requestGitHubJson<GitHubTreeResponse>(url, `${owner}/${repo}`, token);
 
-  // Try with token first; fall back to unauthenticated for public repos if token is bad
-  let response = await fetch(url, { headers: githubHeaders(token) });
-  if (response.status === 401 && token) {
-    response = await fetch(url, { headers: githubHeaders() });
-  }
-
-  const data = await handleGitHubResponse<GitHubTreeResponse>(response, `${owner}/${repo}`);
-
-  if (data.truncated) {
-    // Tree is too large; filter to keep only reasonable files
-    return data.tree.filter(
-      (item) => item.type === 'tree' || (item.type === 'blob' && (item.size ?? 0) <= 100_000)
-    );
-  }
-
-  return data.tree;
+  return buildRepoTreeResult(data.tree, data.truncated);
 }
 
 /**
@@ -184,7 +362,7 @@ export function buildFileTree(items: GitHubTreeItem[]): GitHubTreeNode[] {
     // Skip common non-code directories
     if (parts.some((p) => ['node_modules', 'dist', 'build', '__pycache__', 'vendor', '.next'].includes(p))) return false;
     // Skip very large files (> 100KB)
-    if (item.type === 'blob' && (item.size ?? 0) > 100_000) return false;
+    if (item.type === 'blob' && (item.size ?? 0) > MAX_FILE_BYTES) return false;
     return true;
   });
 
@@ -209,16 +387,20 @@ export function buildFileTree(items: GitHubTreeItem[]): GitHubTreeNode[] {
             children: [],
           });
         } else {
-          // Directory
+          // Directory — preserve SHA from tree item for lazy loading
           let existing = currentLevel.find((n) => n.path === currentPath);
           if (!existing) {
             existing = {
               name: part,
               path: currentPath,
               type: 'directory',
+              sha: item.type === 'tree' ? item.sha : undefined,
               children: [],
             };
             currentLevel.push(existing);
+          } else if (item.type === 'tree' && !existing.sha) {
+            // Backfill SHA if the directory was created without one
+            existing.sha = item.sha;
           }
         }
       } else {
@@ -228,9 +410,12 @@ export function buildFileTree(items: GitHubTreeItem[]): GitHubTreeNode[] {
             name: part,
             path: currentPath,
             type: 'directory',
+            sha: item.type === 'tree' ? item.sha : undefined,
             children: [],
           };
           currentLevel.push(existing);
+        } else if (item.type === 'tree' && !existing.sha) {
+          existing.sha = item.sha;
         }
         currentLevel = existing.children;
       }
@@ -253,6 +438,22 @@ export function buildFileTree(items: GitHubTreeItem[]): GitHubTreeNode[] {
   return sortNodes(root);
 }
 
+/**
+ * Fetch the full tree for a subdirectory using its Git tree SHA.
+ * Used for lazy-loading directories that were truncated in the initial response.
+ */
+export async function fetchSubdirectory(
+  owner: string,
+  repo: string,
+  treeSha: string,
+  rootPath: string,
+  token?: string | null
+): Promise<RepoTreeResult> {
+  const url = `${GITHUB_API_BASE}/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/git/trees/${encodeURIComponent(treeSha)}?recursive=1`;
+  const { data } = await requestGitHubJson<GitHubTreeResponse>(url, `subdirectory ${treeSha}`, token);
+  return buildRepoTreeResult(data.tree, data.truncated, rootPath);
+}
+
 // ─── File Content ───────────────────────────────────────────────────
 
 interface GitHubContentResponse {
@@ -265,22 +466,20 @@ interface GitHubContentResponse {
 
 /**
  * Fetch the content of a single file from a public GitHub repository.
- * Returns the decoded file content.
+ * Returns the decoded file content and rate limit info from response headers.
  */
 export async function getFileContent(
   owner: string,
   repo: string,
   path: string,
   token?: string | null
-): Promise<GitHubFileContent> {
+): Promise<{ content: GitHubFileContent; rateLimit: RateLimitInfo }> {
   const url = `${GITHUB_API_BASE}/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/contents/${encodeURIComponent(path)}`;
-
-  let response = await fetch(url, { headers: githubHeaders(token) });
-  if (response.status === 401 && token) {
-    response = await fetch(url, { headers: githubHeaders() });
-  }
-
-  const data = await handleGitHubResponse<GitHubContentResponse>(response, `${owner}/${repo}/${path}`);
+  const { data, rateLimit } = await requestGitHubJson<GitHubContentResponse>(
+    url,
+    `${owner}/${repo}/${path}`,
+    token
+  );
 
   // GitHub returns content as base64
   const decoded = data.encoding === 'base64'
@@ -288,28 +487,32 @@ export async function getFileContent(
     : data.content;
 
   return {
-    name: data.name,
-    path: data.path,
-    content: decoded,
-    encoding: 'utf-8',
-    size: data.size,
+    content: {
+      name: data.name,
+      path: data.path,
+      content: decoded,
+      encoding: 'utf-8',
+      size: data.size,
+    },
+    rateLimit,
   };
 }
 
 /**
  * Fetch multiple files in parallel.
- * Returns results as a map of path → content.
+ * Returns a batch result with successful files, failures, and rate limit info.
  */
 export async function getMultipleFileContents(
   owner: string,
   repo: string,
   paths: string[],
   token?: string | null
-): Promise<Map<string, GitHubFileContent>> {
-  const results = new Map<string, GitHubFileContent>();
+): Promise<GitHubFileBatchResult> {
+  const files = new Map<string, GitHubFileContent>();
+  const failures: GitHubFileFailure[] = [];
+  let rateLimit: RateLimitInfo | null = null;
 
-  // Fetch in batches of 5 to avoid rate limiting
-  const batchSize = 5;
+  const batchSize = GITHUB_API_BATCH_CONCURRENCY;
   for (let i = 0; i < paths.length; i += batchSize) {
     const batch = paths.slice(i, i + batchSize);
     const responses = await Promise.allSettled(
@@ -319,10 +522,51 @@ export async function getMultipleFileContents(
     for (let j = 0; j < responses.length; j++) {
       const result = responses[j];
       if (result.status === 'fulfilled') {
-        results.set(batch[j], result.value);
+        files.set(batch[j], result.value.content);
+        rateLimit = result.value.rateLimit;
+      } else {
+        const reason = result.reason;
+        failures.push({
+          path: batch[j],
+          message: reason?.message ?? 'Unknown error',
+          code: classifyFailure(reason),
+        });
       }
     }
   }
 
-  return results;
+  return { files, failures, rateLimit };
+}
+
+export function serializeGitHubFileBatchResult(
+  owner: string,
+  repo: string,
+  result: GitHubFileBatchResult
+): SerializedGitHubFileBatchResult {
+  let totalLines = 0;
+  const files = Array.from(result.files.entries()).map(([path, content]) => {
+    const lines = content.content.split('\n').length;
+    totalLines += lines;
+    return {
+      path,
+      name: content.name,
+      content: content.content,
+      size: content.size,
+      lines,
+    };
+  });
+
+  return {
+    owner,
+    repo,
+    totalLines,
+    files,
+    rateLimit: result.rateLimit
+      ? {
+          remaining: result.rateLimit.remaining,
+          limit: result.rateLimit.limit,
+          resetAt: result.rateLimit.resetAt.toISOString(),
+        }
+      : null,
+  };
 }

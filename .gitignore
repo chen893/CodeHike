@@ -3,7 +3,6 @@ node_modules/
 dev-server.log
 .env.local
 .env.local.*
-drizzle/
 
 # Claude Code
 .claude/
@@ -19,3 +18,10 @@ next-env.d.ts
 
 # Test artifacts
 test-results/
+
+# Historical local Drizzle artifact
+drizzle/0000_jittery_spencer_smythe.sql
+
+tmp
+
+docs/roadmaps/
