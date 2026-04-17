@@ -7,7 +7,7 @@ export const teachingBriefSchema = z.object({
   ignore_scope: z.string(),
   output_language: z.string().min(1),
   desired_depth: z.enum(['short', 'medium', 'deep']).optional(),
-  target_step_count: z.number().int().min(1).max(20).optional(),
+  target_step_count: z.number().int().min(1).max(40).optional(),
   preferred_style: z.string().optional(),
 });
 

@@ -5,6 +5,16 @@ import type { TeachingBrief } from '../schemas/teaching-brief';
 import { analyzeSourceCollectionShape } from '../utils/source-collection-shape';
 import { ensureDraftChapters } from '../tutorial/chapters';
 
+// ---------------------------------------------------------------------------
+// Step granularity thresholds
+// ---------------------------------------------------------------------------
+
+const OVERSIZED_LOC_THRESHOLD = 40;
+const SEVERELY_OVERSIZED_LOC_THRESHOLD = 80;
+const OUTLINE_FILL_CONSISTENCY_FLOOR = 0.6;
+const AVG_LOC_TRIGGER = 40;
+const SEVERE_STEP_RATIO = 0.15;
+
 export interface GenerationReviewIssue {
   code: string;
   severity: 'critical' | 'major' | 'minor';
@@ -50,6 +60,11 @@ export interface GenerationReviewReport {
     sourceCoverageRatio: number;
     patchFileCoverageRatio: number;
     patchConcentrationRatio: number;
+    avgLocChangePerStep: number;
+    maxLocChangePerStep: number;
+    oversizedStepCount: number;
+    severelyOversizedStepCount: number;
+    outlineToFillConsistency: number;
   };
   promptReview: Array<{
     file: string;
@@ -107,6 +122,50 @@ function buildPromptReview(issues: GenerationReviewIssue[]) {
   }));
 }
 
+function computeStepLoc(step: TutorialDraft['steps'][number]) {
+  return (step.patches ?? []).reduce((sum, patch) => {
+    const findLines = patch.find.split('\n').length;
+    const replaceLines = patch.replace.split('\n').length;
+    return sum + Math.abs(replaceLines - findLines);
+  }, 0);
+}
+
+function computeOutlineToFillConsistency(
+  draft: TutorialDraft,
+  outline?: TutorialOutline | null,
+) {
+  if (!outline || !Array.isArray(outline.steps) || outline.steps.length === 0 || draft.steps.length === 0) {
+    return 1;
+  }
+
+  let consistentCount = 0;
+  const comparableCount = Math.min(draft.steps.length, outline.steps.length);
+  for (let i = 0; i < comparableCount; i++) {
+    const outlineTitle = outline.steps[i].title.trim().toLowerCase();
+    const fillTitle = draft.steps[i].title.trim().toLowerCase();
+    const isExactMatch = outlineTitle === fillTitle;
+    const isSubstring = outlineTitle.includes(fillTitle) || fillTitle.includes(outlineTitle);
+    const outlineKeywords = new Set(
+      outlineTitle.split(/[\s：:，,、（）()\-—]+/).filter((word) => word.length > 1),
+    );
+    const fillKeywords = new Set(
+      fillTitle.split(/[\s：:，,、（）()\-—]+/).filter((word) => word.length > 1),
+    );
+    let sharedKeywords = 0;
+    for (const keyword of outlineKeywords) {
+      if (fillKeywords.has(keyword)) sharedKeywords++;
+    }
+    const hasSharedConcept =
+      sharedKeywords > 0 &&
+      (sharedKeywords / Math.max(outlineKeywords.size || 1, fillKeywords.size || 1)) >= 0.3; // keyword overlap ratio threshold
+    if (isExactMatch || isSubstring || hasSharedConcept) {
+      consistentCount++;
+    }
+  }
+
+  return comparableCount > 0 ? consistentCount / comparableCount : 1;
+}
+
 export function reviewGeneratedTutorial({
   tutorialDraft,
   sourceItems,
@@ -160,6 +219,11 @@ export function reviewGeneratedTutorial({
         sourceCoverageRatio: 0,
         patchFileCoverageRatio: 0,
         patchConcentrationRatio: 0,
+        avgLocChangePerStep: 0,
+        maxLocChangePerStep: 0,
+        oversizedStepCount: 0,
+        severelyOversizedStepCount: 0,
+        outlineToFillConsistency: 0,
       },
       promptReview: buildPromptReview(issues),
     };
@@ -192,6 +256,14 @@ export function reviewGeneratedTutorial({
   const baseCoverage = sourceItemLabels.length > 0 ? baseFiles.length / sourceItemLabels.length : 1;
   const patchCoverage = sourceItemLabels.length > 0 ? uniquePatchFiles.length / sourceItemLabels.length : 1;
   const sourceCoverageRatio = Math.min(1, Math.max(baseCoverage, patchCoverage));
+  const stepLocValues = draft.steps.map((step) => computeStepLoc(step));
+  const avgLocChangePerStep = stepLocValues.length > 0
+    ? stepLocValues.reduce((sum, value) => sum + value, 0) / stepLocValues.length
+    : 0;
+  const maxLocChangePerStep = stepLocValues.length > 0 ? Math.max(...stepLocValues) : 0;
+  const oversizedStepCount = stepLocValues.filter((value) => value > OVERSIZED_LOC_THRESHOLD).length;
+  const severelyOversizedStepCount = stepLocValues.filter((value) => value > SEVERELY_OVERSIZED_LOC_THRESHOLD).length;
+  const outlineToFillConsistency = computeOutlineToFillConsistency(draft, outline);
 
   const issues: GenerationReviewIssue[] = [];
 
@@ -257,6 +329,38 @@ export function reviewGeneratedTutorial({
     });
   }
 
+  if (avgLocChangePerStep > AVG_LOC_TRIGGER || severelyOversizedStepCount >= Math.max(2, Math.ceil(draft.steps.length * SEVERE_STEP_RATIO))) {
+    issues.push({
+      code: 'STEP_GRANULARITY_OVERSIZED',
+      severity: 'major',
+      title: 'Too many steps land oversized code changes',
+      summary: `Average LOC change per step is ${avgLocChangePerStep.toFixed(1)}, with ${oversizedStepCount} step(s) over ${OVERSIZED_LOC_THRESHOLD} LOC and ${severelyOversizedStepCount} step(s) over ${SEVERELY_OVERSIZED_LOC_THRESHOLD} LOC.`,
+      stage: 'step_fill',
+      promptFiles: ['lib/ai/step-fill-prompt.ts'],
+      flowFiles: ['lib/ai/multi-phase-generator.ts'],
+      suggestedDirections: [
+        'Turn the LOC budget into a real retry or split trigger instead of accepting oversized steps.',
+        'Allow outline/pipeline to insert intermediate steps when a target file would otherwise land as a whole-file patch.',
+      ],
+    });
+  }
+
+  if (outline && outlineToFillConsistency < OUTLINE_FILL_CONSISTENCY_FLOOR) {
+    issues.push({
+      code: 'OUTLINE_FILL_DRIFT',
+      severity: 'major',
+      title: 'Filled steps drifted away from the approved outline',
+      summary: `Outline-to-fill consistency is ${outlineToFillConsistency.toFixed(2)}, which suggests the final steps no longer match the outline titles/concepts closely enough.`,
+      stage: 'pipeline',
+      promptFiles: ['lib/ai/outline-prompt.ts', 'lib/ai/step-fill-prompt.ts'],
+      flowFiles: ['lib/ai/multi-phase-generator.ts'],
+      suggestedDirections: [
+        'Keep more explicit concept anchors from the outline in step-fill prompts.',
+        'Split broad outline steps before step-fill so later steps do not collapse into file-sized patches.',
+      ],
+    });
+  }
+
   if (!validationValid || validationErrors.length > 0) {
     issues.push({
       code: 'PUBLISH_VALIDATION_FAILED',
@@ -303,6 +407,8 @@ export function reviewGeneratedTutorial({
   pedagogicalProgression -= missingLeadSteps.length * 8;
   pedagogicalProgression -= draft.steps.filter((step) => step.paragraphs.length < 2).length * 4;
   if (draft.chapters.length === 0) pedagogicalProgression -= 10;
+  pedagogicalProgression -= Math.min(25, oversizedStepCount * 2 + severelyOversizedStepCount * 3);
+  pedagogicalProgression -= Math.min(25, Math.round((1 - outlineToFillConsistency) * 25));
 
   let sourceCoverage = 100;
   sourceCoverage -= Math.round((1 - sourceCoverageRatio) * 65);
@@ -313,6 +419,8 @@ export function reviewGeneratedTutorial({
   scrollytellingReadiness -= missingFocusSteps.length * 5;
   scrollytellingReadiness -= missingMarksSteps.length * 3;
   scrollytellingReadiness -= missingLeadSteps.length * 4;
+  scrollytellingReadiness -= Math.min(35, Math.round(Math.max(0, avgLocChangePerStep - 20) * 0.25));
+  scrollytellingReadiness -= Math.min(20, severelyOversizedStepCount * 2);
 
   let publishReadiness = validationValid ? 100 : 40;
   publishReadiness -= placeholderSteps.length * 20;
@@ -374,6 +482,11 @@ export function reviewGeneratedTutorial({
       sourceCoverageRatio: Number(sourceCoverageRatio.toFixed(2)),
       patchFileCoverageRatio: Number(patchCoverage.toFixed(2)),
       patchConcentrationRatio: Number(patchConcentrationRatio.toFixed(2)),
+      avgLocChangePerStep: Number(avgLocChangePerStep.toFixed(2)),
+      maxLocChangePerStep: maxLocChangePerStep,
+      oversizedStepCount,
+      severelyOversizedStepCount,
+      outlineToFillConsistency: Number(outlineToFillConsistency.toFixed(2)),
     },
     promptReview: buildPromptReview(issues),
   };

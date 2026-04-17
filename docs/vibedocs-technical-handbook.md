@@ -53,27 +53,44 @@
 
 这是整个系统的数据核心。AI 生成它、编辑器修改它、渲染器消费它。
 
-### 3.1 TutorialData 顶层结构
+### 3.1 TutorialDraft 顶层结构
 
 ```
-TutorialData {
+TutorialDraft {
   meta: {
     title: string          // 教程标题
     lang?: string          // 编程语言（AI 可能遗漏，需从 baseCode 推导）
     fileName?: string      // 主文件名
-    description: string          // 教程描述（必填，min 1）
+    description: string    // 教程描述（必填，min 1）
   }
   intro: { paragraphs: string[] }  // 引言段落（包装在 paragraphs 数组外）
   baseCode: string | Record<string, string>   // 单文件用 string，多文件用 Record
-  steps: TutorialStep[]
+  chapters: Chapter[]      // 章节列表（min 1，单章教程也有一个 default chapter）
+  steps: TutorialStep[]    // 每步通过 chapterId 归属到章节
 }
 ```
 
-### 3.2 TutorialStep
+### 3.2 Chapter（章节）
+
+```
+Chapter {
+  id: string               // 唯一标识
+  title: string            // 章节标题
+  description?: string     // 章节描述
+  order: number            // 排序序号（从 0 开始）
+}
+```
+
+- 章节由 `lib/tutorial/chapters.ts` 管理（`ensureDraftChapters` 自动为旧草稿创建 default chapter）
+- 旧格式草稿（无 chapters / 无 chapterId）通过 `ensureDraftChapters()` 迁移，自动归入 "Chapter 1"
+- 章节约束：同一章节的步骤必须连续、章节 id/order 不可重复
+
+### 3.3 TutorialStep
 
 ```
 TutorialStep {
   id: string               // 唯一标识
+  chapterId: string        // 所属章节 ID（FK → Chapter.id）
   eyebrow?: string         // 步骤标签（如 "Step 1"）
   title: string            // 步骤标题
   lead?: string            // 引导语
@@ -86,7 +103,7 @@ TutorialStep {
 }
 ```
 
-### 3.3 ContentPatch（内容锚定补丁）
+### 3.4 ContentPatch（内容锚定补丁）
 
 这是 DSL 的核心创新——**不用行号，用内容锚定的 find/replace**：
 
@@ -103,7 +120,7 @@ ContentPatch {
 - 相比完整代码快照节省约 **58-60%** token
 - 每个 patch 在运行时可验证（不匹配立即报错）
 
-### 3.4 ContentRange / ContentMark
+### 3.5 ContentRange / ContentMark
 
 ```
 ContentRange { find: string, file?: string }   // 高亮一段代码
@@ -112,7 +129,7 @@ ContentMark  { find: string, color: string, file?: string }  // 标记一行
 
 同样用内容锚定，不用行号。
 
-### 3.5 多文件支持
+### 3.6 多文件支持
 
 - `baseCode` 可以是 `Record<string, string>`（文件名 → 文件内容）
 - `normalizeBaseCode()` 将单文件 string 包装为 Record 格式
@@ -244,6 +261,7 @@ GenerationQuality {
 - 输入源码形态分析（普通多文件 / 渐进式快照）实现在 `lib/utils/source-collection-shape.ts`
 - CLI 入口为 `npm run review:generation -- --draft-id <id> --variant <name> [--mode existing|generate]`
 - 对多文件输入，生成阶段会在内部快照中为后续 `targetFiles` 预植入 placeholder stub，供 step-fill 对齐尚未进入 `baseCode` 的目标文件；最终 draft 只 materialize 实际被 patch 过的这些文件
+- review 会额外惩罚“单步 LOC 变化过大”和 `outline -> step-fill` 明显漂移，避免“按文件巡礼但表面完整”的教程继续拿到假高分
 - 每轮实验会同时落两份产物：
   - `dataset/generation-quality-loop.csv`：扁平对比表，用于 keep / revert 决策
   - `dataset/generation-quality-reports/*.json`：完整评分报告，含 issue taxonomy、prompt review 和 stop condition
@@ -404,43 +422,49 @@ DraftSnapshot {
 
 | 方法 | 路径 | 说明 |
 |------|------|------|
-| POST | `/api/drafts` | 创建草稿（201 + `{ id }`） |
+| POST | `/api/drafts` | 创建草稿（201 + `{ id }`，支持 `Idempotency-Key` 幂等） |
 | GET | `/api/drafts` | 草稿列表（仅摘要：标题、状态、步骤数、更新时间） |
 | GET | `/api/drafts/[id]` | 读取草稿详情 |
 | PATCH | `/api/drafts/[id]` | 更新 teachingBrief、meta、intro |
 | DELETE | `/api/drafts/[id]` | 删除草稿（生成中不可删、已发布不可删） |
 | POST | `/api/drafts/[id]/generate` | SSE 流式生成（30-60秒，`maxDuration = 300`） |
+| GET | `/api/drafts/[id]/generation-status` | 轮询生成状态（支持 `?lightweight=true` 省略大字段） |
+| POST | `/api/drafts/[id]/cancel` | 取消正在进行的生成 |
 | GET | `/api/drafts/[id]/payload` | 构建预览 payload |
 | POST | `/api/drafts/[id]/publish` | 发布（检查 syncState=fresh + validation valid） |
-| PATCH | `/api/drafts/[id]/steps/[stepId]` | 编辑步骤（文案 + patches/focus/marks，结构变更时触发级联校验） |
-| DELETE | `/api/drafts/[id]/steps/[stepId]` | 删除步骤 |
+| POST | `/api/drafts/[id]/unpublish` | 取消发布（删除 PublishedTutorial + 重置 draft 状态） |
+| POST | `/api/drafts/[id]/incremental-regenerate` | 增量重新生成（比对大纲差异，只重生成受影响步骤） |
 | POST | `/api/drafts/[id]/steps` | 追加步骤 |
 | PUT | `/api/drafts/[id]/steps` | 步骤重排（只接受 stepIds 顺序数组） |
-| POST | `/api/drafts/[id]/steps/[stepId]/regenerate` | 重新生成单步 |
-| GET | `/api/tutorials/[slug]` | 已发布教程 payload API（`route.js`） |
-| POST | `/api/drafts/[id]/unpublish` | 取消发布（删除 PublishedTutorial + 重置 draft 状态） |
+| PATCH | `/api/drafts/[id]/steps/[stepId]` | 编辑步骤（文案 + patches/focus/marks，结构变更时触发级联校验） |
+| DELETE | `/api/drafts/[id]/steps/[stepId]` | 删除步骤 |
+| POST | `/api/drafts/[id]/steps/[stepId]/regenerate` | 重新生成单步（`maxDuration = 120`） |
+| PUT | `/api/drafts/[id]/structure` | 更新章节/步骤结构（批量重组 chapters + step-chapter 分配） |
+| POST | `/api/drafts/[id]/chapters` | 添加章节 |
+| PATCH | `/api/drafts/[id]/chapters/[chapterId]` | 更新章节（title/description） |
+| DELETE | `/api/drafts/[id]/chapters/[chapterId]` | 删除章节（需 `moveStepsToChapterId`，不可删最后一个） |
 | GET | `/api/drafts/[id]/snapshots` | 获取草稿快照列表 |
 | POST | `/api/drafts/[id]/snapshots` | 创建快照（body: `{ label? }`) |
 | POST | `/api/drafts/[id]/snapshots/[snapshotId]` | 恢复快照（自动备份当前状态） |
 | DELETE | `/api/drafts/[id]/snapshots/[snapshotId]` | 删除快照 |
-| POST | `/api/drafts/[id]/incremental-regenerate` | 增量重新生成（比对大纲差异，只重生成受影响步骤） |
-| GET | `/api/tutorials/[slug]/embed` | 嵌入式 HTML 页面（CORS header，无 AppShell） |
-| GET | `/api/og/[slug]` | OG 图片生成（1200x630，nodejs runtime） |
-| POST | `/api/models/probe` | 模型能力探测（可达性、延迟、response_format 支持） |
-| GET/POST | `/api/auth/[...nextauth]` | NextAuth 路由处理器（GitHub OAuth） |
-| GET | `/api/search?q=` | 全文搜索教程（PostgreSQL ts_vector，limit 50） |
-| GET | `/api/tags` | 标签列表（含教程计数） |
+| GET | `/api/tutorials/[slug]` | 已发布教程 payload API（`route.js`） |
+| GET | `/api/tutorials/[slug]/embed` | 嵌入式 HTML 页面（CORS `*`，无 AppShell，nodejs runtime） |
+| GET | `/api/tutorials/[slug]/export-markdown` | 导出教程为 Markdown 文件 |
+| GET | `/api/tutorials/[slug]/export-html` | 导出教程为 HTML 文件 |
 | GET | `/api/tutorials/[slug]/tags` | 获取教程标签 |
 | PUT | `/api/tutorials/[slug]/tags` | 设置教程标签（需认证，tags 字符串数组） |
+| GET | `/api/og/[slug]` | OG 图片生成（1200x630，nodejs runtime） |
+| POST | `/api/models/probe` | 模型能力探测（可达性、延迟、response_format 支持） |
+| GET/POST | `/api/auth/[...nextauth]` | NextAuth 路由处理器（GitHub OAuth + Linux.do OAuth） |
+| GET | `/api/search?q=` | 全文搜索教程（PostgreSQL ts_vector，支持 tag/lang/sort/page，nodejs runtime） |
+| GET | `/api/tags` | 标签列表（含教程计数，nodejs runtime） |
 | GET | `/api/user/profile` | 获取当前用户档案（需认证） |
 | PATCH | `/api/user/profile` | 更新用户档案（name/bio，需认证） |
 | POST | `/api/user/username` | 设置用户名（首次设置，已设置返回 409，需认证） |
-| POST | `/api/events` | 事件追踪（fire-and-forget 埋点） |
-| GET | `/api/tutorials/[slug]/export-markdown` | 导出教程为 Markdown 文件 |
-| GET | `/api/tutorials/[slug]/export-html` | 导出教程为 HTML 文件 |
-| GET | `/api/github/repo-tree?url=` | GitHub 仓库文件树（公开仓库免登录；登录后复用 OAuth token 提升配额；代理 GitHub Trees API） |
-| GET | `/api/github/repo-tree/subdirectory?url=&sha=&path=` | GitHub 大仓库子目录懒加载（公开仓库免登录；代理 GitHub Trees API） |
-| POST | `/api/github/file-content` | GitHub 仓库文件内容批量获取（公开仓库免登录；登录后复用 OAuth token；支持 partial success；≤30 文件/批 ≤5000 行/批） |
+| POST | `/api/events` | 事件追踪（fire-and-forget 埋点，校验 `ALLOWED_EVENT_TYPES`） |
+| GET | `/api/github/repo-tree?url=` | GitHub 仓库文件树（公开仓库免登录；登录后复用 OAuth token 提升配额） |
+| GET | `/api/github/repo-tree/subdirectory?url=&sha=&path=` | GitHub 大仓库子目录懒加载 |
+| POST | `/api/github/file-content` | GitHub 仓库文件内容批量获取（≤30 文件/批，partial success） |
 
 **关键设计决策：**
 - 只用 Route Handlers，不用 tRPC、不用 Server Actions
@@ -477,10 +501,10 @@ DraftSnapshot {
 │  错误类型定义 + 分类                          │
 ├─────────────────────────────────────────────┤
 │  lib/tutorial/           (渲染基础层)        │
-│  patch 应用、payload 构建、registry           │
+│  patch 应用、payload 构建、chapters、normalize、registry │
 ├─────────────────────────────────────────────┤
 │  lib/ai/                 (AI 层)            │
-│  prompt 模板 + 多阶段生成编排                  │
+│  prompt 模板 + 多阶段生成编排 + provider 注册 │
 ├─────────────────────────────────────────────┤
 │  lib/schemas/            (Schema 层)        │
 │  Zod schema（AI 输出 + API 校验 + DB 校验）   │
@@ -496,12 +520,21 @@ DraftSnapshot {
 ├─────────────────────────────────────────────┤
 │  lib/api/                (路由工具层)        │
 │  Route Handler 共用的错误处理工具             │
+├─────────────────────────────────────────────┤
+│  lib/review/             (评审层)            │
+│  生成质量 review rubric                      │
+├─────────────────────────────────────────────┤
+│  lib/constants/          (常量层)            │
+│  共享常量（GitHub 导入限制等）                 │
 └─────────────────────────────────────────────┘
 
 **其他 lib 根级文件：**
 - `lib/utils.ts` — shadcn/ui 的 `cn()` Tailwind 类名合并工具
 - `lib/draft-status.ts` — 草稿状态 badge 逻辑（`getDraftStatusInfo()`）
+- `lib/constants.ts` — 常量 re-export 入口
+- `lib/first-experience-template.ts` — 首次体验模板数据
 - `lib/base-path.js` — base path 规范化
+- `lib/tutorial-assembler.js`、`lib/tutorial-payload.js`、`lib/tutorial-registry.js`、`lib/tutorial-draft-code.js` — 兼容 shim（re-export `lib/tutorial/*`）
 ```
 
 ### 8.1 导入规则
@@ -541,6 +574,10 @@ DraftSnapshot {
 | `lib/types/api.ts` | API 响应类型定义（`TutorialTag`、`UserPublicProfile`、`ExploreTutorial` 等） |
 | `lib/types/client.ts` | 客户端 DTO 类型定义（`ClientTutorialTag`、`ClientExploreTutorial` 等） |
 | `lib/utils/html-escape.ts` | HTML 转义工具（导出 Markdown/HTML 用） |
+| `lib/utils/source-import-limits.ts` | GitHub 导入限制常量（MAX_FILES/TOTAL/LINES） |
+| `lib/utils/source-collection-shape.ts` | 输入源码形态分析（普通多文件 / 渐进式快照） |
+| `lib/constants/github-import.ts` | GitHub 导入限制（MAX_FILES_PER_REQUEST、MAX_LINES_PER_REQUEST） |
+| `lib/types/generation-job.ts` | Generation job 类型定义 |
 | `lib/db/index.ts` | Drizzle DB 连接实例 |
 | `lib/db/schema.ts` | Drizzle schema 定义（所有表） |
 | `lib/errors/error-types.ts` | 错误类型定义（`AppError` 层级） |
@@ -607,9 +644,9 @@ DraftSnapshot {
 
 **受保护路由（需要登录）：**
 - `/drafts/*`、`/new` — 页面路由 redirect 到登录页
-- `/api/drafts/*`、`/api/user/*` — API 路由返回 `401 JSON`
+- `/api/drafts/*`、`/api/user/*`、`/api/github/*` — API 路由返回 `401 JSON`
 
-中间件使用轻量级 NextAuth 实例（无 DB adapter，仅验证 JWT cookie），在 Edge Runtime 下运行。页面和服务端组件通过 `getCurrentUser()` 获取当前用户，API 路由通过 `auth()` 获取 session。
+中间件使用轻量级 NextAuth 实例（无 DB adapter，仅验证 JWT cookie），在 Edge Runtime 下运行。页面和服务端组件通过 `getCurrentUser()` 获取当前用户，API 路由通过 `auth()` 获取 session。认证支持 GitHub OAuth 和 Linux.do OAuth 两个 provider。
 
 ---
 
@@ -623,6 +660,10 @@ DraftSnapshot {
 | `components/tutorial/scrolly-code-frame.jsx` | 代码面板 |
 | `components/tutorial/scrolly-step-rail.jsx` | StepRail 侧边导航 |
 | `components/tutorial/scrolly-handlers.jsx` | CodeHike handler（changeIndicator、tokenTransitions、animateLineDiff） |
+| `components/tutorial/chapter-rail.jsx` | 章节导航 rail（章节间跳转） |
+| `components/tutorial/chapter-divider.tsx` | 章节分隔线（渲染时在章节间插入） |
+| `components/tutorial/generation-preview-panel.tsx` | 生成预览面板（实时预览已生成的步骤） |
+| `components/tutorial/create-cta.tsx` | "创建你的教程" CTA 组件 |
 | `components/remote-tutorial-page.jsx` | 远程加载容器 |
 | `components/remote-preview-page.tsx` | 预览远程加载容器（泛型，fetchUrl 为 prop） |
 
@@ -687,6 +728,9 @@ DraftSnapshot {
 - `components/drafts/use-drafts-page-controller.ts` — 草稿列表页状态管理
 - `components/drafts/draft-workspace-content.tsx` — 工作区主内容视图
 - `components/drafts/draft-workspace-sidebar.tsx` — 工作区侧边栏
+- `components/drafts/chapter-row.tsx` — 章节行（侧边栏中的章节标题）
+- `components/drafts/chapter-step-row.tsx` — 章节内步骤行
+- `components/drafts/chaptered-step-list.tsx` — 按章节分组的步骤列表
 
 GitHub 导入（v3.9 新增）：
 - `components/create-draft/github-client.ts` — GitHub API 客户端调用封装
@@ -940,30 +984,33 @@ GitHub 导入（v3.9 新增）：
 
 | 服务文件 | 职责 |
 |----------|------|
-| `lib/services/create-draft.ts` | 创建草稿（含 inputHash 计算） |
-| `lib/services/generate-tutorial-draft.ts` | 生成入口（v1/v2 分发 + 异步持久化） |
+| `lib/services/create-draft.ts` | 创建草稿（含 inputHash 计算 + 幂等去重） |
+| `lib/services/generate-tutorial-draft.ts` | 生成入口（v1/v2 分发 + 异步持久化 + generation job 生命周期） |
 | `lib/services/update-draft.ts` | 更新草稿基本信息 |
-| `lib/services/update-draft-meta.ts` | 更新 meta |
-| `lib/services/update-draft-step.ts` | 更新单步内容 |
-| `lib/services/append-draft-step.ts` | 追加步骤 |
+| `lib/services/update-draft-meta.ts` | 更新 meta（委托 updateDraft） |
+| `lib/services/update-draft-step.ts` | 更新单步内容（文案 + 结构变更级联校验） |
+| `lib/services/update-draft-structure.ts` | 更新章节/步骤结构（批量重组 chapters + stepOrder） |
+| `lib/services/append-draft-step.ts` | 追加步骤（自动归入 default chapter） |
 | `lib/services/replace-draft-steps.ts` | 步骤重排 |
 | `lib/services/delete-draft.ts` | 删除草稿 |
-| `lib/services/delete-draft-step.ts` | 删除单步 |
-| `lib/services/regenerate-draft-step.ts` | 重新生成单步 |
-| `lib/services/publish-draft.ts` | 发布（前置检查 + 事务：创建 PublishedTutorial + 更新 DraftRecord） |
+| `lib/services/delete-draft-step.ts` | 删除单步（保留至少一步） |
+| `lib/services/regenerate-draft-step.ts` | 重新生成单步（prose/step 模式） |
+| `lib/services/chapter-crud.ts` | 章节增删改（addChapter、updateChapter、deleteChapter + 步骤迁移） |
+| `lib/services/publish-draft.ts` | 发布（前置检查 + 事务 + AI 标签生成触发） |
 | `lib/services/build-draft-preview-payload.ts` | 构建预览 payload |
-| `lib/services/draft-queries.ts` | 草稿查询 |
-| `lib/services/tutorial-queries.ts` | 教程查询 |
+| `lib/services/draft-queries.ts` | 草稿查询（详情、摘要列表、预览页数据） |
+| `lib/services/tutorial-queries.ts` | 教程查询（cached slug 查询 + 阅读时间 + 埋点） |
 | `lib/services/compute-generation-quality.ts` | 生成质量指标计算 |
 | `lib/services/unpublish-draft.ts` | 取消发布（事务：删除 PublishedTutorial + 重置 draft） |
 | `lib/services/draft-snapshots.ts` | 版本快照创建/恢复/列表/删除（含所有权验证和自动备份） |
-| `lib/services/incremental-regenerate.ts` | 增量重新生成（比对大纲差异，只重生成受影响步骤） |
+| `lib/services/incremental-regenerate.ts` | 增量重新生成（比对大纲差异，计算受影响步骤） |
 | `lib/services/explore-service.ts` | 探索页数据查询（搜索 + 标签筛选 + 排序 + 分页） |
 | `lib/services/tag-service.ts` | 标签管理（AI 生成 + 手动设置 + 名称规范化） |
 | `lib/services/user-profile-service.ts` | 用户档案（公开 profile + username 设置 + profile 更新） |
 | `lib/services/export-markdown.ts` | 教程导出为 Markdown |
-| `lib/services/export-html.ts` | 教程导出为 HTML |
-| `lib/services/github-repo-service.ts` | GitHub 仓库导入（公开仓库匿名访问 + OAuth token 复用 + Trees/Contents API 封装 + 速率限制/partial failure 处理） |
+| `lib/services/export-html.ts` | 教程导出为 HTML（独立 HTML + 行内样式） |
+| `lib/services/github-repo-service.ts` | GitHub 仓库导入（公开仓库匿名访问 + OAuth token 复用 + 并发限制 + partial failure） |
+| `lib/services/github-repo-tree.ts` | GitHub 仓库树结构构建（处理 truncated、path prefix、lazy node） |
 
 ---
 
@@ -974,15 +1021,21 @@ GitHub 导入（v3.9 新增）：
 | `lib/ai/prompt-templates.ts` | v1 单次生成的 prompt 模板 |
 | `lib/ai/outline-prompt.ts` | 阶段一：教学大纲生成 prompt |
 | `lib/ai/step-fill-prompt.ts` | 阶段二：单步内容填充 prompt |
+| `lib/ai/multi-phase-generator.ts` | v2 多阶段生成 SSE 流编排（outline → step-fill → validate） |
 | `lib/ai/tutorial-generator.ts` | v1 生成器封装 |
-| `lib/ai/multi-phase-generator.ts` | v2 多阶段生成 SSE 流编排 |
-| `lib/ai/tag-generator.ts` | AI 标签生成（generateText + 语言回退 fallback map） |
-| `lib/ai/provider-registry.ts` | AI provider 注册表（DeepSeek + OpenAI + MiniMax + Zhipu 多 provider 支持） |
+| `lib/ai/provider-registry.ts` | AI provider 注册表（DeepSeek + OpenAI + MiniMax + Zhipu） |
 | `lib/ai/prompt-adapters.ts` | Prompt 适配器（根据 provider 能力调整输出格式） |
 | `lib/ai/model-probe.ts` | 模型能力探测（可达性、延迟、response_format 支持） |
-| `lib/ai/style-templates.ts` | 教学风格模板 |
+| `lib/ai/model-capabilities.ts` | 模型能力定义（maxOutputTokens、supportsResponseFormat 等） |
+| `lib/ai/token-budget.ts` | Token 预算计算（根据模型能力分配 outline/step-fill token） |
 | `lib/ai/source-preprocessor.ts` | 源码预处理（压缩、注释清理） |
+| `lib/ai/source-tools.ts` | 源码工具定义（outline 阶段使用的 retrieval tools） |
+| `lib/ai/outline-source-scope.ts` | Outline 阶段的源码范围计算 |
+| `lib/ai/progressive-snapshot-base-code.ts` | 渐进式快照 base code 计算 |
+| `lib/ai/parse-json-text.ts` | AI 输出 JSON 解析（容错提取） |
 | `lib/ai/patch-auto-fix.ts` | Patch 自动修复（常见 AI 输出错误的自动纠正） |
+| `lib/ai/tag-generator.ts` | AI 标签生成（generateText + 语言回退 fallback map） |
+| `lib/ai/style-templates.ts` | 教学风格模板 |
 | `lib/review/generation-quality-review.ts` | 标准化生成质量 review rubric（评分、issue taxonomy、keep/revert 建议） |
 
 ---
@@ -993,7 +1046,8 @@ GitHub 导入（v3.9 新增）：
 |-------------|------|
 | `lib/schemas/source-item.ts` | SourceItem 校验 |
 | `lib/schemas/teaching-brief.ts` | TeachingBrief 校验 |
-| `lib/schemas/tutorial-draft.ts` | TutorialDraft 校验（核心：AI 输出 + API + DB 三用） |
+| `lib/schemas/tutorial-draft.ts` | TutorialDraft 校验（核心：AI 输出 + API + DB 三用，含 chapters + chapterId） |
+| `lib/schemas/chapter.ts` | Chapter 校验（id、title、description、order） |
 | `lib/schemas/tutorial-outline.ts` | 教学大纲校验 |
 | `lib/schemas/generation-job.ts` | DraftGenerationJob 校验（DB/domain 三用） |
 | `lib/schemas/generation-quality.ts` | GenerationQuality 校验 |
@@ -1024,9 +1078,12 @@ GitHub 导入（v3.9 新增）：
 15. **Drizzle JSONB 查询陷阱：** `sql` 模板不支持 `->` / `->>` JSONB 操作符与 `${columnRef}` 插值混用。全文搜索等需要 JSONB 字段访问的场景，必须使用原始 SQL 列名（如 `"published_tutorials"."tutorial_draft_snapshot"`）
 16. **leftJoin(users) 必须：** 探索/搜索查询中 `drafts.userId` 可能为 NULL（未关联用户的草稿），必须用 `leftJoin(users)` 而非 `innerJoin`，否则会过滤掉无作者的教程
 17. **生成失败占位内容无效：** `step-fill` 重试耗尽后不再继续生成后续步骤；任何包含“自动生成失败 / 请手动编辑 / Failed to parse JSON”之类占位内容的 step 都必须在 validation 阶段判定为无效，避免坏草稿被标记成 `succeeded`
-17. **全文搜索配置：** 使用 PostgreSQL `simple` 配置（不分词、不词干化），适合中英混合场景。搜索 `ts_vector` 基于 `tutorialDraftSnapshot->meta->title` 和 `slug`
-18. **AI 标签生成 fire-and-forget：** `tag-generator.ts` 在教程发布后异步调用，失败不阻塞发布主流程。`getOrCreateTag` 处理并发竞争（unique constraint catch + fallback select）
-19. **generation job 约束必须双层保持：** SQL migration、Drizzle snapshot、schema 定义必须同时包含“同 draft 复合外键”和“单 active job 部分唯一索引”，否则后续 diff 会把约束漂掉
+18. **全文搜索配置：** 使用 PostgreSQL `simple` 配置（不分词、不词干化），适合中英混合场景。搜索 `ts_vector` 基于 `tutorialDraftSnapshot->meta->title` 和 `slug`
+19. **AI 标签生成 fire-and-forget：** `tag-generator.ts` 在教程发布后异步调用，失败不阻塞发布主流程。`getOrCreateTag` 处理并发竞争（unique constraint catch + fallback select）
+20. **generation job 约束必须双层保持：** SQL migration、Drizzle snapshot、schema 定义必须同时包含”同 draft 复合外键”和”单 active job 部分唯一索引”，否则后续 diff 会把约束漂掉
+21. **章节步骤连续性：** 同一 chapterId 的步骤必须在 steps[] 中连续排列。`validateChapterStructure()` 校验此约束。删除章节时需指定目标章节接收被迁移的步骤
+22. **旧格式草稿迁移：** `ensureDraftChapters()` 为没有 chapters 字段的旧草稿自动创建 “Chapter 1” 并将所有步骤归入。此函数在 `append-draft-step`、`chapter-crud` 等写入路径中自动调用
+23. **POST /api/drafts 幂等性：** 支持 `Idempotency-Key` / `X-Idempotency-Key` header（1 小时 TTL），基于内存存储，仅单实例部署有效
 
 ### 16.2 发布前置条件
 
@@ -1129,12 +1186,6 @@ NEXT_PUBLIC_BASE_URL=https://...    # 公开访问基础 URL（SEO 生成用）
 - 测试覆盖率提升（分层边界 + 纯函数 smoke tests）
 - CI/CD 部署自动化（GitHub Actions）
 
-### Phase 8：v3.8 可靠性基础设施 🚧 进行中
-- `draft_generation_jobs` 表 + `drafts.activeGenerationJobId`
-- generation job schema / type / repository
-- 生成运行态从进程内内存迁移到持久化真相源
-- `generate-tutorial-draft.ts` 启动生成时创建唯一 running job，并在 `outline / step_fill / validate / persist` 阶段写入 phase、heartbeat、retry 和终态
-
 ### Phase 8：v3.7 发现、标签与创作者身份 ✅ 已完成
 - 探索页面（/explore — 全文搜索 + 标签筛选 + 排序 + 分页）
 - 标签系统（tutorial_tags + tutorial_tag_relations 表、AI 自动生成 + 手动编辑）
@@ -1144,12 +1195,15 @@ NEXT_PUBLIC_BASE_URL=https://...    # 公开访问基础 URL（SEO 生成用）
 - 导航更新（AppShell 新增"探索"和"标签"入口）
 - 保留 slug 扩展（explore、tags、u、admin、dashboard 等）
 
-### Phase 9：v3.8 导出与体验优化 ✅ 已完成
+### Phase 9：v3.8 导出 + 多 Provider + 可靠性基础设施 ✅ 已完成
 - Markdown/HTML 导出（`/api/tutorials/[slug]/export-markdown`、`export-html`）
 - AI 多 provider 支持（DeepSeek + OpenAI + MiniMax + Zhipu，`provider-registry.ts`）
 - Patch 自动修复（`patch-auto-fix.ts`）
 - 步骤编辑器子组件拆分（diff 视图、代码选择菜单、中间预览）
 - 错误分类层（`lib/errors/`）
+- `draft_generation_jobs` 表 + `drafts.activeGenerationJobId`
+- generation job schema / type / repository
+- 生成运行态持久化（phase、heartbeat、retry、终态写入 job 表）
 
 ### Phase 10：v3.9 GitHub 仓库导入 + 编辑器增强 ✅ 已完成
 - GitHub 仓库文件树浏览（`/api/github/repo-tree`，代理 GitHub Trees API）
@@ -1165,6 +1219,17 @@ NEXT_PUBLIC_BASE_URL=https://...    # 公开访问基础 URL（SEO 生成用）
 - diff 视图 memo 化 + useCallback 优化，避免不必要的重渲染
 - 工作区侧边栏宽度从 16rem 调整到 20rem
 - 步骤列表操作按钮改为 hover 浮层样式
+
+### Phase 11：v3.10 章节系统 ✅ 已完成
+- TutorialDraft 新增 `chapters` 字段，TutorialStep 新增 `chapterId`
+- 旧格式草稿自动迁移（`ensureDraftChapters()`）
+- 章节管理 API（addChapter、updateChapter、deleteChapter + 步骤迁移）
+- 结构批量更新 API（`PUT /api/drafts/[id]/structure`）
+- 侧边栏章节分组渲染（chaptered-step-list、chapter-row、chapter-step-row）
+- 渲染器章节分隔线 + 章节导航 rail
+- `lib/tutorial/chapters.ts`（章节推导、验证、归一化）
+- `lib/schemas/chapter.ts`（Chapter Zod schema）
+- `lib/services/chapter-crud.ts`（章节 CRUD 服务）
 
 
 
@@ -1188,4 +1253,4 @@ NEXT_PUBLIC_BASE_URL=https://...    # 公开访问基础 URL（SEO 生成用）
 
 ---
 
-*本文档基于 VibeDocs v3.9 实现状态编写。v3.9 在 v3.8 之上完成了 GitHub 公开仓库导入 MVP 和步骤编辑器增强（交互式行选择、子组件拆分、性能优化）。*
+*本文档基于 VibeDocs v3.10 实现状态编写。v3.10 在 v3.9 之上完成了章节系统（TutorialDraft.chapters、章节管理 API、渲染器章节分隔线与导航）。*

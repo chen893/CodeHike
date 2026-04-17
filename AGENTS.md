@@ -156,6 +156,7 @@ lib/services/compute-generation-quality.ts # 质量指标计算
 - generation 运行态的持久化真相源为 `draft_generation_jobs` + `drafts.activeGenerationJobId`；新增生成状态读写优先经过 repository / service，不要再扩展进程内 `Map` 作为唯一状态源
 - 生成质量评估（`GenerationQuality`）不阻塞发布，仅作数据监控
 - 生成质量迭代工作流走 `npm run review:generation` + `docs/workflow/generation-quality-loop.md`，所有 prompt / 流程实验都要落 CSV 和 JSON report
+- generation review rubric 会显式惩罚“大步长整文件注入”和 `outline -> step-fill` 漂移；总分高不代表真的渐进式，必须结合这些信号判断
 - step-fill 重试耗尽后不再继续往后生成；失败占位文本属于无效教程内容，必须被 validation 拦截
 - 多文件输入允许在生成快照中为后续 `targetFiles` 预植入内部 placeholder stub，但最终 `tutorialDraft.baseCode` 只能 materialize 真正被 patch 过的这些文件，不能把未使用占位文件泄露到最终教程
 - DB schema 中 `generationOutline`、`generationQuality` 为可选 jsonb，向后兼容 v3.0 草稿

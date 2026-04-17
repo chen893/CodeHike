@@ -1,6 +1,7 @@
 import type { SourceItem } from '../schemas/source-item';
 import type { TeachingBrief } from '../schemas/teaching-brief';
 import { analyzeSourceCollectionShape } from '../utils/source-collection-shape';
+import { recommendStepBudget } from './step-budget';
 
 // ---------------------------------------------------------------------------
 // Shared prompt fragments (reused by both legacy and retrieval paths)
@@ -145,6 +146,7 @@ export function buildOutlinePrompt(
 ): { systemPrompt: string; userPrompt: string } {
   const isMultiFile = sourceItems.length > 1;
   const sourceShape = analyzeSourceCollectionShape(sourceItems);
+  const stepBudget = recommendStepBudget(sourceItems, teachingBrief);
 
   const baseCodeExample = isMultiFile
     ? '{ "file1.js": "最小可运行代码", "utils.js": "辅助模块代码" }'
@@ -213,8 +215,9 @@ ${sourceCodeSection}
 1. 先确定认知弧线，再决定步骤
 2. baseCode 必须是源码的最小可运行子集（不是占位符）
 3. 每步 estimatedLocChange 控制在 {STEP_LOC_MIN}-{STEP_LOC_MAX} 行
-4. 步骤数不受限制——宁可多几步也不要把概念压缩
-5. 当源码包含多个模块时，必须将步骤划分为多个章节（chapters），并为每个步骤指定 chapterId`;
+4. 本教程的合理步骤范围是 ${stepBudget.min}-${stepBudget.max} 步，优先落在 ${stepBudget.recommended} 步左右；在范围内优先拆分，避免把一个大文件、完整子系统或多个概念压成一步
+5. 当某个 target file 本身较大或承载多个概念时，必须拆成多个连续小步，而不是按文件一口气讲完
+6. 当源码包含多个模块时，必须将步骤划分为多个章节（chapters），并为每个步骤指定 chapterId`;
 
   return { systemPrompt, userPrompt };
 }
@@ -230,6 +233,7 @@ export function buildRetrievalOutlinePrompt(
 ): { systemPrompt: string; userPrompt: string } {
   const isMultiFile = sourceItems.length > 1;
   const sourceShape = analyzeSourceCollectionShape(sourceItems);
+  const stepBudget = recommendStepBudget(sourceItems, teachingBrief);
 
   const baseCodeExample = isMultiFile
     ? '{ "file1.js": "最小可运行代码", "utils.js": "辅助模块代码" }'
@@ -310,7 +314,7 @@ ${directorySummary}
 1. 先确定认知弧线，再决定步骤
 2. baseCode 必须是你精读过的文件的最小可运行子集（不是占位符）
 3. 每步 estimatedLocChange 控制在 {STEP_LOC_MIN}-{STEP_LOC_MAX} 行
-4. 步骤数不受限制——宁可多几步也不要把概念压缩
+4. 本教程的合理步骤范围是 ${stepBudget.min}-${stepBudget.max} 步，优先落在 ${stepBudget.recommended} 步左右；在范围内优先拆分，不要把一个大文件、完整子系统或多个概念压成一步
 5. 每个步骤的 targetFiles 和 contextFiles 必须是目录中的真实路径
 6. 当源码包含多个模块时，必须将步骤划分为多个章节（chapters），并为每个步骤指定 chapterId`;
 

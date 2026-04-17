@@ -940,3 +940,35 @@
 - `components/tutorial/generation-preview-panel.tsx`
 - `components/tutorial/tutorial-client.ts`
 - `components/tutorial/use-generation-progress.ts`
+
+---
+
+## 问题 40：generation review 对“大步长源码巡礼”惩罚不足，baseline 会被假高分掩盖
+
+**现象**：
+- 已发布基准教程 `mini-agent-ts`（draft `154cfa87-3b60-45a1-a3c0-a09eb3771582`）主观上更像“20 步按文件巡礼”，但旧 rubric 仍打出 `93` 分。
+- 数据库中的 `generationQuality` 明确显示：
+  - `avgLocChangePerStep = 97.3`
+  - `outlineToFillConsistency = 0.25`
+- 也就是说，step-fill 已经大量落成“整文件级 patch”，而且最终步骤标题/概念与 outline 偏移明显，但旧 review 只对 placeholder、source coverage 和 metadata 缺失敏感。
+
+**根因**：
+- `lib/review/generation-quality-review.ts` 之前没有把“单步 LOC 过大”作为正式 issue 或扣分项。
+- `outline -> step-fill` 偏移虽然在 `DraftRecord.generationQuality` 中已有 `outlineToFillConsistency` 指标，但 review 没有纳入评分与 stop-condition 语义。
+- 结果是：只要教程没有生成失败、patch/focus/marks 都存在，review 就可能给出高分，即使课程已经偏离“渐进式构建”的目标。
+
+**解决方案**：
+1. 在 review rubric 中增加 `STEP_GRANULARITY_OVERSIZED`：
+   - 对平均单步 LOC 过大、80+ LOC 步骤过多的教程打 major issue。
+   - 直接拉低 `pedagogicalProgression` 和 `scrollytellingReadiness`。
+2. 在 review rubric 中增加 `OUTLINE_FILL_DRIFT`：
+   - 当最终步骤标题/概念与 outline 一致性过低时，打 major issue。
+   - 直接拉低 `pedagogicalProgression` 与 `promptAlignment` 的有效得分。
+3. 在 workflow 文档中把这两类问题列为标准归因路径，避免团队继续把“大文件整块注入”误判为高质量教程。
+
+**影响文件**：
+- `lib/review/generation-quality-review.ts`
+- `tests/generation-quality-review.test.js`
+- `docs/workflow/generation-quality-loop.md`
+- `docs/vibedocs-technical-handbook.md`
+- `AGENTS.md`

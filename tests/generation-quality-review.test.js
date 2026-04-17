@@ -121,3 +121,144 @@ test('reviewGeneratedTutorial accepts legacy drafts without chapters', () => {
   assert.equal(review.metrics.chapterCount, 1);
   assert.equal(review.metrics.stepCount, 1);
 });
+
+test('reviewGeneratedTutorial penalizes oversized steps and outline drift', () => {
+  const review = reviewGeneratedTutorial({
+    tutorialDraft: buildDraft({
+      steps: [
+        {
+          id: 'step-1',
+          chapterId: 'ch-1',
+          title: 'Dump entire OpenAI client',
+          lead: 'Need client',
+          paragraphs: ['Problem', 'Resolution'],
+          patches: [{
+            file: 's01_agent_loop.ts',
+            find: 'export function run() {}\n',
+            replace: `export function run() {\n${'  console.log("x")\n'.repeat(120)}}\n`,
+          }],
+          focus: { file: 's01_agent_loop.ts', find: 'console.log("x")' },
+          marks: [{ file: 's01_agent_loop.ts', find: 'console.log("x")', color: '#fff' }],
+        },
+      ],
+    }),
+    sourceItems: [
+      { id: 'ca0a4eb0-9b3d-4f1c-8d1f-a03e3de263ec', kind: 'snippet', label: 's01_agent_loop.ts', content: 'x' },
+    ],
+    outline: {
+      meta: { title: 'Outline', description: 'desc', lang: 'ts', fileName: 's01_agent_loop.ts' },
+      intro: { paragraphs: ['intro'] },
+      baseCode: { 's01_agent_loop.ts': 'export function run() {}\n' },
+      chapters: [{ id: 'ch-1', title: 'Start', description: 'desc', order: 0 }],
+      steps: [
+        {
+          id: 'step-1',
+          title: 'Sketch minimal loop',
+          teachingGoal: 'Build a tiny loop',
+          conceptIntroduced: 'loop',
+          estimatedLocChange: 5,
+          chapterId: 'ch-1',
+        },
+      ],
+    },
+    validationValid: true,
+    validationErrors: [],
+  });
+
+  assert.ok(review.issues.some((issue) => issue.code === 'STEP_GRANULARITY_OVERSIZED'));
+  assert.ok(review.issues.some((issue) => issue.code === 'OUTLINE_FILL_DRIFT'));
+  assert.ok(review.scorecard.scrollytellingReadiness < 80);
+  assert.ok(review.scorecard.pedagogicalProgression < 80);
+  assert.ok(review.metrics.avgLocChangePerStep > 80);
+  assert.ok(review.metrics.outlineToFillConsistency < 0.6);
+});
+
+test('reviewGeneratedTutorial does not flag steps at boundary LOC', () => {
+  const review = reviewGeneratedTutorial({
+    tutorialDraft: buildDraft({
+      steps: [
+        {
+          id: 'step-1',
+          chapterId: 'ch-1',
+          title: 'Sketch minimal loop',
+          lead: 'Start small',
+          paragraphs: ['Problem', 'Resolution'],
+          patches: [{
+            file: 's01_agent_loop.ts',
+            find: 'export function run() {}\n',
+            replace: `export function run() {\n${'  // code\n'.repeat(30)}}\n`,
+          }],
+          focus: { file: 's01_agent_loop.ts', find: '// code' },
+          marks: [{ file: 's01_agent_loop.ts', find: '// code', color: '#fff' }],
+        },
+      ],
+    }),
+    sourceItems: [
+      { id: 'b1a2c3d4-0000-4000-8000-000000000001', kind: 'snippet', label: 's01_agent_loop.ts', content: 'x' },
+    ],
+    outline: {
+      meta: { title: 'Outline', description: 'desc', lang: 'ts', fileName: 's01_agent_loop.ts' },
+      intro: { paragraphs: ['intro'] },
+      baseCode: { 's01_agent_loop.ts': 'export function run() {}\n' },
+      chapters: [{ id: 'ch-1', title: 'Start', description: 'desc', order: 0 }],
+      steps: [
+        {
+          id: 'step-1',
+          title: 'Sketch minimal loop',
+          teachingGoal: 'Build a tiny loop',
+          conceptIntroduced: 'loop',
+          estimatedLocChange: 30,
+          chapterId: 'ch-1',
+        },
+      ],
+    },
+    validationValid: true,
+    validationErrors: [],
+  });
+
+  assert.ok(!review.issues.some((issue) => issue.code === 'STEP_GRANULARITY_OVERSIZED'));
+  assert.ok(!review.issues.some((issue) => issue.code === 'OUTLINE_FILL_DRIFT'));
+  assert.ok(review.metrics.outlineToFillConsistency >= 0.6);
+});
+
+test('reviewGeneratedTutorial flags single oversized step among multiple normal steps', () => {
+  const review = reviewGeneratedTutorial({
+    tutorialDraft: buildDraft({
+      steps: [
+        {
+          id: 'step-1',
+          chapterId: 'ch-1',
+          title: 'Small change',
+          lead: 'Start',
+          paragraphs: ['Problem', 'Resolution'],
+          patches: [{ file: 's01_agent_loop.ts', find: 'run()', replace: 'runLoop()' }],
+          focus: { file: 's01_agent_loop.ts', find: 'runLoop()' },
+          marks: [{ file: 's01_agent_loop.ts', find: 'runLoop()', color: '#fff' }],
+        },
+        {
+          id: 'step-2',
+          chapterId: 'ch-1',
+          title: 'Dump everything',
+          lead: 'Big step',
+          paragraphs: ['Problem', 'Resolution'],
+          patches: [{
+            file: 's01_agent_loop.ts',
+            find: 'export function run() {}\n',
+            replace: `export function run() {\n${'  console.log("x")\n'.repeat(100)}}\n`,
+          }],
+          focus: { file: 's01_agent_loop.ts', find: 'console.log("x")' },
+          marks: [{ file: 's01_agent_loop.ts', find: 'console.log("x")', color: '#fff' }],
+        },
+      ],
+    }),
+    sourceItems: [
+      { id: 'b1a2c3d4-0000-4000-8000-000000000002', kind: 'snippet', label: 's01_agent_loop.ts', content: 'x' },
+    ],
+    validationValid: true,
+    validationErrors: [],
+  });
+
+  assert.ok(review.issues.some((issue) => issue.code === 'STEP_GRANULARITY_OVERSIZED'));
+  assert.ok(review.metrics.maxLocChangePerStep > 80);
+  assert.equal(review.metrics.severelyOversizedStepCount, 1);
+});

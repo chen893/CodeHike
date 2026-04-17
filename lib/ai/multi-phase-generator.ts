@@ -23,8 +23,11 @@ import { supportsRetrievalGeneration, RetrievalModelRequiredError, supportsNativ
 import { createSourceTools, createScopedSourceTools, buildDirectorySummary } from './source-tools';
 import { createTokenBudgetSession, estimateTokens, getMaxInputTokens } from './token-budget';
 import { validateOutlineSourceScope, deriveStepSourceScope } from './outline-source-scope';
+import { recommendStepBudget } from './step-budget';
 
 const MAX_STEP_RETRIES = 3;
+const LOC_CAP_FLOOR = 60;
+const LOC_DEFAULT_BUDGET = 8;
 const STEP_FILL_TOOLS_ENABLED = process.env.VIBEDOCS_STEP_FILL_TOOLS === '1';
 
 function unique(values: string[]) {
@@ -221,6 +224,7 @@ export function createMultiPhaseGenerationStream(
         // ── Capability detection ──
         const modelSupportsRetrieval = await supportsRetrievalGeneration(modelId ?? '');
         const useNativeStructuredOutput = supportsNativeStructuredOutput(modelId);
+        const stepBudget = recommendStepBudget(sourceItems, teachingBrief);
 
         // For large repos, check if retrieval is required
         const totalSourceTokens = estimateTokens(sourceItems.map(s => s.content).join('\n'));
@@ -234,6 +238,8 @@ export function createMultiPhaseGenerationStream(
           isLargeRepo,
           sourceFileCount: sourceItems.length,
           totalSourceTokens,
+          recommendedSteps: stepBudget.recommended,
+          stepRange: `${stepBudget.min}-${stepBudget.max}`,
           maxInputTokens: getMaxInputTokens(modelId ?? ''),
           threshold60pct: Math.round(getMaxInputTokens(modelId ?? '') * 0.6),
           maxOutputTokens: getMaxOutputTokens(modelId),
@@ -546,13 +552,16 @@ export function createMultiPhaseGenerationStream(
                   }
                 }
 
-                // Check LOC budget (soft — warn but don't block)
-                const locBudget = outline.steps[i]?.estimatedLocChange ?? 8;
+                // Check LOC budget — reject steps that are far beyond the estimated size
+                const locBudget = outline.steps[i]?.estimatedLocChange ?? LOC_DEFAULT_BUDGET;
                 const actualLoc = step.patches.reduce((sum, p) => {
                   return sum + Math.abs(p.replace.split('\n').length - p.find.split('\n').length);
                 }, 0);
-                if (actualLoc > locBudget + 10) {
-                  console.warn(`[multi-phase] Step ${i + 1} LOC ${actualLoc} exceeds budget ${locBudget} by more than 10 — accepting anyway`);
+                const hardLocCap = Math.max(locBudget * 2, LOC_CAP_FLOOR);
+                if (actualLoc > hardLocCap) {
+                  throw new Error(
+                    `Step LOC ${actualLoc} exceeds hard cap ${hardLocCap} (budget ${locBudget}); split the implementation into a smaller step and only keep the minimum skeleton for this round.`,
+                  );
                 }
               }
 

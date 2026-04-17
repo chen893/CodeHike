@@ -28,6 +28,12 @@
 | `publishReadiness` | 10% | 最终校验是否通过，是否还残留明显不可发布内容 |
 | `promptAlignment` | 10% | 当前问题是否表明 prompt 约束失效或流程兜底放水 |
 
+补充说明：
+
+- `review` 现在会额外惩罚“单步 LOC 变化过大”和“outline 到 step-fill 明显漂移”。
+- 这两个信号的目标不是检测语法正确性，而是拦截“看起来完整、实际上更像源码巡礼”的假高分教程。
+- 一个教程如果平均单步改动已经接近整文件级别，或最终步骤标题/概念与 outline 严重偏离，即使没有 placeholder，也不应被视为高质量渐进式教程。
+
 ### Critical blocker
 
 以下任一问题出现，默认视为 `critical`：
@@ -53,6 +59,45 @@
 ---
 
 ## 4. 每轮执行步骤
+
+### 4.0 当前基准（2026-04-17）
+
+当前 generation-quality loop 的真实对照基准不是示例草稿，而是数据库中已经发布的教程：
+
+- Published slug: `mini-agent-ts`
+- Published tutorial id: `7dcb39eb-66a2-4486-966e-7f7655b99da6`
+- Draft id: `154cfa87-3b60-45a1-a3c0-a09eb3771582`
+- Published at: `2026-04-17T14:33:16.702Z`
+
+从数据库读取到的关键信号：
+
+- `sourceItemCount = 29`
+- `stepCount = 20`
+- `chapterCount = 7`
+- `baseFileCount = 22`
+- `uniquePatchFileCount = 19`
+- `avgLocChangePerStep = 97.3`
+- `outlineToFillConsistency = 0.25`
+- `generationModel = minimax/MiniMax-M2.7`
+
+已建立的标准 baseline review：
+
+- 旧 rubric 基线：`r0-baseline-mini-agent-ts-published-2026-04-17T14-46-34-908Z`
+  - `totalScore = 93`
+  - 说明：旧规则对“大步长整文件注入 / outline-fill 漂移”惩罚不足，属于假高分基线
+- 当前 rubric 基线：`r0-baseline-mini-agent-ts-published-v2-rubric-2026-04-17T14-50-57-014Z`
+  - `totalScore = 78`
+  - `sourceCoverage = 82`
+  - `pedagogicalProgression = 48`
+  - `scrollytellingReadiness = 57`
+- `stopCondition.met = false`
+
+这个 baseline 很重要，因为它暴露了一个之前 rubric 低敏感度的问题：
+
+- 课程主观上更像“20 步源码巡礼 + 大文件整块注入”，不是高质量渐进式构建教程
+- 但现有 review 仍可能给出较高总分，因为它对“单步 LOC 过大 / outline-to-fill 偏移”惩罚不足
+
+后续所有 prompt / 流程实验，都应以“相对这个 baseline 是否更接近渐进式教学”来判断，而不只是看总分是否高。
 
 ### 4.1 建立 baseline
 
@@ -168,6 +213,8 @@ npm run review:generation -- \
 | `SOURCE_COVERAGE_COLLAPSE` | `lib/ai/outline-prompt.ts`, `lib/ai/step-fill-prompt.ts`, `lib/ai/progressive-snapshot-base-code.ts`, `lib/ai/multi-phase-generator.ts` |
 | `PATCH_FILE_CONCENTRATION` | `lib/ai/step-fill-prompt.ts`, `lib/ai/multi-phase-generator.ts` |
 | `SCROLLY_METADATA_GAPS` | `lib/ai/step-fill-prompt.ts` |
+| `STEP_GRANULARITY_OVERSIZED` | `lib/ai/step-fill-prompt.ts`, `lib/ai/multi-phase-generator.ts` |
+| `OUTLINE_FILL_DRIFT` | `lib/ai/outline-prompt.ts`, `lib/ai/step-fill-prompt.ts`, `lib/ai/multi-phase-generator.ts` |
 | `PUBLISH_VALIDATION_FAILED` | `lib/utils/validation.ts`, `lib/services/generate-tutorial-draft.ts` |
 | `OUTLINE_SOURCE_SCOPE_MISSING` | `lib/ai/outline-prompt.ts`, `lib/ai/outline-source-scope.ts` |
 
