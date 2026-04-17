@@ -12,7 +12,10 @@ export function getStepChangeHint(step) {
   return `${patchCount} change${patchCount > 1 ? "s" : ""} · ~${totalLines} line${totalLines !== 1 ? "s" : ""}`
 }
 
-export function StepRail({ steps }) {
+const defaultRailClass =
+  "fixed right-5 top-1/2 z-20 hidden -translate-y-1/2 flex-col items-center gap-1 bg-transparent p-1 lg:flex"
+
+export function StepRail({ steps, className = defaultRailClass }) {
   const [selectedIndex, selectIndex] = useSelectedIndex()
   const [hoveredIndex, setHoveredIndex] = useState(null)
 
@@ -31,7 +34,7 @@ export function StepRail({ steps }) {
   }
 
   return (
-    <div className="fixed right-5 top-1/2 z-20 hidden -translate-y-1/2 flex-col items-center gap-1 bg-transparent p-1 lg:flex">
+    <div className={className}>
       {steps.map((step, index) => {
         const state = getStepState(index)
         const isHovered = hoveredIndex === index

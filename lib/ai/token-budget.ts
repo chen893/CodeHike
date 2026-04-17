@@ -50,6 +50,11 @@ const PROVIDER_LIMITS: Record<string, ProviderTokenLimits> = {
     maxOutputTokens: 16_384,
     inputSafetyMargin: 20_000,
   },
+  'MiniMax-M2.7': {
+    contextWindow: 204_800,
+    maxOutputTokens: 64_000,
+    inputSafetyMargin: 20_000,
+  },
 };
 
 /** Default fallback when a model is not found in the limits table. */

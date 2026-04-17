@@ -51,6 +51,13 @@ const ADAPTATIONS: Record<string, PromptAdaptation> = {
     stepLocMin: 3,
     stepLocMax: 10,
   },
+  'MiniMax-M2.7': {
+    locBudget: 20,
+    outlineLocBudget: 10,
+    stepLocMin: 3,
+    stepLocMax: 10,
+    extraInstructions: 'Return only the requested JSON object in the final answer; do not include reasoning tags or markdown fences.',
+  },
 }
 
 /**

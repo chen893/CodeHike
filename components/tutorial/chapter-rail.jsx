@@ -67,7 +67,18 @@ function StepDot({ step, index, selectedIndex, onSelect, onHover, isHovered }) {
  * If there is only 1 chapter or stepChapterMeta is empty, renders simple dots
  * like StepRail. Otherwise renders chapter groups with expand/collapse behavior.
  */
-export function ChapterRail({ steps, chapters, stepChapterMeta }) {
+const defaultRailClass =
+  "fixed right-5 top-1/2 z-20 hidden -translate-y-1/2 flex-col items-end gap-3 bg-transparent p-1 lg:flex"
+const defaultSimpleRailClass =
+  "fixed right-5 top-1/2 z-20 hidden -translate-y-1/2 flex-col items-center gap-1 bg-transparent p-1 lg:flex"
+
+export function ChapterRail({
+  steps,
+  chapters,
+  stepChapterMeta,
+  className = defaultRailClass,
+  simpleClassName = defaultSimpleRailClass,
+}) {
   const [selectedIndex, selectIndex] = useSelectedIndex()
   const [hoveredIndex, setHoveredIndex] = useState(null)
 
@@ -79,10 +90,31 @@ export function ChapterRail({ steps, chapters, stepChapterMeta }) {
     }
   }, [selectIndex])
 
+  // Build chapter groups from chapters array, with their step indices
+  const chapterGroups = useMemo(() => (chapters ?? []).map((chapter) => {
+    const chapterStepIndices = []
+    for (let i = 0; i < steps.length; i++) {
+      const meta = stepChapterMeta?.[steps[i].id]
+      if (meta && meta.chapterId === chapter.id) {
+        chapterStepIndices.push(i)
+      }
+    }
+    return {
+      ...chapter,
+      stepIndices: chapterStepIndices,
+    }
+  }), [chapters, steps, stepChapterMeta])
+
+  const handleChapterClick = useCallback((chapterGroup) => {
+    if (chapterGroup.stepIndices.length === 0) return
+    const firstIndex = chapterGroup.stepIndices[0]
+    handleSelect(firstIndex)
+  }, [handleSelect])
+
   // Fallback: single chapter or no metadata — render simple dot rail
   if (!chapters || chapters.length <= 1 || !stepChapterMeta || Object.keys(stepChapterMeta).length === 0) {
     return (
-      <div className="fixed right-5 top-1/2 z-20 hidden -translate-y-1/2 flex-col items-center gap-1 bg-transparent p-1 lg:flex">
+      <div className={simpleClassName}>
         {steps.map((step, index) => (
           <StepDot
             key={step.id || index}
@@ -102,29 +134,8 @@ export function ChapterRail({ steps, chapters, stepChapterMeta }) {
   const currentStep = steps[selectedIndex]
   const currentChapterId = currentStep?.chapterId
 
-  // Build chapter groups from chapters array, with their step indices
-  const chapterGroups = useMemo(() => chapters.map((chapter) => {
-    const chapterStepIndices = []
-    for (let i = 0; i < steps.length; i++) {
-      const meta = stepChapterMeta[steps[i].id]
-      if (meta && meta.chapterId === chapter.id) {
-        chapterStepIndices.push(i)
-      }
-    }
-    return {
-      ...chapter,
-      stepIndices: chapterStepIndices,
-    }
-  }), [chapters, steps, stepChapterMeta])
-
-  const handleChapterClick = useCallback((chapterGroup) => {
-    if (chapterGroup.stepIndices.length === 0) return
-    const firstIndex = chapterGroup.stepIndices[0]
-    handleSelect(firstIndex)
-  }, [handleSelect])
-
   return (
-    <div className="fixed right-5 top-1/2 z-20 hidden -translate-y-1/2 flex-col items-end gap-3 bg-transparent p-1 lg:flex">
+    <div className={className}>
       {chapterGroups.map((chapterGroup) => {
         const isExpanded = chapterGroup.id === currentChapterId
         const hasSteps = chapterGroup.stepIndices.length > 0

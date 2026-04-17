@@ -20,6 +20,7 @@ interface DraftWorkspaceContentProps {
   showGenerationProgress: boolean;
   generationRunNonce: number;
   generationContext: GenerationContext;
+  generationModelId?: string;
   repairingStartIndex: number | null;
   firstInvalidStep: {
     stepIndex: number;
@@ -48,6 +49,7 @@ export function DraftWorkspaceContent({
   showGenerationProgress,
   generationRunNonce,
   generationContext,
+  generationModelId,
   repairingStartIndex,
   firstInvalidStep,
   onGenerationComplete,
@@ -60,19 +62,20 @@ export function DraftWorkspaceContent({
 }: DraftWorkspaceContentProps) {
   return (
     <div className="mx-auto flex w-full max-w-6xl flex-col gap-6 px-4 py-6 sm:px-6 lg:px-8 lg:py-8">
-      {!hasDraft && showGenerationProgress && (
+      {showGenerationProgress && (
         <div className={sectionCard}>
           <GenerationProgress
             key={`${draft.id}:${generationRunNonce}`}
             draftId={draft.id}
             onComplete={() => void onGenerationComplete()}
             context={generationContext}
+            modelId={generationModelId}
             onRetryFromStep={(stepIndex) => void onRetryFromStep(stepIndex)}
           />
         </div>
       )}
 
-      {draft.validationErrors.length > 0 && (
+      {!showGenerationProgress && draft.validationErrors.length > 0 && (
         <div className="rounded-3xl border border-amber-200 bg-amber-50/90 p-5 text-amber-950 shadow-[0_18px_40px_-24px_rgba(180,83,9,0.35)]">
           <div className="flex flex-wrap items-start justify-between gap-4">
             <div className="space-y-3">

@@ -3,6 +3,33 @@ import { findFirstInvalidStep } from '../tutorial/draft-code';
 import { validateChapterStructure, ensureDraftChapters } from '../tutorial/chapters';
 import type { TutorialDraft } from '../schemas/tutorial-draft';
 
+const GENERATED_FAILURE_PATTERNS = [
+  /⚠️\s*此步骤自动生成失败/u,
+  /Failed to parse JSON from model response/u,
+  /请手动编辑/u,
+];
+
+function isGeneratedFailurePlaceholder(text: string): boolean {
+  return GENERATED_FAILURE_PATTERNS.some((pattern) => pattern.test(text));
+}
+
+export function findFirstGeneratedFailureStep(tutorialDraft: TutorialDraft) {
+  const draft = ensureDraftChapters(tutorialDraft);
+
+  for (let stepIndex = 0; stepIndex < draft.steps.length; stepIndex++) {
+    const step = draft.steps[stepIndex];
+    const paragraph = step.paragraphs.find((value) => isGeneratedFailurePlaceholder(value));
+    if (!paragraph) continue;
+    return {
+      stepIndex,
+      stepTitle: step.title,
+      message: paragraph.slice(0, 160),
+    };
+  }
+
+  return null;
+}
+
 export async function validateTutorialDraft(
   tutorialDraft: TutorialDraft
 ): Promise<{ valid: boolean; errors: string[] }> {
@@ -18,6 +45,16 @@ export async function validateTutorialDraft(
       valid: false,
       errors: [
         `步骤 ${firstInvalidStep.stepIndex + 1}《${firstInvalidStep.stepTitle}》失效：${firstInvalidStep.message}`,
+      ],
+    };
+  }
+
+  const generatedFailureStep = findFirstGeneratedFailureStep(draft);
+  if (generatedFailureStep) {
+    return {
+      valid: false,
+      errors: [
+        `步骤 ${generatedFailureStep.stepIndex + 1}《${generatedFailureStep.stepTitle}》包含生成失败占位内容：${generatedFailureStep.message}`,
       ],
     };
   }

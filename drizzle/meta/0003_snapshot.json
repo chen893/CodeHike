@@ -1,0 +1,79 @@
+{
+  "id": "d4d9608d-191d-45ff-b1f7-0003cynical",
+  "prevId": "33edd697-b985-4c95-886c-f75de2175e8f",
+  "version": "7",
+  "dialect": "postgresql",
+  "tables": {
+    "public.draft_generation_jobs": {
+      "name": "draft_generation_jobs",
+      "schema": "",
+      "indexes": {
+        "draft_generation_jobs_draft_id_id_unique": {
+          "name": "draft_generation_jobs_draft_id_id_unique",
+          "columns": [
+            {
+              "expression": "draft_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": true
+        },
+        "draft_generation_jobs_single_active_per_draft": {
+          "name": "draft_generation_jobs_single_active_per_draft",
+          "columns": [
+            {
+              "expression": "draft_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": true,
+          "where": "\"draft_generation_jobs\".\"status\" in ('queued', 'running')"
+        }
+      },
+      "foreignKeys": {}
+    },
+    "public.drafts": {
+      "name": "drafts",
+      "schema": "",
+      "indexes": {},
+      "foreignKeys": {
+        "drafts_active_generation_job_same_draft_fk": {
+          "name": "drafts_active_generation_job_same_draft_fk",
+          "tableFrom": "drafts",
+          "tableTo": "draft_generation_jobs",
+          "columnsFrom": [
+            "id",
+            "active_generation_job_id"
+          ],
+          "columnsTo": [
+            "draft_id",
+            "id"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        }
+      }
+    }
+  },
+  "enums": {},
+  "schemas": {},
+  "sequences": {},
+  "roles": {},
+  "policies": {},
+  "views": {},
+  "_meta": {
+    "columns": {},
+    "schemas": {},
+    "tables": {}
+  }
+}

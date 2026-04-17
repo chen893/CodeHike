@@ -11,6 +11,12 @@ export type ModelConfig = z.infer<typeof modelConfigSchema>
 
 export const AVAILABLE_MODELS: ModelConfig[] = [
   {
+    id: 'minimax/MiniMax-M2.7',
+    label: 'MiniMax M2.7',
+    provider: 'minimax',
+    maxOutputTokens: 64000,
+  },
+  {
     id: 'deepseek/deepseek-chat',
     label: 'DeepSeek Chat',
     provider: 'deepseek',

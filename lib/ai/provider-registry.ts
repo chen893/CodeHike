@@ -36,6 +36,13 @@ const PROVIDERS: Record<string, ProviderConfig> = {
     defaultModel: 'glm-5.1',
     maxOutputTokens: 16384,
   },
+  minimax: {
+    name: 'minimax',
+    baseURL: process.env.MINIMAX_BASE_URL || 'https://api.minimax.io/v1',
+    apiKeyEnvVar: 'MINIMAX_API_KEY',
+    defaultModel: 'MiniMax-M2.7',
+    maxOutputTokens: 64000,
+  },
 }
 
 // ---------------------------------------------------------------------------
@@ -89,11 +96,17 @@ function getProviderFactory(providerName: string): (model: string) => LanguageMo
       break
     }
     default: {
-      // zhipu and unknown providers: openai-compatible fallback
+      // zhipu, minimax, and other configured providers: openai-compatible fallback
       const provider = createOpenAICompatible({
         name: config.name,
         baseURL: config.baseURL,
         apiKey,
+        fetch: (url, init) => {
+          const controller = new AbortController()
+          const timeout = setTimeout(() => controller.abort(), 300_000)
+          return globalThis.fetch(url, { ...init, signal: controller.signal })
+            .finally(() => clearTimeout(timeout))
+        },
       })
       providerCache[providerName] = (model: string) => provider(model)
       break
@@ -114,6 +127,7 @@ function getProviderFactory(providerName: string): (model: string) => LanguageMo
  * Uses provider-specific packages when available:
  *   deepseek  → @ai-sdk/deepseek
  *   openai    → @ai-sdk/openai
+ *   minimax   → @ai-sdk/openai-compatible
  *   others    → @ai-sdk/openai-compatible (fallback)
  */
 export function createProvider(modelId?: string) {

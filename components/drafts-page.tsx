@@ -184,27 +184,32 @@ function DraftCard({
             </CardDescription>
           </div>
 
-          <div className="flex flex-wrap gap-2">
-            <Button asChild variant="secondary">
-              <Link href={`/drafts/${draft.id}`}>编辑</Link>
-            </Button>
-
-            {draft.hasTutorialDraft ? (
+          <div className="flex flex-wrap items-center gap-2">
+            <div className="flex flex-wrap gap-2">
               <Button asChild variant="secondary">
-                <Link href={`/drafts/${draft.id}/preview`}>预览</Link>
+                <Link href={`/drafts/${draft.id}`}>
+                  {draft.generationState === 'running' ? '查看生成进度' : '编辑'}
+                </Link>
               </Button>
-            ) : null}
 
-            {draft.publishedSlug ? (
-              <Button asChild>
-                <Link href={`/${draft.publishedSlug}`}>阅读已发布</Link>
-              </Button>
-            ) : null}
+              {draft.hasTutorialDraft && draft.generationState !== 'running' ? (
+                <Button asChild variant="secondary">
+                  <Link href={`/drafts/${draft.id}/preview`}>预览</Link>
+                </Button>
+              ) : null}
+
+              {draft.publishedSlug ? (
+                <Button asChild>
+                  <Link href={`/${draft.publishedSlug}`}>阅读已发布</Link>
+                </Button>
+              ) : null}
+            </div>
 
             {canDelete ? (
               <Button
                 type="button"
                 variant="destructive"
+                className="ml-auto"
                 onClick={() => {
                   void onDelete(draft);
                 }}

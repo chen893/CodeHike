@@ -32,7 +32,7 @@
 
 **根因**：MiniMax API 不支持 `response_format: { type: "json_object" }` 参数（社区已确认的已知限制）。AI SDK 的 `Output.object` 依赖此参数约束 JSON 输出。
 
-**解决**：切换到 DeepSeek，其 API 完整支持 `response_format: json_object` + 流式输出。
+**解决**：MiniMax 接入时不得走 `Output.object()`；在 `model-capabilities.ts` 中标记为 `manual` 结构化输出策略，统一用 `generateText()` + `parseJsonFromText()` 解析，并在解析器中兼容 `<think>...</think>` 推理标签。Provider 仍通过 `@ai-sdk/openai-compatible` 访问 `https://api.minimax.io/v1`。
 
 **参考**：[MiniMax M2.5 response_format 限制](https://github.com/MiniMax-AI/MiniMax-M2.5/issues/4)
 
@@ -84,9 +84,10 @@
 |---|---|---|---|---|
 | DeepSeek | `@ai-sdk/deepseek` | `/chat/completions` | `json_object` 模式（需 prompt 含 "json"），不支持 `json_schema` | 支持 |
 | OpenAI | `@ai-sdk/openai` | `/chat/completions` | 原生 `json_schema`（`Output.object()`） | 支持 |
+| MiniMax M2.7 | `@ai-sdk/openai-compatible` | `/chat/completions` | 不走 `Output.object()`，按 manual 处理 | 支持 tools，结构化输出手动解析 |
 | 智谱 GLM | `@ai-sdk/openai-compatible`（兜底） | `/chat/completions` | 不确定，按 manual 处理 | 支持 |
 
-**推荐**：OpenAI 走原生结构化输出，DeepSeek 走手动解析，未知 provider 走 `openai-compatible` 兜底。
+**推荐**：OpenAI 走原生结构化输出，DeepSeek / MiniMax / 未知 provider 走手动解析，未知 provider 走 `openai-compatible` 兜底。
 
 ---
 
@@ -767,3 +768,175 @@
 - `lib/ai/tutorial-generator.ts` — 引用共享 `parseJsonFromText`
 - `lib/ai/tag-generator.ts` — 接入 `Output.object()` + 共享解析
 - `package.json` — 新增 `@ai-sdk/deepseek` 依赖
+
+---
+
+## 问题 34：step-fill 失败后写入占位文案，草稿结构合法但内容不可发布
+
+**现象**：
+- 多阶段生成在单步 step-fill 重试耗尽后，会往 `tutorialDraft.steps` 中写入“`⚠️ 此步骤自动生成失败，请手动编辑补全。`”之类的占位文案。
+- 这类草稿仍可能通过原有 `validateTutorialDraft()` 的结构校验，并被标记为 `generationState = succeeded`、`validationValid = true`。
+- review 时，这些失败占位会直接显示在教程正文里，导致内容完整性和发布就绪度同时崩塌。
+
+**根因**：
+- 现有校验更偏向 DSL 结构正确性，没有把“模型失败元信息泄露到正文”视为非法内容。
+- 生成流程在 step-fill 重试耗尽后选择“继续往后生成”，把失败步骤当作普通教程步骤持久化，导致后续步骤也建立在错误上下文上。
+
+**解决方案**：
+1. 在 `validateTutorialDraft()` 中显式拦截模型失败占位模式，例如 `Failed to parse JSON from model response`、`请手动编辑`、`⚠️ 此步骤自动生成失败`。
+2. 将 step-fill 重试耗尽视为本轮生成失败，直接抛出 `MultiPhaseGenerationError`，而不是补占位步骤继续生成。
+3. 允许保留“已成功生成的部分步骤”作为调试和人工恢复依据，但不要把失败占位写进可发布正文。
+4. 将这类问题纳入标准 review rubric 的 `contentIntegrity` 和 `publishReadiness` 关键扣分项，确保自动评估能稳定识别。
+
+**影响文件**：
+- `lib/ai/multi-phase-generator.ts`
+- `lib/utils/validation.ts`
+- `lib/review/generation-quality-review.ts`
+- `tests/tutorial-validation.test.js`
+
+---
+
+## 问题 35：渐进式源码快照被当成普通文件集合，导致教学锚点和 source coverage 崩塌
+
+**现象**：
+- 输入源是 `s01...s12 + shared.ts` 这类“逐步演进快照”时，生成结果仍倾向于把所有 patch 都堆到最早的 `s01_agent_loop.ts`。
+- 大纲和步骤文案会声称覆盖工具系统、任务系统、多 Agent、工作树等后续里程碑，但 `baseCode` 和 patch 实际只锚定到 1 个文件。
+- 最终 review 会出现 `SOURCE_COVERAGE_COLLAPSE`、`PATCH_FILE_CONCENTRATION` 之类高严重度问题。
+
+**根因**：
+- prompt 只看到了“多个 sourceItems”，但没有识别这些文件名本身表达的是时间顺序和教学里程碑。
+- outline 和 step-fill 都缺少明确约束，模型自然会把“越早出现的文件”当成单一主文件，不再沿着 `s01 -> s12` 的快照链路推进。
+
+**解决方案**：
+1. 增加 `analyzeSourceCollectionShape()`，区分 `single_file`、`codebase_files`、`progressive_snapshots` 三种源码形态。
+2. 如果识别到 `progressive_snapshots`，在 outline prompt 中明确要求：
+   - 将编号文件视为按顺序演进的里程碑快照，而不是平铺模块。
+   - 大纲必须尽量覆盖后续里程碑文件，不能把所有能力折叠进最早文件。
+3. 在 step-fill prompt 中继续强化：
+   - 当前步骤的 patch 应贴近相邻里程碑文件。
+   - 不要把所有后续能力都塞回 `s01`。
+   - 文案承诺不能超过当前 patch 真正实现的能力边界。
+4. 将 `sourceCoverage`、`patchFileCoverageRatio`、`patchConcentrationRatio` 纳入标准评分体系，作为迭代 stop condition 的硬指标。
+
+**影响文件**：
+- `lib/utils/source-collection-shape.ts`
+- `lib/ai/outline-prompt.ts`
+- `lib/ai/step-fill-prompt.ts`
+- `lib/review/generation-quality-review.ts`
+- `tests/source-collection-shape.test.js`
+- `tests/generation-quality-review.test.js`
+
+---
+
+## 问题 36：outline 已经分散到后续里程碑文件，但 step-fill 仍然无法真正落到这些文件上
+
+**现象**：
+- 在渐进式快照输入里，outline 阶段已经能正确产出 `targetFiles`，例如 `step-5 -> s02_tool_use.ts`、`step-8 -> s03_todo_write.ts`。
+- 但 step-fill 实际生成的 patches 仍然大量回退到 `s01_agent_loop.ts`，导致 `patchFileCoverageRatio` 几乎不增长。
+- 原因不是 outline 没有对齐里程碑，而是“当前代码快照”里只存在 `baseCode` 的少数文件；后续目标文件根本还没被引入，模型没有可 patch 的落点。
+
+**根因**：
+- 当前 DSL 的 patch 机制只能做“精确 find/replace”，不能凭空创建新文件。
+- progressive snapshot 模式下，`baseCode` 往往只保留最早里程碑文件；后续 `targetFiles` 即使在 outline 中存在，也会在 step-fill 注入阶段因为“不在 previousFiles 里”而消失。
+- 最终模型被迫退回已有主文件，出现“outline 对了，step-fill 还是塌缩”的假象。
+
+**解决方案**：
+1. 在生成阶段为后续 `targetFiles` 预植入内部 placeholder stub，仅用于 step-fill 快照和 patch 对齐。
+2. 在 retrieval step-fill 增加硬校验：
+   - 如果 outline 给了 `targetFiles`，step 必须至少 patch 其中一个文件。
+   - 如果该目标文件当前是 placeholder，必须直接替换它，而不是改动更早文件来规避。
+3. 最终 materialize `tutorialDraft.baseCode` 时，只保留“原始 baseCode 文件 + 实际被 patch 过的 placeholder 文件”，避免把未用到的占位文件泄露到最终教程。
+
+**影响文件**：
+- `lib/ai/progressive-snapshot-base-code.ts`
+- `lib/ai/multi-phase-generator.ts`
+- `lib/ai/step-fill-prompt.ts`
+- `lib/services/generate-tutorial-draft.ts`
+- `scripts/generation-quality-loop.ts`
+- `tests/progressive-snapshot-base-code.test.js`
+
+---
+
+## 问题 37：普通多文件代码库也会因为 baseCode 太小而丢失后续 targetFiles
+
+**现象**：
+- `mini-agent-typescript` 这类普通多文件代码库不是渐进式快照，但 outline 仍会将后续步骤锚定到 `src/llm/LLMClient.ts`、`src/tools/Tool.ts`、`src/config.ts` 等文件。
+- 大纲阶段是正确的，但 `baseCode` 只包含最小可运行子集，例如 `src/schema.ts`、`src/agent/Agent.ts`、`src/cli.ts`。
+- step-fill 阶段通过 `deriveStepSourceScope()` 只会保留当前快照中已存在的文件，导致后续 `targetFiles` 被过滤掉，模型只能改已有主文件或在读取原始文件后输出解释性文本。
+
+**根因**：
+- “patch 不能创建新文件”不是 progressive snapshot 独有问题，而是所有多文件教程都会遇到的 DSL 约束。
+- 仅对 `progressive_snapshots` 注入 placeholder，普通 `codebase_files` 仍会在后续步骤丢失目标文件落点。
+
+**解决方案**：
+1. 将生成阶段 placeholder stub 注入从 progressive snapshot 模式推广到所有多文件输入。
+2. 仍然保持最终 materialize 约束：只有真正被 patch 过的 placeholder 文件才进入最终 `tutorialDraft.baseCode`。
+3. 保持 step-fill 校验：如果当前 target file 是 placeholder，本步必须替换这个文件，而不是改动其他已有文件规避。
+
+**影响文件**：
+- `lib/ai/progressive-snapshot-base-code.ts`
+- `tests/progressive-snapshot-base-code.test.js`
+- `AGENTS.md`
+- `docs/vibedocs-technical-handbook.md`
+- `docs/tutorial-data-format.md`
+
+---
+
+## 问题 38：retrieval step-fill 带 tools 时容易输出过程性文字而不是最终 JSON
+
+**现象**：
+- `mini-agent-typescript` 样本在 step-fill 第 3、7、10、11 步多次失败，模型输出类似“现在我需要查看 xxx 文件”“让我读取目录”的过程性文字。
+- 这些文本既不是 tool call，也不是最终 step JSON，最终触发 `parseJsonFromText()` 失败。
+- 即使上一轮通过 placeholder 文件让 `targetFiles` 进入当前快照，模型仍会倾向于继续探索原始仓库，而不是直接产出结构化步骤。
+
+**根因**：
+- retrieval step-fill 同时提供工具、当前目标代码、摘要和重试错误，模型容易进入“继续检索/计划”的模式。
+- 但 step-fill 的真实任务不是探索仓库，而是基于 outline 和当前代码产出一个严格 JSON step。
+- 对每个步骤来说，真正需要的上下文通常只是当前目标文件代码和少量原始目标/上下文文件参考，不需要再让模型自主调用读取工具。
+
+**解决方案**：
+1. retrieval outline 继续使用 tools，保留源码探索能力。
+2. retrieval step-fill 默认改为无工具 scoped prompt：
+   - 注入当前目标文件代码。
+   - 注入原始 `targetFiles/contextFiles` 作为目标形态参考。
+   - 明确禁止输出“我要查看文件”这类过程性文字。
+3. 通过 `VIBEDOCS_STEP_FILL_TOOLS=1` 保留回退开关，便于后续对比工具模式。
+
+**影响文件**：
+- `lib/ai/step-fill-prompt.ts`
+- `lib/ai/multi-phase-generator.ts`
+- `AGENTS.md`
+- `docs/vibedocs-technical-handbook.md`
+
+---
+
+## 问题 38：生成中预览与正式预览分叉，running 草稿从草稿箱进入编辑态
+
+**现象**：
+- `/new` 创建后停留在新建页内的生成承载 UI，生成完成后再跳转草稿编辑器，页面语义和生成状态承载分离。
+- 生成中“实时预览”使用独立 partial preview UI；部分生成状态下左侧代码区不是正式 CodeHike 渲染结果，而是手写占位，容易出现代码预览缺失或与发布预览不一致。
+- 从 `/drafts` 打开正在生成且已写入部分 `tutorialDraft` 的草稿时，页面会进入编辑器，而不是生成进度页。
+
+**根因**：
+- `/new` 和 `/drafts/[id]` 都能承载生成进度，职责重复。
+- 生成过程中 `writePartialTutorial()` 会把已完成步骤写入 `tutorialDraft`，但工作区只在 `!tutorialDraft && generationState === 'running'` 时展示 `GenerationProgress`。
+- 旧 `streaming-preview` 路由和 `StreamingPreviewPanel` 绕开正式 `/payload -> TutorialScrollyDemo` 渲染链路，形成第二套预览实现。
+
+**解决方案**：
+1. `/new` 只创建 DraftRecord，成功后跳转 `/drafts/[id]?generate=1&modelId=...`。
+2. `/drafts/[id]` 统一承载生成启动、重连、取消、重试和完成后进入编辑器；只要 `generationState === 'running'` 就优先展示生成进度。
+3. 生成中预览改为请求 `/api/drafts/[id]/payload`，复用正式 `TutorialScrollyDemo`；无已完成步骤时只展示等待态。
+4. 删除旧的 `streaming-preview` route 和手写 partial preview 组件，避免保留无用分叉代码。
+
+**影响文件**：
+- `app/drafts/[id]/page.tsx`
+- `components/create-draft-form.tsx`
+- `components/draft-workspace.tsx`
+- `components/drafts/use-create-draft-form-controller.ts`
+- `components/drafts/use-draft-workspace-controller.ts`
+- `components/drafts/draft-workspace-content.tsx`
+- `components/drafts-page.tsx`
+- `components/tutorial/generation-progress-view.tsx`
+- `components/tutorial/generation-preview-panel.tsx`
+- `components/tutorial/tutorial-client.ts`
+- `components/tutorial/use-generation-progress.ts`

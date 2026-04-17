@@ -55,44 +55,57 @@ function CopyButton({ code }) {
   )
 }
 
-function FileTabs({ fileNames, activeFile, onSelectFile }) {
+function FileTabs({ fileNames, activeFile, onSelectFile, changedFiles }) {
   if (!fileNames || fileNames.length <= 1) return null
+
+  const changedSet = changedFiles ? new Set(changedFiles) : new Set()
 
   return (
     <div className="flex flex-wrap items-center gap-0 border-b border-white/10">
-      {fileNames.map((name) => (
-        <button
-          key={name}
-          type="button"
-          onClick={() => onSelectFile(name)}
-          className={`flex min-h-[44px] items-center px-4 py-2 text-xs font-medium uppercase transition-colors ${
-            name === activeFile
-              ? "bg-white/10 text-white"
-              : "text-slate-400 hover:text-slate-200"
-          }`}
-        >
-          {name}
-        </button>
-      ))}
+      {fileNames.map((name) => {
+        const hasChanges = changedSet.has(name)
+        return (
+          <button
+            key={name}
+            type="button"
+            onClick={() => onSelectFile(name)}
+            className={`flex min-h-[44px] items-center gap-1.5 px-4 py-2 text-xs font-medium uppercase transition-colors ${
+              name === activeFile
+                ? "bg-white/10 text-white"
+                : "text-slate-400 hover:text-slate-200"
+            }`}
+          >
+            {hasChanges && (
+              <span className="inline-block h-1.5 w-1.5 shrink-0 rounded-full bg-amber-400" />
+            )}
+            {name}
+          </button>
+        )
+      })}
     </div>
   )
 }
 
-export function CodeFrame({ title, code, fileName, highlightedFiles, activeFile: defaultActiveFile }) {
+export function CodeFrame({ title, code, fileName, highlightedFiles, activeFile: defaultActiveFile, changedFiles }) {
   const fileNames = highlightedFiles ? Object.keys(highlightedFiles) : null
   const [selectedFile, setSelectedFile] = useState(null)
   const activeFile = selectedFile || defaultActiveFile || fileName
   const activeCode = highlightedFiles
     ? highlightedFiles[activeFile] || code
     : code
+  const changedSet = changedFiles ? new Set(changedFiles) : new Set()
+  const activeFileHasChanges = changedSet.has(activeFile)
 
   return (
-    <div className="relative flex h-full w-full flex-1 flex-col overflow-y-auto px-6 pb-8">
-      <div className="mb-6 flex items-center justify-between pt-10">
+    <div className="relative flex h-full w-full flex-1 flex-col overflow-hidden px-6 pb-8">
+      <div className="mb-6 flex shrink-0 items-center justify-between pt-10">
         <p className="min-w-0 truncate text-xs font-bold uppercase text-slate-400">
           {title || ""}
         </p>
         <div className="flex min-w-0 items-center gap-2">
+          {activeFileHasChanges && (
+            <span className="inline-block h-1.5 w-1.5 shrink-0 rounded-full bg-amber-400" />
+          )}
           <span className="truncate text-xs font-bold uppercase text-slate-500">
             {activeFile || fileName || "code"}
           </span>
@@ -104,9 +117,10 @@ export function CodeFrame({ title, code, fileName, highlightedFiles, activeFile:
           fileNames={fileNames}
           activeFile={activeFile}
           onSelectFile={setSelectedFile}
+          changedFiles={changedFiles}
         />
       )}
-      <div className="code-content overflow-x-auto text-[14px] leading-[1.55]">
+      <div className="code-content overflow-x-auto overflow-y-auto text-[13px] leading-[1.55]">
         <Pre code={activeCode} handlers={[focus, mark, changeIndicator, tokenTransitions]} />
       </div>
     </div>
@@ -122,6 +136,8 @@ export function MobileCodeFrame({ step, fileName, index, total }) {
   const activeCode = highlightedFiles
     ? highlightedFiles[activeFile] || step.highlighted
     : step.highlighted
+  const changedSet = step.changedFiles ? new Set(step.changedFiles) : new Set()
+  const activeFileHasChanges = changedSet.has(activeFile)
 
   return (
     <div className="mt-8 max-h-[60vh] overflow-hidden rounded-lg border border-black/10 bg-[#1e1e2e] shadow-2xl lg:hidden">
@@ -135,6 +151,9 @@ export function MobileCodeFrame({ step, fileName, index, total }) {
           </p>
         </div>
         <div className="flex min-w-0 items-center gap-2">
+          {activeFileHasChanges && (
+            <span className="inline-block h-1.5 w-1.5 shrink-0 rounded-full bg-amber-400" />
+          )}
           <span className="truncate text-xs font-medium text-slate-500">
             {activeFile || fileName || "code"}
           </span>
@@ -146,9 +165,10 @@ export function MobileCodeFrame({ step, fileName, index, total }) {
           fileNames={fileNames}
           activeFile={activeFile}
           onSelectFile={setSelectedFile}
+          changedFiles={step.changedFiles}
         />
       )}
-      <div className="code-content max-h-[40vh] overflow-auto px-5 py-4 text-[14px] leading-[1.55]">
+      <div className="code-content max-h-[40vh] overflow-auto px-5 py-4 text-[13px] leading-[1.55]">
         <Pre code={activeCode} handlers={[focus, mark, changeIndicator]} />
       </div>
     </div>
@@ -174,6 +194,7 @@ export function SelectedCodeFrame({ steps, fileName }) {
       fileName={fileName}
       highlightedFiles={step.highlightedFiles}
       activeFile={step.activeFile || fileName}
+      changedFiles={step.changedFiles}
     />
   )
 }

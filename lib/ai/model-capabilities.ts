@@ -68,6 +68,12 @@ const STATIC_CAPABILITIES: Record<string, ModelCapabilities> = {
     supportsToolStructuredOutput: 'probe',
     structuredOutputStrategy: 'manual',
   },
+  'MiniMax-M2.7': {
+    supportsTools: true,
+    supportsStructuredOutput: false,
+    supportsToolStructuredOutput: false,
+    structuredOutputStrategy: 'manual',
+  },
 };
 
 const DEFAULT_CAPABILITIES: ModelCapabilities = {

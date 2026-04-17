@@ -319,7 +319,7 @@ export function useGenerationProgress({
       controller.abort();
       controllerRef.current = null;
     };
-  }, [draftId, runNonce]);
+  }, [draftId, modelId, runNonce]);
 
   useEffect(() => {
     if (v2Status !== 'stream-complete' && v2Status !== 'reconnecting') return;
@@ -382,8 +382,16 @@ export function useGenerationProgress({
         }
 
         // Job still running — update progress from job state
-        if (job.currentStepIndex != null && job.currentStepIndex >= 0) {
-          setCurrentStepIndex(job.currentStepIndex);
+        const currentJobStepIndex = job.currentStepIndex;
+        if (currentJobStepIndex != null && currentJobStepIndex >= 0) {
+          setCurrentStepIndex(currentJobStepIndex);
+          setCompletedSteps((prev) => {
+            const completed = [...prev];
+            for (let i = 0; i < currentJobStepIndex; i++) {
+              if (!completed.includes(i)) completed.push(i);
+            }
+            return completed;
+          });
         }
         if (job.totalSteps != null && job.totalSteps > 0) {
           setTotalSteps(job.totalSteps);

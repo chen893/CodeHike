@@ -18,26 +18,26 @@ export function RemoteTutorialPage({ slug, title }) {
   if (state.status === "success") {
     return (
       <main className="flex min-h-screen flex-col bg-[radial-gradient(circle_at_top,_rgba(14,165,233,0.18),_transparent_35%),linear-gradient(180deg,_#020617_0%,_#0f172a_42%,_#111827_100%)] text-slate-100">
-        <header className="sticky top-0 z-50 border-b border-white/5 bg-slate-950/40 backdrop-blur-xl">
-          <div className="mx-auto flex h-20 max-w-7xl items-center justify-between px-4 sm:px-6 lg:px-8">
-            <div className="flex min-w-0 items-center gap-4">
+        <header className="sticky top-0 z-50 border-b border-slate-200/50 bg-white/80 backdrop-blur-xl">
+          <div className="mx-auto flex h-14 max-w-7xl items-center justify-between px-4 sm:px-6 lg:px-8">
+            <div className="flex min-w-0 items-center gap-3">
               <Link
                 href="/"
-                className="flex h-11 w-11 shrink-0 items-center justify-center rounded-lg border border-white/10 bg-white/5 text-slate-400 transition hover:bg-white/10 hover:text-white"
+                className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border border-slate-200 bg-white text-slate-500 transition hover:bg-slate-50 hover:text-slate-900"
                 aria-label="返回首页"
               >
-                <ChevronLeft size={20} />
+                <ChevronLeft size={18} />
               </Link>
               <div className="flex min-w-0 flex-col">
                 <div className="flex items-center gap-2 overflow-hidden">
-                  <h1 className="truncate text-sm font-bold text-white sm:text-base">
+                  <h1 className="truncate text-sm font-bold text-slate-900">
                     {state.data.title}
                   </h1>
-                  <Badge variant="outline" className="h-5 shrink-0 border-cyan-500/30 bg-cyan-500/10 text-[10px] font-bold uppercase text-cyan-400">
+                  <Badge variant="outline" className="h-5 shrink-0 border-cyan-300 bg-cyan-50 text-[10px] font-bold uppercase text-cyan-700">
                     远程
                   </Badge>
                 </div>
-                <p className="truncate text-[10px] font-medium text-slate-500 uppercase">
+                <p className="truncate text-[10px] font-medium text-slate-400">
                   Slug: {slug}
                 </p>
               </div>
@@ -45,10 +45,10 @@ export function RemoteTutorialPage({ slug, title }) {
             <div className="flex shrink-0 items-center gap-2">
               <Button
                 variant="outline"
-                className="h-11 border-white/10 bg-white/5 px-4 text-slate-300 transition hover:bg-white/10 hover:text-white"
+                className="h-9 border-slate-200 px-4 text-slate-600 transition hover:bg-slate-50 hover:text-slate-900"
                 onClick={() => void reload()}
               >
-                <RefreshCcw size={16} className="sm:mr-2" />
+                <RefreshCcw size={14} className="sm:mr-2" />
                 <span className="hidden sm:inline">刷新数据</span>
               </Button>
             </div>

@@ -6,10 +6,7 @@ import type { SourceItem, TeachingBrief } from '@/lib/schemas/index';
 import { AVAILABLE_MODELS } from '@/lib/schemas/model-config';
 import { createDraftRequest } from './draft-client';
 import {
-  audienceLabels,
-  countLines,
   createSourceItemDraft,
-  summarizeLanguages,
   type SourceItemDraft,
 } from './create-draft-form-utils';
 
@@ -29,7 +26,6 @@ export function useCreateDraftFormController() {
   });
   const [modelId, setModelId] = useState<string>(AVAILABLE_MODELS[0]?.id ?? '');
   const [generating, setGenerating] = useState(false);
-  const [draftId, setDraftId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const submittingRef = useRef(false);
   const submissionIdempotencyKeyRef = useRef<string | null>(null);
@@ -94,7 +90,10 @@ export function useCreateDraftFormController() {
         sourceItems: payload,
         teachingBrief: brief,
       }, { idempotencyKey });
-      setDraftId(draft.id);
+
+      const params = new URLSearchParams({ generate: '1' });
+      if (modelId) params.set('modelId', modelId);
+      router.push(`/drafts/${draft.id}?${params.toString()}`);
     } catch (error) {
       setError(error instanceof Error ? error.message : '发生错误');
       setGenerating(false);
@@ -102,34 +101,6 @@ export function useCreateDraftFormController() {
       submissionIdempotencyKeyRef.current = null;
     }
   }
-
-  function handleGenerationComplete() {
-    if (draftId) {
-      router.push(`/drafts/${draftId}`);
-    }
-  }
-
-  const activeSourceItems = sourceItems.filter((item) => item.content.trim());
-  const totalLineCount = Math.max(
-    1,
-    activeSourceItems.reduce((sum, item) => sum + countLines(item.content), 0)
-  );
-
-  const generationContext = {
-    topic: brief.topic.trim(),
-    sourceSummary:
-      activeSourceItems.length <= 1
-        ? activeSourceItems[0]?.label?.trim() || 'main'
-        : `${activeSourceItems.length} 个源码文件`,
-    sourceCount: Math.max(activeSourceItems.length, 1),
-    sourceLanguageSummary: summarizeLanguages(
-      activeSourceItems.length > 0 ? activeSourceItems : sourceItems
-    ),
-    outputLanguage: brief.output_language,
-    audienceLabel: audienceLabels[brief.audience_level],
-    coreQuestion: brief.core_question.trim(),
-    codeLineCount: totalLineCount,
-  };
 
   return {
     sourceItems,
@@ -139,12 +110,9 @@ export function useCreateDraftFormController() {
     modelId,
     setModelId,
     generating,
-    draftId,
     error,
-    generationContext,
     setBrief,
     handleSubmit,
-    handleGenerationComplete,
     updateSourceItem,
     addSourceItem,
     removeSourceItem,

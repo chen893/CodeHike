@@ -6,9 +6,10 @@
  *
  * Strategy:
  * 1. Try parsing the full text as JSON
- * 2. Extract JSON from markdown code fences (```json ... ```)
- * 3. Find the outermost `{...}` block
- * 4. Validate against the Zod schema
+ * 2. Retry after removing closed <think>...</think> reasoning tags
+ * 3. Extract JSON from markdown code fences (```json ... ```)
+ * 4. Find the outermost `{...}` block
+ * 5. Validate against the Zod schema
  */
 export function parseJsonFromText<T>(
   text: string,
@@ -16,19 +17,25 @@ export function parseJsonFromText<T>(
   label: string,
 ): T {
   const rawCandidates: string[] = [];
+  const textsToScan = [
+    text,
+    text.replace(/<think>[\s\S]*?<\/think>/g, ''),
+  ];
 
-  // 1. Full text as-is
-  rawCandidates.push(text.trim());
+  for (const candidateText of textsToScan) {
+    // 1. Full text as-is
+    rawCandidates.push(candidateText.trim());
 
-  // 2. Extract from markdown code fences
-  const fenceMatch = text.match(/```(?:json)?\s*\n?([\s\S]*?)\n?\s*```/);
-  if (fenceMatch) rawCandidates.push(fenceMatch[1].trim());
+    // 2. Extract from markdown code fences
+    const fenceMatch = candidateText.match(/```(?:json)?\s*\n?([\s\S]*?)\n?\s*```/);
+    if (fenceMatch) rawCandidates.push(fenceMatch[1].trim());
 
-  // 3. Find outermost { ... }
-  const braceStart = text.indexOf('{');
-  const braceEnd = text.lastIndexOf('}');
-  if (braceStart !== -1 && braceEnd > braceStart) {
-    rawCandidates.push(text.slice(braceStart, braceEnd + 1));
+    // 3. Find outermost { ... }
+    const braceStart = candidateText.indexOf('{');
+    const braceEnd = candidateText.lastIndexOf('}');
+    if (braceStart !== -1 && braceEnd > braceStart) {
+      rawCandidates.push(candidateText.slice(braceStart, braceEnd + 1));
+    }
   }
 
   let lastError: unknown = null;

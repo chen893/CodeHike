@@ -6,7 +6,8 @@
     "dev": "next dev --webpack",
     "build": "next build --webpack",
     "start": "next start",
-    "test": "tsx --test ./tests/*.test.js"
+    "test": "tsx --test ./tests/*.test.js",
+    "review:generation": "DOTENV_CONFIG_PATH=.env.local tsx -r dotenv/config scripts/generation-quality-loop.ts"
   },
   "dependencies": {
     "@ai-sdk/deepseek": "^2.0.29",

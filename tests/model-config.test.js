@@ -1,6 +1,8 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { getMaxOutputTokens, getAvailableProviders, createProvider } from '../lib/ai/provider-registry.ts';
+import { getModelCapabilities, supportsNativeStructuredOutput } from '../lib/ai/model-capabilities.ts';
+import { getMaxInputTokens } from '../lib/ai/token-budget.ts';
 
 // ── getMaxOutputTokens ──
 
@@ -16,6 +18,14 @@ test('getMaxOutputTokens returns 16384 for zhipu/glm-5.1', () => {
   assert.equal(getMaxOutputTokens('zhipu/glm-5.1'), 16384);
 });
 
+test('getMaxOutputTokens returns 64000 for minimax/MiniMax-M2.7', () => {
+  assert.equal(getMaxOutputTokens('minimax/MiniMax-M2.7'), 64000);
+});
+
+test('getMaxInputTokens returns MiniMax M2.7 budget', () => {
+  assert.equal(getMaxInputTokens('minimax/MiniMax-M2.7'), 120800);
+});
+
 test('getMaxOutputTokens returns 8192 for unknown provider (default)', () => {
   assert.equal(getMaxOutputTokens('unknown/model'), 8192);
 });
@@ -27,9 +37,18 @@ test('getMaxOutputTokens returns 8192 when called with no argument (default)', (
 
 // ── getAvailableProviders ──
 
-test('getAvailableProviders returns deepseek, openai, and zhipu', () => {
+test('getAvailableProviders returns configured providers', () => {
   const providers = getAvailableProviders();
-  assert.deepEqual(providers.sort(), ['deepseek', 'openai', 'zhipu']);
+  assert.deepEqual(providers.sort(), ['deepseek', 'minimax', 'openai', 'zhipu']);
+});
+
+// ── model capabilities ──
+
+test('MiniMax M2.7 uses manual structured output with tools enabled', () => {
+  const caps = getModelCapabilities('minimax/MiniMax-M2.7');
+  assert.equal(caps.supportsTools, true);
+  assert.equal(caps.structuredOutputStrategy, 'manual');
+  assert.equal(supportsNativeStructuredOutput('minimax/MiniMax-M2.7'), false);
 });
 
 // ── createProvider error cases ──

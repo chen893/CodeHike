@@ -740,8 +740,19 @@ function countOccurrences(text, search) {
 
 - `TutorialData` / `TutorialDraft` 只描述教程内容本身，不承载运行时生成任务状态。
 - 生成过程中的 `status / phase / heartbeat / retry / errorCode / modelId` 持久化在 `draft_generation_jobs` 表；`drafts.activeGenerationJobId` 只负责指向当前 active job。
+- `modelId` 使用 provider 前缀区分模型来源（如 `deepseek/deepseek-chat`、`minimax/MiniMax-M2.7`），仅影响生成时 provider 选择和 token 预算，不进入 DSL 语义；当前默认值为 `minimax/MiniMax-M2.7`。
 - 生成服务在开始时创建唯一 job；大纲、步骤填充、校验和持久化阶段只通过 job 记录推进运行态，进程内 cancel token 仅作为当前请求内的协作优化。
 - 这意味着“教程内容格式”和“生成恢复协议”是解耦的：即使后续增加重连、取消、stale recovery，也不需要修改 DSL 结构。
+
+### 9.4 失败占位内容不是合法教程内容
+
+- 任何 step 的 `paragraphs` 如果出现如下占位文本，必须视为**无效教程数据**：
+  - `⚠️ 此步骤自动生成失败`
+  - `请手动编辑`
+  - `Failed to parse JSON from model response`
+- 这类文本只允许存在于调试日志、SSE 错误事件或实验报告中，不能进入最终 `TutorialDraft`
+- validation 需要把这类 step 视为失败，而不是把它当作普通“无 patch 的说明步骤”
+- 多阶段生成如果某一步耗尽重试，应优先停止后续生成并保留已有 partial draft，而不是继续在错误快照上生成剩余步骤
 
 ---
 
@@ -998,6 +1009,11 @@ patch 的 `file` 字段决定操作目标：
       step.activeFile = activeFile
 3. 返回组装后的 steps
 ```
+
+补充说明：
+- `applyContentPatches()` 会根据 `patch.file` 路由到目标文件；`patch.file` 为空时默认操作 `primaryFile`
+- 若目标文件不存在，运行时会直接报错，防止 patch 静默落到错误文件
+- 对多文件输入，生成阶段允许在内部快照中为后续 `targetFiles` 预植入 placeholder stub，使 step-fill 可以把 patch 落到尚未进入 `baseCode` 的目标文件；最终 `tutorialDraft.baseCode` 只 materialize 原始 baseCode 文件和实际被 patch 过的这些 placeholder 文件
 
 ### 12.6 多文件渲染
 

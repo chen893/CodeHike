@@ -14,12 +14,62 @@ import { validateTutorialDraft } from '../utils/validation';
 import { createProvider, getMaxOutputTokens } from './provider-registry';
 import { parseJsonFromText } from './parse-json-text';
 import { tryAutoFixPatches } from './patch-auto-fix';
+import {
+  findProgressivePlaceholderTargets,
+  materializeBaseCodeForFilledSteps,
+  prepareGenerationBaseFiles,
+} from './progressive-snapshot-base-code';
 import { supportsRetrievalGeneration, RetrievalModelRequiredError, supportsNativeStructuredOutput } from './model-capabilities';
 import { createSourceTools, createScopedSourceTools, buildDirectorySummary } from './source-tools';
 import { createTokenBudgetSession, estimateTokens, getMaxInputTokens } from './token-budget';
 import { validateOutlineSourceScope, deriveStepSourceScope } from './outline-source-scope';
 
 const MAX_STEP_RETRIES = 3;
+const STEP_FILL_TOOLS_ENABLED = process.env.VIBEDOCS_STEP_FILL_TOOLS === '1';
+
+function unique(values: string[]) {
+  return [...new Set(values)];
+}
+
+function getStepPatchFiles(step: TutorialStep, primaryFile: string) {
+  return unique(
+    (step.patches ?? [])
+      .map((patch) => patch.file ?? primaryFile)
+      .filter((value): value is string => Boolean(value)),
+  );
+}
+
+function validateRetrievalStepTargets(
+  step: TutorialStep,
+  primaryFile: string,
+  stepScope: { targetFiles: string[]; contextFiles: string[] },
+  previousFiles: Record<string, string>,
+) {
+  if (stepScope.targetFiles.length === 0) return;
+
+  const patchFiles = getStepPatchFiles(step, primaryFile);
+  if (patchFiles.length === 0) {
+    throw new Error(
+      `Step must include at least one patch for targetFiles: ${stepScope.targetFiles.join(', ')}`,
+    );
+  }
+
+  if (!patchFiles.some((file) => stepScope.targetFiles.includes(file))) {
+    throw new Error(
+      `Step patches must target one of the outline targetFiles: ${stepScope.targetFiles.join(', ')}`,
+    );
+  }
+
+  const placeholderTargets = findProgressivePlaceholderTargets(previousFiles, stepScope.targetFiles);
+  if (
+    placeholderTargets.length > 0 &&
+    !patchFiles.some((file) => placeholderTargets.includes(file))
+  ) {
+    throw new Error(
+      `Step must replace the placeholder target file instead of editing an earlier file: ${placeholderTargets.join(', ')}`,
+    );
+  }
+}
 
 export interface MultiPhaseResult {
   draft: TutorialDraft;
@@ -59,6 +109,7 @@ export interface MultiPhaseLifecycleHooks {
   onOutlineReady?: (outline: TutorialOutline) => Promise<void> | void;
   onStepRetry?: (event: MultiPhaseStepRetryEvent) => Promise<void> | void;
   onStepCompleted?: (event: MultiPhaseStepCompletedEvent) => Promise<void> | void;
+  onStepFilled?: (stepIndex: number, step: TutorialStep, filledSteps: TutorialStep[]) => Promise<void> | void;
 }
 
 export class GenerationCancelledError extends Error {
@@ -365,10 +416,13 @@ export function createMultiPhaseGenerationStream(
         let totalRetries = 0;
 
         // Normalize baseCode to multi-file representation
-        const { files: initialFiles, primaryFile } = normalizeBaseCode(
+        const { primaryFile } = normalizeBaseCode(
           outline.baseCode,
           outline.meta
         );
+        const generationBase = prepareGenerationBaseFiles(outline, sourceItems);
+        const initialFiles = generationBase.files;
+        const insertedProgressiveFiles = generationBase.insertedFiles;
 
         // Snapshot cache: Map<stepIndex, filesSnapshot>
         // Replaces O(N^2) replay — store snapshots[i] = files after step i
@@ -398,28 +452,45 @@ export function createMultiPhaseGenerationStream(
           for (let attempt = 0; attempt < MAX_STEP_RETRIES; attempt++) {
             try {
               let step: TutorialStep;
+              let retrievalStepScope: { targetFiles: string[]; contextFiles: string[] } | null = null;
 
               if (modelSupportsRetrieval) {
                 // Retrieval-based step fill: scoped tools + target file injection
                 const stepScope = deriveStepSourceScope(outline.steps[i], previousFiles);
-                const budget = createTokenBudgetSession({
-                  modelId: modelId ?? 'deepseek/deepseek-chat',
-                  basePrompt: '',
-                });
-                const scopedTools = createScopedSourceTools(sourceItems, previousFiles, { budget });
+                retrievalStepScope = stepScope;
+                const budget = STEP_FILL_TOOLS_ENABLED
+                  ? createTokenBudgetSession({
+                      modelId: modelId ?? 'deepseek/deepseek-chat',
+                      basePrompt: '',
+                    })
+                  : null;
+                const scopedTools = budget
+                  ? createScopedSourceTools(sourceItems, previousFiles, { budget })
+                  : undefined;
                 const snapshotSummary = buildCurrentSnapshotSummary(previousFiles);
                 const { systemPrompt, userPrompt } = buildRetrievalStepFillPrompt(
-                  teachingBrief, outline, i, previousFiles, stepScope, snapshotSummary, lastError ?? undefined,
+                  sourceItems,
+                  teachingBrief,
+                  outline,
+                  i,
+                  previousFiles,
+                  stepScope,
+                  snapshotSummary,
+                  lastError ?? undefined,
+                  { toolsEnabled: STEP_FILL_TOOLS_ENABLED },
                 );
 
-                const result = await generateText({
+                const generateOptions: Parameters<typeof generateText>[0] = {
                   model,
                   system: adaptPromptForModel(systemPrompt, modelId),
                   prompt: adaptPromptForModel(userPrompt, modelId),
-                  tools: scopedTools,
-                  stopWhen: stepCountIs(6),
                   maxOutputTokens: getMaxOutputTokens(modelId),
-                });
+                };
+                if (scopedTools) {
+                  generateOptions.tools = scopedTools;
+                  generateOptions.stopWhen = stepCountIs(6);
+                }
+                const result = await generateText(generateOptions);
                 const parsedStep = parseJsonFromText(result.text, legacyTutorialStepSchema, `step-${i + 1}-retrieval`);
                 step = { ...parsedStep, chapterId: outline.steps[i]?.chapterId ?? parsedStep.chapterId ?? DEFAULT_CHAPTER_ID };
               } else {
@@ -452,6 +523,10 @@ export function createMultiPhaseGenerationStream(
                   parsedStep = parseJsonFromText(result.text, legacyTutorialStepSchema, `step-${i + 1}-legacy`);
                 }
                 step = { ...parsedStep, chapterId: outline.steps[i]?.chapterId ?? parsedStep.chapterId ?? DEFAULT_CHAPTER_ID };
+              }
+
+              if (modelSupportsRetrieval && retrievalStepScope) {
+                validateRetrievalStepTargets(step, primaryFile, retrievalStepScope, previousFiles);
               }
 
               // Validate patches can be applied
@@ -500,12 +575,11 @@ export function createMultiPhaseGenerationStream(
 
           if (!stepResult) {
             console.error(`[multi-phase] Step ${i + 1} failed after ${MAX_STEP_RETRIES} retries`);
-            stepResult = {
-              id: outline.steps[i].id,
-              chapterId: outline.steps[i].chapterId ?? DEFAULT_CHAPTER_ID,
-              title: outline.steps[i].title,
-              paragraphs: [`⚠️ 此步骤自动生成失败，请手动编辑。错误：${lastError}`],
-            } as TutorialStep;
+            throw new MultiPhaseGenerationError(
+              'step_fill',
+              new Error(`Step ${i + 1} failed after ${MAX_STEP_RETRIES} retries: ${lastError ?? 'unknown error'}`),
+              i,
+            );
           }
 
           // Enrich step with outline metadata
@@ -521,6 +595,7 @@ export function createMultiPhaseGenerationStream(
             totalSteps,
             retryCount: totalRetries,
           });
+          await lifecycleHooks.onStepFilled?.(i, stepResult, [...filledSteps]);
 
           // Update snapshot cache for next step
           if (stepResult.patches && stepResult.patches.length > 0) {
@@ -549,7 +624,12 @@ export function createMultiPhaseGenerationStream(
         const draft: TutorialDraft = ensureDraftChapters({
           meta: outline.meta,
           intro: outline.intro,
-          baseCode: outline.baseCode,
+          baseCode: materializeBaseCodeForFilledSteps(
+            outline,
+            sourceItems,
+            filledSteps,
+            insertedProgressiveFiles,
+          ),
           chapters: outline.chapters,
           steps: filledSteps,
         });
@@ -591,8 +671,26 @@ export function createMultiPhaseGenerationStream(
 
         controller.close();
       } catch (err: any) {
+        const errorEvent =
+          err instanceof MultiPhaseGenerationError
+            ? {
+                phase: err.phase === 'step_fill' ? 'step-fill' : err.phase,
+                stepIndex: err.stepIndex,
+                message: err.message || String(err),
+              }
+            : err instanceof GenerationCancelledError
+              ? {
+                  phase: currentPhase === 'step_fill' ? 'step-fill' : currentPhase,
+                  stepIndex: currentStepIndex,
+                  message: err.message || String(err),
+                }
+              : {
+                  phase: currentPhase === 'step_fill' ? 'step-fill' : currentPhase,
+                  stepIndex: currentStepIndex,
+                  message: err.message || String(err),
+                };
         controller.enqueue(encoder.encode(
-          sseEvent('error', { message: err.message || String(err) })
+          sseEvent('error', errorEvent)
         ));
         controller.close();
         rejectResult(

@@ -35,6 +35,10 @@ export async function publishDraft(
   const draft = await draftRepo.getDraftById(draftId, userId);
   if (!draft) throw new Error('Draft not found');
   if (!draft.tutorialDraft) throw new Error('Draft has no tutorial content');
+  if (draft.generationState === 'running')
+    throw new Error(
+      'Draft generation is still running. Wait for generation to finish before publishing.'
+    );
   if (draft.syncState !== 'fresh')
     throw new Error(
       'Draft is not in sync. Regenerate before publishing.'

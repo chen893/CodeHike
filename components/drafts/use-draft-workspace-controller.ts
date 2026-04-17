@@ -32,10 +32,14 @@ import type { Chapter } from '@/lib/schemas/chapter';
 
 interface UseDraftWorkspaceControllerOptions {
   initialDraft: ClientDraftRecord;
+  startGeneration?: boolean;
+  generationModelId?: string;
 }
 
 export function useDraftWorkspaceController({
   initialDraft,
+  startGeneration = false,
+  generationModelId,
 }: UseDraftWorkspaceControllerOptions) {
   const router = useRouter();
   const [draft, setDraft] = useState<ClientDraftRecord>(initialDraft);
@@ -44,7 +48,7 @@ export function useDraftWorkspaceController({
   const [editingMeta, setEditingMeta] = useState(false);
   const [publishDialogOpen, setPublishDialogOpen] = useState(false);
   const [showGenerationProgress, setShowGenerationProgress] = useState(
-    !initialDraft.tutorialDraft && initialDraft.generationState === 'running'
+    startGeneration || initialDraft.generationState === 'running'
   );
   const [generationRunNonce, setGenerationRunNonce] = useState(0);
   const [repairingStartIndex, setRepairingStartIndex] = useState<number | null>(null);
@@ -378,6 +382,7 @@ export function useDraftWorkspaceController({
     try {
       await reloadDraft();
       setShowGenerationProgress(false);
+      router.replace(`/drafts/${draft.id}`);
     } catch (error) {
       console.error('刷新草稿失败:', error);
       alert('生成完成，刷新失败，请手动刷新页面');
@@ -568,10 +573,15 @@ export function useDraftWorkspaceController({
     status,
     firstInvalidStep,
     generationContext,
+    generationModelId,
     chapters,
     chapterSections,
     selectedChapterId,
-    canPublish: saving || draft.syncState === 'stale' || !draft.validationValid,
+    canPublish:
+      saving ||
+      draft.generationState === 'running' ||
+      draft.syncState !== 'fresh' ||
+      !draft.validationValid,
     canDeleteDraft: saving || draft.generationState === 'running',
     selectStep: setSelectedStepIndex,
     toggleEditingMeta,

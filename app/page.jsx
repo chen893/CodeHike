@@ -30,15 +30,15 @@ export default async function Page() {
   return (
     <AppShell activePath="/" user={user}>
       <div className="mx-auto w-full max-w-6xl space-y-20 px-4 py-12 sm:px-6 lg:px-8">
-        <div className="relative overflow-hidden rounded-lg bg-slate-900 px-6 py-12 text-white shadow-2xl sm:px-12 sm:py-20">
+        <div className="relative overflow-hidden rounded-lg bg-slate-900 px-6 py-8 text-white shadow-2xl sm:px-12 sm:py-12">
           <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_top_left,_rgba(56,189,248,0.25),_transparent_45%),linear-gradient(135deg,_#0f172a_0%,_#1e293b_100%)]" />
           
           <div className="relative z-10 flex flex-col items-start gap-8">
             <div className="space-y-6">
-              <h1 className="text-5xl font-extrabold sm:text-7xl">
+              <h1 className="text-4xl font-extrabold sm:text-5xl">
                 VibeDocs
               </h1>
-              <p className="max-w-2xl text-lg leading-relaxed text-slate-300 sm:text-xl">
+              <p className="max-w-2xl text-base leading-relaxed text-slate-300 sm:text-lg">
                 贴入源码，描述你想教什么，自动生成一份可编辑的逐步构建式教程。
               </p>
             </div>

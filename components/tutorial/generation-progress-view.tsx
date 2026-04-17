@@ -1,10 +1,12 @@
 'use client';
 
+import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import type {
   GenerationContext,
   GenerationProgressViewModel,
 } from './generation-progress-types';
+import { GenerationPreviewPanel } from './generation-preview-panel';
 import {
   cardClass,
   getDisplaySteps,
@@ -128,9 +130,52 @@ function V2ProgressUI({
       ? totalSteps
       : completedSteps.length;
   const indeterminate = isIndeterminate(status);
+  const hasCompletedSteps = completedSteps.length > 0;
+  const showPreviewTab =
+    hasCompletedSteps ||
+    ['filling-step', 'validating', 'stream-complete', 'reconnecting'].includes(status);
+
+  const [previewOpen, setPreviewOpen] = useState(false);
+
+  useEffect(() => {
+    if (!previewOpen) return;
+
+    function handleKeyDown(event: KeyboardEvent) {
+      if (event.key === 'Escape') {
+        setPreviewOpen(false);
+      }
+    }
+
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [previewOpen]);
 
   return (
     <div className={shellClass}>
+      {/* Tab bar */}
+      {showPreviewTab && (
+        <div className="flex items-center justify-between gap-3 border-b border-slate-200 px-5 py-3 lg:px-6">
+          <div className="flex min-w-0 flex-col">
+            <span className="text-sm font-semibold text-slate-900">生成进度</span>
+            <span className="truncate text-xs text-slate-400">
+              实时预览会在独立浮层中打开，不挤占进度面板。
+            </span>
+          </div>
+          <button
+            type="button"
+            className="inline-flex shrink-0 items-center gap-2 rounded-md border border-cyan-200 bg-cyan-50 px-3 py-2 text-xs font-semibold text-cyan-700 shadow-sm transition hover:border-cyan-300 hover:bg-cyan-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-300 focus-visible:ring-offset-2"
+            onClick={() => setPreviewOpen(true)}
+          >
+            实时预览
+            {completedSteps.length > 0 && totalSteps > 0 && (
+              <span className="rounded-full bg-white px-2 py-0.5 text-[10px] font-bold text-cyan-700">
+                {completedSteps.length}/{totalSteps}
+              </span>
+            )}
+          </button>
+        </div>
+      )}
+
       <div className="grid gap-5 p-5 lg:grid-cols-[1.6fr_1fr] lg:p-6">
         <section className={heroClass}>
           <div className="space-y-4">
@@ -393,6 +438,51 @@ function V2ProgressUI({
           </section>
         </div>
       </div>
+
+      {previewOpen && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/65 p-3 backdrop-blur-md sm:p-5"
+          role="dialog"
+          aria-modal="true"
+          aria-label="实时教程预览"
+          onClick={() => setPreviewOpen(false)}
+        >
+          <div
+            className="flex h-[min(92vh,980px)] w-[min(96vw,1560px)] flex-col overflow-hidden rounded-2xl border border-white/20 bg-white shadow-[0_32px_120px_rgba(2,6,23,0.45)]"
+            onClick={(event) => event.stopPropagation()}
+          >
+            <header className="flex shrink-0 items-center justify-between gap-4 border-b border-slate-200 bg-white/95 px-4 py-3 backdrop-blur sm:px-5">
+              <div className="min-w-0">
+                <div className="flex items-center gap-2">
+                  <span className="inline-flex h-2 w-2 animate-pulse rounded-full bg-cyan-500" />
+                  <h3 className="truncate text-sm font-bold text-slate-900">
+                    实时教程预览
+                  </h3>
+                </div>
+                <p className="mt-1 truncate text-xs text-slate-500">
+                  {isGenerating
+                    ? `生成中，仅展示已完成的 ${completedSteps.length}/${Math.max(totalSteps, completedSteps.length)} 步`
+                    : '生成结果预览'}
+                </p>
+              </div>
+              <button
+                type="button"
+                className="inline-flex h-9 shrink-0 items-center justify-center rounded-md border border-slate-200 bg-white px-3 text-xs font-semibold text-slate-600 transition hover:bg-slate-50 hover:text-slate-900 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-slate-400 focus-visible:ring-offset-2"
+                onClick={() => setPreviewOpen(false)}
+              >
+                关闭
+              </button>
+            </header>
+            <GenerationPreviewPanel
+              draftId={draftId}
+              completedStepCount={completedSteps.length}
+              totalSteps={totalSteps}
+              isGenerating={isGenerating}
+              className="flex-1"
+            />
+          </div>
+        </div>
+      )}
     </div>
   );
 }

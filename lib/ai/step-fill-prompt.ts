@@ -1,6 +1,10 @@
 import type { SourceItem } from '../schemas/source-item';
 import type { TeachingBrief } from '../schemas/teaching-brief';
 import type { TutorialOutline } from '../schemas/tutorial-outline';
+import { findProgressivePlaceholderTargets } from './progressive-snapshot-base-code';
+import { analyzeSourceCollectionShape } from '../utils/source-collection-shape';
+
+const MAX_ORIGINAL_REFERENCE_CHARS = 20_000;
 
 // ---------------------------------------------------------------------------
 // Shared prompt fragments (reused by both legacy and retrieval paths)
@@ -74,8 +78,21 @@ export function buildStepFillPrompt(
 ): { systemPrompt: string; userPrompt: string } {
   const outlineStep = outline.steps[stepIndex];
   const isMultiFile = typeof previousCodeOrFiles !== 'string';
+  const sourceShape = analyzeSourceCollectionShape(sourceItems);
 
-  const systemPrompt = buildStepFillSystemPromptCore(stepIndex, isMultiFile);
+  let systemPrompt = buildStepFillSystemPromptCore(stepIndex, isMultiFile);
+  if (sourceShape.mode === 'progressive_snapshots') {
+    systemPrompt += `
+
+## 渐进式快照序列（必须遵守）
+
+输入源码是一组按阶段演进的快照，而不是普通并列模块。
+
+- 当前步骤应尽量贴近相邻快照之间的真实能力差异
+- 不要跨越多个里程碑一次性塞入大段架构
+- 不要声称“完整”“自主”“企业级”等超出当前 patch 实际实现范围的结论
+- lead 不能为空，paragraphs 里禁止出现“自动生成失败”“请手动编辑”这类元信息`;
+  }
 
   const sourceCodeSection = sourceItems
     .map((item) => `### ${item.label}${item.language ? ` (${item.language})` : ''}\n\`\`\`\n${item.content}\n\`\`\``)
@@ -87,7 +104,15 @@ export function buildStepFillPrompt(
         .map(([fileName, code]) => `### ${fileName}\n\`\`\`\n${code}\n\`\`\``)
         .join('\n\n');
 
-  const userPrompt = `## 教学目标
+  const sourceShapeSection = sourceShape.mode === 'progressive_snapshots'
+    ? `## 源码形态分析
+检测到这是一组渐进式快照序列：
+${sourceShape.orderedLabels.map((label, index) => `${index + 1}. ${label}`).join('\n')}
+
+本步应优先对齐这些里程碑之间的真实演进，而不是凭空跨越多个阶段。`
+    : '';
+
+  const userPrompt = `${sourceShapeSection ? `${sourceShapeSection}\n\n` : ''}## 教学目标
 ${outlineStep.teachingGoal}
 
 ## 引入的概念
@@ -130,6 +155,7 @@ ${
 // ---------------------------------------------------------------------------
 
 export function buildRetrievalStepFillPrompt(
+  sourceItems: SourceItem[],
   teachingBrief: TeachingBrief,
   outline: TutorialOutline,
   stepIndex: number,
@@ -137,13 +163,30 @@ export function buildRetrievalStepFillPrompt(
   stepScope: { targetFiles: string[]; contextFiles: string[] },
   snapshotSummary: string,
   errorMessage?: string,
+  options: { toolsEnabled?: boolean } = {},
 ): { systemPrompt: string; userPrompt: string } {
   const outlineStep = outline.steps[stepIndex];
   const isMultiFile = Object.keys(previousFiles).length > 1;
+  const sourceShape = analyzeSourceCollectionShape(sourceItems);
+  const placeholderTargets = findProgressivePlaceholderTargets(previousFiles, stepScope.targetFiles);
+  const toolsEnabled = options.toolsEnabled ?? true;
+  const sourceMap = new Map(sourceItems.map((item) => [item.label, item]));
+  const originalReferenceFiles = [...new Set([...stepScope.targetFiles, ...stepScope.contextFiles])];
+  const originalReferenceSection = originalReferenceFiles
+    .map((file) => {
+      const item = sourceMap.get(file);
+      if (!item) return null;
+      const content = item.content.length > MAX_ORIGINAL_REFERENCE_CHARS
+        ? `${item.content.slice(0, MAX_ORIGINAL_REFERENCE_CHARS)}\n/* ...truncated... */`
+        : item.content;
+      return `### ${file}\n\`\`\`\n${content}\n\`\`\``;
+    })
+    .filter((value): value is string => Boolean(value))
+    .join('\n\n');
 
   const core = buildStepFillSystemPromptCore(stepIndex, isMultiFile);
 
-  const toolAddendum = `
+  const toolAddendum = toolsEnabled ? `
 
 ## 可用工具
 
@@ -156,9 +199,31 @@ export function buildRetrievalStepFillPrompt(
 规则：
 - patches/focus/marks 只能作用于你已经精读过的当前代码文件。
 - 如果要修改未注入的文件，先调用 readCurrentFile(path) 读取当前快照。
-- readOriginalFile(path) 只用于理解原始仓库实现，不能把原始文件内容当作 patch find 的依据。`;
+- readOriginalFile(path) 只用于理解原始仓库实现，不能把原始文件内容当作 patch find 的依据。` : `
 
-  const systemPrompt = core + toolAddendum;
+## 无工具模式（必须遵守）
+
+本轮不会提供读取工具。你已经拿到了当前目标文件代码和原始源码参考。
+
+- 不要输出“我需要查看文件”“让我读取目录”之类的过程性文字
+- 不要要求调用工具
+- 直接基于下方已注入内容生成最终 JSON
+- patch.find 必须来自“当前代码目标文件”，不能来自“原始源码参考”`;
+
+  let systemPrompt = core + toolAddendum;
+  if (sourceShape.mode === 'progressive_snapshots') {
+    systemPrompt += `
+
+## 渐进式快照序列（必须遵守）
+
+当前输入是一组编号演进快照。
+
+- targetFiles 应优先覆盖当前里程碑对应的真实文件
+- patches 必须至少命中一个 targetFiles，不要为了方便而把所有变化都落到同一个主文件
+- 如果 targetFiles 中存在占位文件，必须直接替换该目标文件的占位内容，而不是改动更早的文件来“代替”
+- 若当前 patch 只是 stub、占位或未实现骨架，paragraphs 不得把它描述成“完整能力”
+- lead 必须非空，paragraphs 不得包含任何生成失败或提示人工编辑的元信息`;
+  }
 
   // Build current code section only for target files
   const targetCodeSection = stepScope.targetFiles
@@ -166,7 +231,15 @@ export function buildRetrievalStepFillPrompt(
     .map((f) => `### ${f}\n\`\`\`\n${previousFiles[f]}\n\`\`\``)
     .join('\n\n');
 
-  const userPrompt = `## 教学目标
+  const sourceShapeSection = sourceShape.mode === 'progressive_snapshots'
+    ? `## 源码形态分析
+检测到这是一组渐进式快照序列：
+${sourceShape.orderedLabels.map((label, index) => `${index + 1}. ${label}`).join('\n')}
+
+请优先围绕这些里程碑设计本步的真实变化。`
+    : '';
+
+  const userPrompt = `${sourceShapeSection ? `${sourceShapeSection}\n\n` : ''}## 教学目标
 ${outlineStep.teachingGoal}
 
 ## 引入的概念
@@ -177,6 +250,17 @@ ${targetCodeSection || '（无注入文件，请使用 readCurrentFile 工具读
 
 ## 当前代码文件清单（摘要，不含全文）
 ${snapshotSummary}
+
+## 本步文件锚点
+- targetFiles: ${stepScope.targetFiles.length > 0 ? stepScope.targetFiles.join(', ') : '（未提供，默认回退到主文件）'}
+- contextFiles: ${stepScope.contextFiles.length > 0 ? stepScope.contextFiles.join(', ') : '（无）'}${
+  placeholderTargets.length > 0
+    ? `\n- 占位目标文件: ${placeholderTargets.join(', ')}（本步必须替换这些文件中的占位内容）`
+    : ''
+}
+
+## 原始源码参考（只能作为目标形态，不可作为 patch.find）
+${originalReferenceSection || '（无额外原始源码参考）'}
 
 ## 步骤在教程中的位置
 - 教程标题：${outline.meta.title}
@@ -202,7 +286,8 @@ ${
 3. 最后用 1 段话解释"这段代码解决了什么问题"（收束）
 4. patch 的 find 必须从当前代码中逐字复制（已注入或通过 readCurrentFile 读取）
 5. focus 指向本次变化的核心区域
-6. 步骤 id 使用：${outlineStep.id}${isMultiFile ? '\n7. patches/focus/marks 必须指定 "file" 字段来指明操作哪个文件' : ''}`;
+6. 如果提供了 targetFiles，至少有一条 patch 必须落在这些文件上
+7. 步骤 id 使用：${outlineStep.id}${isMultiFile ? '\n8. patches/focus/marks 必须指定 "file" 字段来指明操作哪个文件' : ''}`;
 
   return { systemPrompt, userPrompt };
 }

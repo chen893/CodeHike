@@ -8,11 +8,21 @@ import { useDraftWorkspaceController } from '@/components/drafts/use-draft-works
 
 interface DraftWorkspaceProps {
   draft: ClientDraftRecord;
+  startGeneration?: boolean;
+  generationModelId?: string;
 }
 
-export function DraftWorkspace({ draft }: DraftWorkspaceProps) {
+export function DraftWorkspace({
+  draft,
+  startGeneration = false,
+  generationModelId,
+}: DraftWorkspaceProps) {
   const [drawerOpen, setDrawerOpen] = useState(false);
-  const controller = useDraftWorkspaceController({ initialDraft: draft });
+  const controller = useDraftWorkspaceController({
+    initialDraft: draft,
+    startGeneration,
+    generationModelId,
+  });
 
   const sidebarContent = (
     <DraftWorkspaceSidebar
@@ -99,6 +109,7 @@ export function DraftWorkspace({ draft }: DraftWorkspaceProps) {
           showGenerationProgress={controller.showGenerationProgress}
           generationRunNonce={controller.generationRunNonce}
           generationContext={controller.generationContext}
+          generationModelId={controller.generationModelId}
           repairingStartIndex={controller.repairingStartIndex}
           firstInvalidStep={controller.firstInvalidStep}
           onGenerationComplete={controller.completeGeneration}

@@ -1,5 +1,6 @@
 import type { SourceItem } from '../schemas/source-item';
 import type { TeachingBrief } from '../schemas/teaching-brief';
+import { analyzeSourceCollectionShape } from '../utils/source-collection-shape';
 
 // ---------------------------------------------------------------------------
 // Shared prompt fragments (reused by both legacy and retrieval paths)
@@ -143,6 +144,7 @@ export function buildOutlinePrompt(
   teachingBrief: TeachingBrief
 ): { systemPrompt: string; userPrompt: string } {
   const isMultiFile = sourceItems.length > 1;
+  const sourceShape = analyzeSourceCollectionShape(sourceItems);
 
   const baseCodeExample = isMultiFile
     ? '{ "file1.js": "最小可运行代码", "utils.js": "辅助模块代码" }'
@@ -152,13 +154,36 @@ export function buildOutlinePrompt(
     ? '{ "title": "教程标题", "description": "简介" }'
     : '{ "title": "教程标题", "lang": "代码语言", "fileName": "文件名", "description": "简介" }';
 
-  const systemPrompt = buildOutlineSystemPromptCore(isMultiFile, metaExample, baseCodeExample);
+  let systemPrompt = buildOutlineSystemPromptCore(isMultiFile, metaExample, baseCodeExample);
+  if (sourceShape.mode === 'progressive_snapshots') {
+    systemPrompt += `
+
+## 渐进式快照序列（必须遵守）
+
+当前输入更像一组按里程碑编号的演进快照，而不是并列模块文件。
+
+- 将这些文件视为“教程已经存在的阶段性版本”，不是普通依赖图
+- baseCode 应从最早快照出发，只保留共同依赖文件；不要把所有后期能力都压缩进一个伪造的起点文件
+- steps 必须沿真实快照的能力递进设计，避免跨越多个里程碑一步到位
+- 如果后续快照引入关键能力，教学路径必须覆盖到这些里程碑的变化来源`;
+  }
 
   const sourceCodeSection = sourceItems
     .map((item) => `### ${item.label}${item.language ? ` (${item.language})` : ''}\n\`\`\`\n${item.content}\n\`\`\``)
     .join('\n\n');
 
-  const userPrompt = `## 源码内容
+  const sourceShapeSection = sourceShape.mode === 'progressive_snapshots'
+    ? `## 源码形态分析
+
+检测到这是一组“渐进式快照序列”，建议按以下里程碑理解源码：
+${sourceShape.orderedLabels.map((label, index) => `${index + 1}. ${label}`).join('\n')}
+
+这意味着：
+- 教学路径应尽量对齐这些里程碑的能力递进
+- 不要把所有高级能力都压缩成对最早文件的一连串虚构 patch`
+    : '';
+
+  const userPrompt = `${sourceShapeSection ? `${sourceShapeSection}\n\n` : ''}## 源码内容
 
 ${sourceCodeSection}
 
@@ -204,6 +229,7 @@ export function buildRetrievalOutlinePrompt(
   directorySummary: string,
 ): { systemPrompt: string; userPrompt: string } {
   const isMultiFile = sourceItems.length > 1;
+  const sourceShape = analyzeSourceCollectionShape(sourceItems);
 
   const baseCodeExample = isMultiFile
     ? '{ "file1.js": "最小可运行代码", "utils.js": "辅助模块代码" }'
@@ -232,9 +258,27 @@ export function buildRetrievalOutlinePrompt(
 - targetFiles：本步可能产生 patches/focus/marks 的文件（通常 1-3 个），必须是目录中的真实路径
 - contextFiles：只用于理解依赖关系的文件（通常 0-5 个），必须是目录中的真实路径`;
 
-  const systemPrompt = core + toolAndScopeAddendum;
+  let systemPrompt = core + toolAndScopeAddendum;
+  if (sourceShape.mode === 'progressive_snapshots') {
+    systemPrompt += `
 
-  const userPrompt = `## 源码仓库目录结构
+## 渐进式快照序列（必须遵守）
+
+目录中的编号文件更像一组演进快照，而不是普通模块。
+
+- 设计教学路径时优先保留快照里程碑之间的真实演进关系
+- targetFiles/contextFiles 应覆盖这些里程碑对应的真实文件
+- 不要让所有步骤都回落到同一个主文件，除非源码本身确实只有这个文件在变化`;
+  }
+
+  const sourceShapeSection = sourceShape.mode === 'progressive_snapshots'
+    ? `## 源码形态分析
+
+检测到这是一组渐进式快照序列，请优先围绕以下里程碑设计教学路径：
+${sourceShape.orderedLabels.map((label, index) => `${index + 1}. ${label}`).join('\n')}`
+    : '';
+
+  const userPrompt = `${sourceShapeSection ? `${sourceShapeSection}\n\n` : ''}## 源码仓库目录结构
 
 ${directorySummary}
 

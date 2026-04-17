@@ -30,7 +30,7 @@
 | React | 19 | UI |
 | PostgreSQL + Drizzle ORM | - | 持久化 |
 | Vercel AI SDK | v6 | `generateText` + `Output.object` + Zod 结构化生成 |
-| DeepSeek | via `@ai-sdk/openai-compatible` | LLM provider（`/chat/completions` 端点） |
+| DeepSeek / OpenAI / MiniMax / Zhipu | provider registry | LLM provider（MiniMax、Zhipu 走 OpenAI-compatible `/chat/completions` 端点） |
 | Zod | v4 | schema 定义（AI 输出约束 + API 校验 + DB 写入校验） |
 | CodeHike | 1.1 | scrollytelling 代码高亮 + focus/marks/change handler |
 | CodeMirror 6 | - | 草稿编辑器中的代码编辑 |
@@ -41,7 +41,7 @@
 **重要版本陷阱（已踩过）：**
 - AI SDK v6 的 `maxTokens` 已重命名为 `maxOutputTokens`
 - DeepSeek `maxOutputTokens` 上限为 **8192**（超出会被截断）
-- 不要用 `@ai-sdk/openai` 的默认 provider（默认走 `/responses` 端点），DeepSeek 必须用 `@ai-sdk/openai-compatible`
+- DeepSeek 使用 `@ai-sdk/deepseek`，OpenAI 使用 `@ai-sdk/openai`；MiniMax / Zhipu 使用 `@ai-sdk/openai-compatible`
 - Tailwind v4 需要 `@tailwindcss/postcss` 和 `@import "tailwindcss"`，且需要显式 `@source` 指令
 - NextAuth v5 使用 `AUTH_SECRET` 环境变量（不是 `NEXTAUTH_SECRET`），不过 v5 同时接受两者
 - NextAuth v5 middleware 必须用轻量级实例（无 DB adapter），因为 Edge Runtime 不支持 Node.js crypto
@@ -180,8 +180,10 @@ TutorialDraft (DSL JSON)
 阶段二：Step Fill（单步内容填充）
   → 输入：大纲 + 当前累积代码状态
   → 输出：完整的 step（paragraphs + patches + focus + marks）
+  → 默认：无工具 scoped prompt，注入当前目标文件代码 + 原始目标/上下文文件参考
+  → 可选：设置 VIBEDOCS_STEP_FILL_TOOLS=1 后重新启用 step-fill tools
   → 重试：单步失败最多重试 3 次（MAX_STEP_RETRIES = 3）
-  → 降级：3 次失败后生成降级步骤
+  → 失败策略：3 次失败后直接中止本轮生成，不再写入失败占位步骤
   → LOC 容差：+10 行
 
 阶段三：Validate（全链路验证）
@@ -235,6 +237,23 @@ GenerationQuality {
 ```
 
 存储在 `DraftRecord.generationQuality`（JSONB），不阻塞发布，仅作监控。
+
+### 5.6 生成质量迭代工作流
+
+- 标准 review rubric 实现在 `lib/review/generation-quality-review.ts`
+- 输入源码形态分析（普通多文件 / 渐进式快照）实现在 `lib/utils/source-collection-shape.ts`
+- CLI 入口为 `npm run review:generation -- --draft-id <id> --variant <name> [--mode existing|generate]`
+- 对多文件输入，生成阶段会在内部快照中为后续 `targetFiles` 预植入 placeholder stub，供 step-fill 对齐尚未进入 `baseCode` 的目标文件；最终 draft 只 materialize 实际被 patch 过的这些文件
+- 每轮实验会同时落两份产物：
+  - `dataset/generation-quality-loop.csv`：扁平对比表，用于 keep / revert 决策
+  - `dataset/generation-quality-reports/*.json`：完整评分报告，含 issue taxonomy、prompt review 和 stop condition
+- 循环停止条件不是“主观感觉可以”，而是：
+  - `totalScore >= 90`
+  - `contentIntegrity >= 90`
+  - `sourceCoverage >= 90`
+  - `publishReadiness >= 90`
+  - `critical issue count = 0`
+- 详细操作见 `docs/workflow/generation-quality-loop.md`
 
 ---
 
@@ -958,12 +977,13 @@ GitHub 导入（v3.9 新增）：
 | `lib/ai/tutorial-generator.ts` | v1 生成器封装 |
 | `lib/ai/multi-phase-generator.ts` | v2 多阶段生成 SSE 流编排 |
 | `lib/ai/tag-generator.ts` | AI 标签生成（generateText + 语言回退 fallback map） |
-| `lib/ai/provider-registry.ts` | AI provider 注册表（DeepSeek + OpenAI 多 provider 支持） |
+| `lib/ai/provider-registry.ts` | AI provider 注册表（DeepSeek + OpenAI + MiniMax + Zhipu 多 provider 支持） |
 | `lib/ai/prompt-adapters.ts` | Prompt 适配器（根据 provider 能力调整输出格式） |
 | `lib/ai/model-probe.ts` | 模型能力探测（可达性、延迟、response_format 支持） |
 | `lib/ai/style-templates.ts` | 教学风格模板 |
 | `lib/ai/source-preprocessor.ts` | 源码预处理（压缩、注释清理） |
 | `lib/ai/patch-auto-fix.ts` | Patch 自动修复（常见 AI 输出错误的自动纠正） |
+| `lib/review/generation-quality-review.ts` | 标准化生成质量 review rubric（评分、issue taxonomy、keep/revert 建议） |
 
 ---
 
@@ -1003,6 +1023,7 @@ GitHub 导入（v3.9 新增）：
 14. **Auth middleware 路由区分：** API 路由返回 401 JSON（`{ message: "请先登录" }`），页面路由 redirect 到 `/api/auth/signin`，避免 API 请求被重定向到 HTML 登录页
 15. **Drizzle JSONB 查询陷阱：** `sql` 模板不支持 `->` / `->>` JSONB 操作符与 `${columnRef}` 插值混用。全文搜索等需要 JSONB 字段访问的场景，必须使用原始 SQL 列名（如 `"published_tutorials"."tutorial_draft_snapshot"`）
 16. **leftJoin(users) 必须：** 探索/搜索查询中 `drafts.userId` 可能为 NULL（未关联用户的草稿），必须用 `leftJoin(users)` 而非 `innerJoin`，否则会过滤掉无作者的教程
+17. **生成失败占位内容无效：** `step-fill` 重试耗尽后不再继续生成后续步骤；任何包含“自动生成失败 / 请手动编辑 / Failed to parse JSON”之类占位内容的 step 都必须在 validation 阶段判定为无效，避免坏草稿被标记成 `succeeded`
 17. **全文搜索配置：** 使用 PostgreSQL `simple` 配置（不分词、不词干化），适合中英混合场景。搜索 `ts_vector` 基于 `tutorialDraftSnapshot->meta->title` 和 `slug`
 18. **AI 标签生成 fire-and-forget：** `tag-generator.ts` 在教程发布后异步调用，失败不阻塞发布主流程。`getOrCreateTag` 处理并发竞争（unique constraint catch + fallback select）
 19. **generation job 约束必须双层保持：** SQL migration、Drizzle snapshot、schema 定义必须同时包含“同 draft 复合外键”和“单 active job 部分唯一索引”，否则后续 diff 会把约束漂掉
@@ -1029,6 +1050,8 @@ DEEPSEEK_BASE_URL=https://api.deepseek.com  # DeepSeek API 端点
 DEEPSEEK_MODEL=deepseek-chat        # 默认模型
 OPENAI_API_KEY=...                  # OpenAI API Key（可选，多 provider 支持）
 OPENAI_BASE_URL=...                 # OpenAI API 端点（可选）
+MINIMAX_API_KEY=...                 # MiniMax API Key（选择 minimax/MiniMax-M2.7 时需要）
+MINIMAX_BASE_URL=https://api.minimax.io/v1  # MiniMax OpenAI-compatible API 端点
 DEFAULT_AI_MODEL=...                # 默认 AI 模型（可选，覆盖 DEEPSEEK_MODEL）
 AUTH_SECRET=...                     # NextAuth v5 密钥（生产环境必须更换）
 AUTH_URL=https://example.com        # Auth.js canonical origin（不要包含 path）
@@ -1045,6 +1068,8 @@ LINUXDO_TOKEN_ENDPOINT=https://connect.linuxdo.org/oauth2/token
 LINUXDO_USERINFO_ENDPOINT=https://connect.linuxdo.org/api/user
 NEXT_PUBLIC_BASE_URL=https://...    # 公开访问基础 URL（SEO 生成用）
 ```
+
+默认生成模型为 `minimax/MiniMax-M2.7`；前端模型下拉的首项也是 MiniMax M2.7。若设置 `DEFAULT_AI_MODEL`，服务端无显式 `modelId` 时优先使用该变量。
 
 ---
 
@@ -1121,7 +1146,7 @@ NEXT_PUBLIC_BASE_URL=https://...    # 公开访问基础 URL（SEO 生成用）
 
 ### Phase 9：v3.8 导出与体验优化 ✅ 已完成
 - Markdown/HTML 导出（`/api/tutorials/[slug]/export-markdown`、`export-html`）
-- AI 多 provider 支持（DeepSeek + OpenAI，`provider-registry.ts`）
+- AI 多 provider 支持（DeepSeek + OpenAI + MiniMax + Zhipu，`provider-registry.ts`）
 - Patch 自动修复（`patch-auto-fix.ts`）
 - 步骤编辑器子组件拆分（diff 视图、代码选择菜单、中间预览）
 - 错误分类层（`lib/errors/`）

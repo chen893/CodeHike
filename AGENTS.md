@@ -12,12 +12,13 @@ VibeDocs — AI 驱动的 scrollytelling 源码教学教程生成与渲染应用
 npm run dev     # next dev --webpack
 npm run build   # next build --webpack
 npm test        # node:test smoke checks for layering + core helpers
+npm run review:generation -- --draft-id <id> --variant <name> [--mode existing|generate]   # 生成质量 review / CSV 记录
 npm start       # next start (production)
 ```
 
 无 lint 配置。已有最小 `node:test` 回归集，覆盖结构边界和几个核心纯函数。
 
-数据库需要 `DATABASE_URL` 环境变量（PostgreSQL），AI 生成需要 `DEEPSEEK_API_KEY`。
+数据库需要 `DATABASE_URL` 环境变量（PostgreSQL），AI 生成需要所选 provider 的 API Key；默认模型是 `minimax/MiniMax-M2.7`，需要 `MINIMAX_API_KEY`。
 
 ## Architecture
 
@@ -151,8 +152,12 @@ lib/services/compute-generation-quality.ts # 质量指标计算
 - `app/[slug]/page.jsx` 通过 `lib/services/tutorial-queries.ts` 中的 `cache()` 包装函数避免重复 DB 查询和高亮计算
 - 混用 JS（`.js`/`.jsx`，渲染链路）和 TS（`.ts`/`.tsx`，新增功能），不要强行统一
 - 多阶段生成通过 SSE 流向客户端推送进度，前端 `GenerationProgress` 组件解析 v2 协议
+- retrieval outline 仍使用源码工具；step-fill 默认走无工具的 scoped prompt（当前代码目标文件 + 原始源码参考），仅当 `VIBEDOCS_STEP_FILL_TOOLS=1` 时重新启用 step-fill tools
 - generation 运行态的持久化真相源为 `draft_generation_jobs` + `drafts.activeGenerationJobId`；新增生成状态读写优先经过 repository / service，不要再扩展进程内 `Map` 作为唯一状态源
 - 生成质量评估（`GenerationQuality`）不阻塞发布，仅作数据监控
+- 生成质量迭代工作流走 `npm run review:generation` + `docs/workflow/generation-quality-loop.md`，所有 prompt / 流程实验都要落 CSV 和 JSON report
+- step-fill 重试耗尽后不再继续往后生成；失败占位文本属于无效教程内容，必须被 validation 拦截
+- 多文件输入允许在生成快照中为后续 `targetFiles` 预植入内部 placeholder stub，但最终 `tutorialDraft.baseCode` 只能 materialize 真正被 patch 过的这些文件，不能把未使用占位文件泄露到最终教程
 - DB schema 中 `generationOutline`、`generationQuality` 为可选 jsonb，向后兼容 v3.0 草稿
 - `app/*` 入口主要依赖 `components/*` 和 `lib/services/*`；页面可额外依赖 `lib/utils/client-data.ts`（序列化）和 `lib/draft-status.ts`（状态 badge）；route handler 可额外依赖 `lib/api/route-errors.ts`（错误处理）；不要在页面或 route handler 中直接调用 `lib/repositories/*`、`lib/db/*`、`lib/tutorial/*`
 - client 侧 `fetch` 统一进入 feature client / hook / controller，不要散落在视图组件中
@@ -218,6 +223,7 @@ lib/services/compute-generation-quality.ts # 质量指标计算
 | `docs/v3-implementation-issues.md` | 实施问题记录 — 技术决策和解决方案（活跃维护） |
 | `docs/20260416-fullflow-reliability-implementation-plan.md` | 全流程可靠性实施方案 — 新建、生成、编辑、预览、发布的失败恢复与一致性改造计划 |
 | `docs/20260416-fullflow-reliability-task-list.md` | 全流程可靠性任务清单 — 按 P0/P1/P2 拆分的可执行任务、依赖和验收标准 |
+| `docs/workflow/generation-quality-loop.md` | 生成质量迭代工作流 — 标准评分、CSV 沉淀、keep/revert 决策和停机条件 |
 | `docs/ui-review-workflow.md` | UI 审查流程 — 截图规范、模型审查、修复验证（已迁移至 `docs/workflow/`） |
 | `docs/mini-redux.js` | Redux 核心源码实现（简化版），测试用样本源码 |
 | `docs/archive/` | 已归档的 PRD、技术设计、实施计划、版本任务分解等历史文档 |
@@ -237,7 +243,7 @@ lib/services/compute-generation-quality.ts # 质量指标计算
 | React 19 | UI |
 | PostgreSQL + Drizzle ORM | 持久化 DraftRecord / PublishedTutorial |
 | Vercel AI SDK v6 (`ai`) | `generateText` + `Output.object` + Zod 结构化生成 |
-| DeepSeek (via `@ai-sdk/openai-compatible`) | LLM provider |
+| DeepSeek / OpenAI / MiniMax / Zhipu | 多 provider LLM 支持（MiniMax、Zhipu 走 OpenAI-compatible provider） |
 | Zod 4 | schema 定义（AI 输出约束 + API 校验 + DB 写入校验） |
 | CodeHike | scrollytelling 代码高亮 + focus/marks/change handler |
 | CodeMirror 6 | 步骤编辑器中的代码编辑 |

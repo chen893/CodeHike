@@ -222,6 +222,24 @@ export async function updateDraftTutorial(
   return row ? toDraftRecord(row) : null;
 }
 
+export async function writePartialTutorial(
+  id: string,
+  tutorialDraft: TutorialDraft
+): Promise<void> {
+  await db
+    .update(drafts)
+    .set({
+      tutorialDraft: tutorialDraft as any,
+      syncState: 'stale',
+      tutorialDraftInputHash: null,
+      validationValid: false,
+      validationErrors: [],
+      validationCheckedAt: null,
+      updatedAt: new Date(),
+    })
+    .where(eq(drafts.id, id));
+}
+
 export async function updateDraftGenerationState(
   id: string,
   state: 'idle' | 'running' | 'succeeded' | 'failed',

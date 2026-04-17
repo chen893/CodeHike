@@ -1,7 +1,6 @@
 'use client';
 
 import { useState } from 'react';
-import { GenerationProgress } from './generation-progress';
 import { CodeMirrorEditor } from './code-mirror-editor';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -25,12 +24,9 @@ export function CreateDraftForm() {
     modelId,
     setModelId,
     generating,
-    draftId,
     error,
-    generationContext,
     setBrief,
     handleSubmit,
-    handleGenerationComplete,
     updateSourceItem,
     addSourceItem,
     removeSourceItem,
@@ -38,19 +34,6 @@ export function CreateDraftForm() {
   } = useCreateDraftFormController();
 
   const [sourceTab, setSourceTab] = useState<'paste' | 'github'>('paste');
-
-  if (generating && draftId) {
-    return (
-      <div className="mx-auto w-full max-w-6xl">
-        <GenerationProgress
-          draftId={draftId}
-          onComplete={handleGenerationComplete}
-          context={generationContext}
-          modelId={modelId}
-        />
-      </div>
-    );
-  }
 
   const activeItem = sourceItems.find((item) => item.id === activeSourceItemId) || sourceItems[0];
 
@@ -217,7 +200,7 @@ export function CreateDraftForm() {
                   value={activeItem?.content || ''}
                   onChange={(value) => updateSourceItem(activeItem.id, { content: value })}
                   language={activeItem?.language || 'javascript'}
-                  height="400px"
+                  height="280px"
                   placeholder="在这里粘贴源码..."
                 />
               </div>
@@ -348,7 +331,7 @@ export function CreateDraftForm() {
           className="rounded-md px-8 shadow-md"
           disabled={generating}
         >
-          创建并生成
+          {generating ? '正在创建...' : '创建并生成'}
         </Button>
       </div>
     </form>

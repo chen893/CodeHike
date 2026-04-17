@@ -6,6 +6,7 @@ import {
   type CancelToken,
   type MultiPhaseLifecycleHooks,
 } from "../ai/multi-phase-generator";
+import { materializeBaseCodeForFilledSteps } from "../ai/progressive-snapshot-base-code";
 import { RetrievalModelRequiredError } from "../ai/model-capabilities";
 import { validateTutorialDraft } from "../utils/validation";
 import { computeGenerationQuality } from "./compute-generation-quality";
@@ -19,6 +20,9 @@ import type {
 } from "../schemas/generation-job";
 import type { DraftGenerationJob } from "../types/generation-job";
 import { isTerminalDraftGenerationJobStatus } from "../types/generation-job";
+import { ensureDraftChapters } from "../tutorial/chapters";
+import type { TutorialOutline } from "../schemas/tutorial-outline";
+import type { SourceItem } from "../schemas/source-item";
 
 /**
  * In-memory registry of active generations.
@@ -167,7 +171,11 @@ export function getGenerationJobFailureUpdate(error: unknown): {
   };
 }
 
-function createJobLifecycleHooks(jobId: string): MultiPhaseLifecycleHooks {
+function createJobLifecycleHooks(
+  jobId: string,
+  draftId: string,
+  sourceItems: SourceItem[],
+): MultiPhaseLifecycleHooks {
   async function touchJob(data: Parameters<typeof generationJobRepo.updateDraftGenerationJob>[1]) {
     const now = new Date();
     await generationJobRepo.updateDraftGenerationJob(jobId, {
@@ -177,6 +185,8 @@ function createJobLifecycleHooks(jobId: string): MultiPhaseLifecycleHooks {
       ...data,
     });
   }
+
+  let cachedOutline: TutorialOutline | null = null;
 
   return {
     onPhase: async (event) => {
@@ -188,6 +198,7 @@ function createJobLifecycleHooks(jobId: string): MultiPhaseLifecycleHooks {
       });
     },
     onOutlineReady: async (outline) => {
+      cachedOutline = outline;
       const stepTitles = outline.steps.map((step) => step.title);
       await touchJob({
         outlineSnapshot: outline,
@@ -215,6 +226,25 @@ function createJobLifecycleHooks(jobId: string): MultiPhaseLifecycleHooks {
         totalSteps: event.totalSteps,
         retryCount: event.retryCount,
       });
+    },
+    onStepFilled: async (_stepIndex, _step, filledSteps) => {
+      if (!cachedOutline) return;
+      try {
+        const partialDraft = ensureDraftChapters({
+          meta: cachedOutline.meta,
+          intro: cachedOutline.intro,
+          baseCode: materializeBaseCodeForFilledSteps(
+            cachedOutline,
+            sourceItems,
+            filledSteps,
+          ),
+          chapters: cachedOutline.chapters,
+          steps: filledSteps,
+        });
+        await draftRepo.writePartialTutorial(draftId, partialDraft);
+      } catch (err) {
+        console.error(`[generate-v2] Failed to persist partial draft for step ${_stepIndex}:`, err);
+      }
     },
   };
 }
@@ -246,7 +276,7 @@ export async function initiateGeneration(
   }
 
   const effectiveModel =
-    modelId || process.env.DEEPSEEK_MODEL || "deepseek-chat";
+    modelId || process.env.DEFAULT_AI_MODEL || process.env.DEEPSEEK_MODEL || "minimax/MiniMax-M2.7";
 
   let job: DraftGenerationJob;
   const startedAt = new Date();
@@ -282,7 +312,7 @@ async function initiateGenerationStream(
   job: DraftGenerationJob,
 ): Promise<Response> {
   const cancelToken: CancelToken = { value: false };
-  const lifecycleHooks = createJobLifecycleHooks(job.id);
+  const lifecycleHooks = createJobLifecycleHooks(job.id, draftId, draft.sourceItems);
 
   // Register so the cancel API endpoint can signal this generation
   activeGenerations.set(draftId, { jobId: job.id, token: cancelToken });
