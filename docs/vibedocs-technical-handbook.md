@@ -45,13 +45,13 @@
 - Tailwind v4 需要 `@tailwindcss/postcss` 和 `@import "tailwindcss"`，且需要显式 `@source` 指令
 - NextAuth v5 使用 `AUTH_SECRET` 环境变量（不是 `NEXTAUTH_SECRET`），不过 v5 同时接受两者
 - NextAuth v5 middleware 必须用轻量级实例（无 DB adapter），因为 Edge Runtime 不支持 Node.js crypto
-- `next-auth@5 beta` + `@auth/drizzle-adapter` 在“已存在 OAuth account 再次登录”场景下不会自动刷新 `accounts.access_token`；如果业务依赖 provider token（如 GitHub 导入提额），必须在 `callbacks.jwt` 或等价服务端钩子里显式同步 token 字段
+- `next-auth@5 beta` + `@auth/drizzle-adapter` 在"已存在 OAuth account 再次登录"场景下不会自动刷新 `accounts.access_token`；如果业务依赖 provider token（如 GitHub 导入提额），必须在 `callbacks.jwt` 或等价服务端钩子里显式同步 token 字段
 
 ---
 
 ## 3. 教程数据格式（核心 DSL）
 
-这是整个系统的数据核心。AI 生成它、编辑器修改它、渲染器消费它。
+这是整个系统的数据核心。AI 生成它、编辑器修改它、渲染器消费它。详细格式规范见 `docs/tutorial-data-format.md`。
 
 ### 3.1 TutorialDraft 顶层结构
 
@@ -98,8 +98,8 @@ TutorialStep {
   patches?: ContentPatch[] // 代码变更（无变更则省略）
   focus?: ContentRange     // 高亮区域
   marks?: ContentMark[]    // 行标记
-  teachingGoal?: string    // 教学目标（v3.1 大纲阶段生成）
-  conceptIntroduced?: string // 引入的概念（v3.1 大纲阶段生成）
+  teachingGoal?: string    // 教学目标（大纲阶段生成）
+  conceptIntroduced?: string // 引入的概念（大纲阶段生成）
 }
 ```
 
@@ -184,7 +184,7 @@ TutorialDraft (DSL JSON)
 
 ---
 
-## 5. 多阶段 AI 生成链路（v3.1 核心）
+## 5. 多阶段 AI 生成链路
 
 ### 5.1 三阶段流程
 
@@ -193,6 +193,7 @@ TutorialDraft (DSL JSON)
   → 输入：sourceItems + teachingBrief
   → 输出：步骤大纲（每步含 teachingGoal、conceptIntroduced、estimatedLocChange）
   → 约束：每步变更 3-8 LOC，超过则拆分
+  → 步骤预算推荐：lib/ai/step-budget.ts 根据源码量计算推荐步骤数范围
 
 阶段二：Step Fill（单步内容填充）
   → 输入：大纲 + 当前累积代码状态
@@ -261,11 +262,11 @@ GenerationQuality {
 - 输入源码形态分析（普通多文件 / 渐进式快照）实现在 `lib/utils/source-collection-shape.ts`
 - CLI 入口为 `npm run review:generation -- --draft-id <id> --variant <name> [--mode existing|generate]`
 - 对多文件输入，生成阶段会在内部快照中为后续 `targetFiles` 预植入 placeholder stub，供 step-fill 对齐尚未进入 `baseCode` 的目标文件；最终 draft 只 materialize 实际被 patch 过的这些文件
-- review 会额外惩罚“单步 LOC 变化过大”和 `outline -> step-fill` 明显漂移，避免“按文件巡礼但表面完整”的教程继续拿到假高分
+- review 会额外惩罚"单步 LOC 变化过大"和 `outline -> step-fill` 明显漂移，避免"按文件巡礼但表面完整"的教程继续拿到假高分
 - 每轮实验会同时落两份产物：
   - `dataset/generation-quality-loop.csv`：扁平对比表，用于 keep / revert 决策
   - `dataset/generation-quality-reports/*.json`：完整评分报告，含 issue taxonomy、prompt review 和 stop condition
-- 循环停止条件不是“主观感觉可以”，而是：
+- 循环停止条件不是"主观感觉可以"，而是：
   - `totalScore >= 90`
   - `contentIntegrity >= 90`
   - `sourceCoverage >= 90`
@@ -299,7 +300,7 @@ DraftRecord {
   generationModel: string?
   generationLastAt: Date?
 
-  // v3.1 新增
+  // 生成数据
   generationOutline: jsonb?
   generationQuality: jsonb?
   activeGenerationJobId: string?   // FK → draft_generation_jobs.id，指向当前活跃任务
@@ -357,12 +358,12 @@ DraftGenerationJob {
 ```
 
 说明：
-- `drafts.activeGenerationJobId` 指向当前 active job，但通过 `(drafts.id, drafts.activeGenerationJobId) -> (draft_generation_jobs.draftId, draft_generation_jobs.id)` 复合外键保证“只能指向同一 draft 的 job”
+- `drafts.activeGenerationJobId` 指向当前 active job，但通过 `(drafts.id, drafts.activeGenerationJobId) -> (draft_generation_jobs.draftId, draft_generation_jobs.id)` 复合外键保证"只能指向同一 draft 的 job"
 - `draft_generation_jobs` 额外有部分唯一索引，约束同一 draft 同时最多只有一个 `queued/running` job
 - `updateDraftActiveGenerationJobId()` 是受控写入口，只允许把指针设置为同 draft 且 `queued/running` 的 job；非空指针写入会在事务内 `FOR UPDATE` 锁定目标 job 行，避免和终态迁移竞态
 - `updateDraftGenerationJob()` 将 job 更新为 `succeeded/failed/cancelled/abandoned` 时，会在同一事务内清空仍指向该 job 的 `drafts.activeGenerationJobId`
-- `/api/drafts/[id]/generation-status` 读取状态前会执行 stale job recovery；过期 `queued/running` job 会被标记为 `abandoned/JOB_STALE`，并同步清理 draft 的 active 指针，避免重连页面永久卡在“生成中”
-- `cancelRequested` 是取消信号的持久化位；前端收到 active job 的该字段后展示“正在取消”，继续轮询直到 job 进入终态
+- `/api/drafts/[id]/generation-status` 读取状态前会执行 stale job recovery；过期 `queued/running` job 会被标记为 `abandoned/JOB_STALE`，并同步清理 draft 的 active 指针，避免重连页面永久卡在"生成中"
+- `cancelRequested` 是取消信号的持久化位；前端收到 active job 的该字段后展示"正在取消"，继续轮询直到 job 进入终态
 - 全量 `POST /api/drafts/[id]/generate` 启动新 job 时会清空旧的 `tutorialDraft / generationOutline / generationQuality / validation`，确保重新生成大纲不会继续展示或预览旧步骤；随后 `writePartialTutorial()` 只写入新 job 已完成的步骤。
 
 ### 6.3 SourceItem
@@ -462,6 +463,9 @@ DraftSnapshot {
 | GET/POST | `/api/auth/[...nextauth]` | NextAuth 路由处理器（GitHub OAuth + Linux.do OAuth） |
 | GET | `/api/search?q=` | 全文搜索教程（PostgreSQL ts_vector，支持 tag/lang/sort/page，nodejs runtime） |
 | GET | `/api/tags` | 标签列表（含教程计数，nodejs runtime） |
+| POST | `/api/tags/[tagId]/follow` | 关注标签（需认证） |
+| DELETE | `/api/tags/[tagId]/follow` | 取消关注标签（需认证） |
+| GET | `/api/tags/[tagId]/follow` | 检查关注状态（返回 `{ following: boolean }`） |
 | GET | `/api/user/profile` | 获取当前用户档案（需认证） |
 | PATCH | `/api/user/profile` | 更新用户档案（name/bio，需认证） |
 | POST | `/api/user/username` | 设置用户名（首次设置，已设置返回 409，需认证） |
@@ -565,7 +569,7 @@ DraftSnapshot {
 | `lib/utils/validation.ts` | 教程草稿全链路校验（patch 链完整性 + assembler smoke test） |
 | `lib/utils/hash.ts` | SHA-256 输入哈希计算（inputHash / tutorialDraftInputHash） |
 | `lib/utils/slug.ts` | Slug 生成工具 |
-| `lib/utils/uuid.ts` | UUID 生成工具 |
+| `lib/utils/uuid.ts` | UUID 生成工具；优先走 `crypto.randomUUID()`，缺失时回退到 `getRandomValues()` |
 | `lib/utils/request-version.js` | 请求版本化（防止旧响应覆盖新） |
 | `lib/api/route-errors.ts` | Route Handler 共用错误处理（`getRouteErrorMessage`、`isRouteValidationError`） |
 | `lib/utils.ts` | shadcn/ui 的 `cn()` Tailwind 类名合并工具 |
@@ -604,7 +608,7 @@ DraftSnapshot {
 
 ## 9. 页面与路由
 
-### 9.1 教程阅读（已有基础设施）
+### 9.1 教程阅读
 
 | 路由 | 说明 |
 |------|------|
@@ -623,12 +627,14 @@ DraftSnapshot {
 | `/drafts/[id]/preview` | 本地预览 |
 | `/drafts/[id]/preview/request` | 远程预览 |
 
-### 9.3 发现与用户档案（v3.7 新增）
+### 9.3 发现与用户档案
 
 | 路由 | 说明 |
 |------|------|
 | `/explore` | 探索页面（搜索 + 标签筛选 + 排序 + 分页，Server Component） |
 | `/tags` | 标签页面（所有标签 + 教程计数卡片） |
+| `/tags/[slug]` | 标签详情页（教程列表 + 相关标签 + 关注按钮） |
+| `/following` | 我的关注页面（关注标签下的教程流，需登录） |
 | `/u/[username]` | 公开用户档案（头像、名称、简介、已发布教程列表） |
 
 ### 9.4 路由特殊处理
@@ -647,7 +653,7 @@ DraftSnapshot {
 - `/api/search`、`/api/tags`
 
 **受保护路由（需要登录）：**
-- `/drafts/*`、`/new` — 页面路由 redirect 到登录页
+- `/drafts/*`、`/new`、`/following` — 页面路由 redirect 到登录页
 - `/api/drafts/*`、`/api/user/*`、`/api/github/*` — API 路由返回 `401 JSON`
 
 中间件使用轻量级 NextAuth 实例（无 DB adapter，仅验证 JWT cookie），在 Edge Runtime 下运行。页面和服务端组件通过 `getCurrentUser()` 获取当前用户，API 路由通过 `auth()` 获取 session。认证支持 GitHub OAuth 和 Linux.do OAuth 两个 provider。
@@ -705,7 +711,7 @@ DraftSnapshot {
 |------|------|
 | `components/tutorial/share-dialog.tsx` | 分享对话框（公开 URL + embed snippet + 社交分享 + Markdown/HTML 导出按钮） |
 
-### 10.6 发现与标签组件（v3.7 新增）
+### 10.6 发现与标签组件
 
 | 组件 | 说明 |
 |------|------|
@@ -713,7 +719,7 @@ DraftSnapshot {
 | `components/tutorial/tag-editor.tsx` | 标签编辑器（添加/删除标签 + 自动补全） |
 | `components/tutorial/tags-client.ts` | 标签 API 调用封装 |
 
-### 10.7 用户档案组件（v3.7 新增）
+### 10.7 用户档案组件
 
 | 组件 | 说明 |
 |------|------|
@@ -736,7 +742,7 @@ DraftSnapshot {
 - `components/drafts/chapter-step-row.tsx` — 章节内步骤行
 - `components/drafts/chaptered-step-list.tsx` — 按章节分组的步骤列表
 
-GitHub 导入（v3.9 新增）：
+GitHub 导入：
 - `components/create-draft/github-client.ts` — GitHub API 客户端调用封装
 - `components/create-draft/use-github-import-controller.ts` — 导入状态机（idle → loading-tree → selecting → loading-content → done）+ truncated 子树懒加载
 - `components/create-draft/file-tree-browser.tsx` — 文件树多选 UI（递归渲染 + 目录全选 + 文件统计 + 大仓库按目录加载）
@@ -766,123 +772,36 @@ GitHub 导入（v3.9 新增）：
 
 ## 11. 数据库设计
 
-### 11.1 PostgreSQL + Drizzle ORM
+完整的 Drizzle schema 定义在 `lib/db/schema.ts`。以下列出 10 张表和关键约束。
 
-**`drafts` 表（核心表）：**
-- `id` uuid PK
-- `userId` text FK → users.id（草稿所有者）
-- `sourceItems` jsonb（源码文件数组）
-- `teachingBrief` jsonb（教学意图）
-- `tutorialDraft` jsonb (nullable)（AI 生成的教程 DSL）
-- `status` pgEnum `draft_status` ("draft"|"published")
-- `syncState` pgEnum `sync_state` ("empty"|"fresh"|"stale")
-- `inputHash` varchar(64)（sourceItems + teachingBrief 的 SHA-256）
-- `tutorialDraftInputHash` varchar(64)（成功生成时的 inputHash 快照）
-- `generationState` pgEnum `generation_state` ("idle"|"running"|"succeeded"|"failed")
-- `generationErrorMessage` text
-- `generationModel` varchar(64)
-- `generationLastAt` timestamp
-- `generationOutline` jsonb (v3.1，大纲数据)
-- `generationQuality` jsonb (v3.1，质量指标)
-- `activeGenerationJobId` uuid（nullable，当前活跃 generation job 指针）
-- `validationValid` boolean (default false)
-- `validationErrors` jsonb (default [])
-- `validationCheckedAt` timestamp
-- `publishedSlug` varchar(256)（唯一 slug）
-- `publishedTutorialId` uuid（FK → published_tutorials.id）
-- `publishedAt` timestamp
-- `createdAt`、`updatedAt` timestamp
+### 11.1 表清单
 
-**`draft_generation_jobs` 表（可靠性真相源）：**
-- `id` uuid PK
-- `draftId` uuid FK → drafts.id (cascade)
-- `userId` text FK → users.id (set null)
-- `status` pgEnum `draft_generation_job_status` (`queued`|`running`|`succeeded`|`failed`|`cancelled`|`abandoned`)
-- `phase` pgEnum `draft_generation_job_phase` (`outline`|`step_fill`|`validate`|`persist`)
-- `startedAt`、`finishedAt`、`heartbeatAt`、`leaseUntil` timestamp
-- `currentStepIndex`、`totalSteps`、`retryCount`
-- `modelId` varchar(64)
-- `errorCode` pgEnum `generation_job_error_code`
-- `errorMessage` text
-- `failureDetail` jsonb
-- `outlineSnapshot` jsonb
-- `stepTitlesSnapshot` jsonb
-- `createdAt`、`updatedAt` timestamp
-- 关键约束：
-  - 复合关系约束 `drafts(id, active_generation_job_id) -> draft_generation_jobs(draft_id, id)`，避免跨 draft 指针
-  - 非 partial 唯一索引 `draft_generation_jobs_draft_id_id_unique` 支撑上述复合外键，与 Drizzle snapshot 保持同一建模方式
-  - 部分唯一索引 `draft_generation_jobs_single_active_per_draft`，约束同一 draft 最多一个 `queued/running` job
-  - 活跃查询索引：`(draft_id, created_at)` 与 `lease_until where status in ('queued', 'running')`
-  - `createdAt/updatedAt` 默认使用 `clock_timestamp()`，避免同事务内连续插入时全部落到同一个 `now()` 时间戳
+| 表 | 用途 | 关键列/约束 |
+|----|------|-------------|
+| `drafts` | 核心草稿表 | uuid PK, userId FK, sourceItems/teachingBrief/tutorialDraft jsonb, generationState/syncState pgEnum, activeGenerationJobId FK 复合外键 |
+| `draft_generation_jobs` | 生成任务持久化 | uuid PK, draftId FK cascade, status/phase pgEnum, heartbeat/lease timestamp, cancelRequested boolean, 部分唯一索引约束同一 draft 最多一个 queued/running job |
+| `published_tutorials` | 已发布教程 | uuid PK, draftRecordId FK, slug unique, tutorialDraftSnapshot jsonb |
+| `users` | NextAuth 用户 | text PK, email unique, username varchar(64) unique nullable, bio text |
+| `accounts` | NextAuth OAuth | compound PK(provider, providerAccountId), userId FK cascade, token 字段 |
+| `sessions` | NextAuth 会话 | sessionToken text PK, userId FK cascade |
+| `verification_tokens` | NextAuth 验证 | compound PK(identifier, token) |
+| `draft_snapshots` | 版本快照 | uuid PK, draftId FK cascade, tutorialDraftSnapshot jsonb, stepCount |
+| `tutorial_tags` | 标签 | uuid PK, name unique, slug unique |
+| `tutorial_tag_relations` | 标签关联 | compound PK(tutorialId FK, tagId FK) |
+| `events` | 事件追踪 | uuid PK, eventType, payload jsonb, userId, sessionId, slug |
 
-**`published_tutorials` 表：**
-- `id` uuid PK
-- `draftRecordId` uuid FK → drafts.id
-- `slug` varchar(256) (unique)
-- `tutorialDraftSnapshot` jsonb（冻结的教程 DSL 快照）
-- `publishedAt` timestamp
-- `createdAt` timestamp
+### 11.2 关键约束
 
-**`users` 表（NextAuth + v3.7 用户档案）：**
-- `id` text PK（auto UUID）
-- `name` text
-- `email` text (unique)
-- `emailVerified` timestamp
-- `image` text
-- `username` varchar(64) (unique, nullable) — v3.7 用户名（首次设置后不可更改）
-- `bio` text — v3.7 个人简介
+- **复合外键** `drafts(id, active_generation_job_id) -> draft_generation_jobs(draft_id, id)` 防止跨 draft 指针
+- **部分唯一索引** `draft_generation_jobs_single_active_per_draft` 约束同一 draft 最多一个 active job
+- **clock_timestamp()** 用于 createdAt/updatedAt 默认值，避免同事务内连续插入落到同一 now()
+- **slug 路径保留** `new`、`drafts`、`api`、`_next`、`explore`、`tags`、`u`、`admin`、`dashboard`、`settings`、`notifications` 等
 
-**`accounts` 表（NextAuth OAuth）：**
-- `userId` text FK → users.id (cascade)
-- `type` text、`provider` text、`providerAccountId` text
-- Token 字段：`refresh_token`、`access_token`、`expires_at`、`token_type`、`scope`、`id_token`、`session_state`
-- PK: compound(provider, providerAccountId)
-- 注意：当前项目不能假设“重新走一次 GitHub OAuth 后 adapter 会自动刷新旧 token”；`auth.ts` 的 `callbacks.jwt` 负责把本次登录返回的 token 显式写回这张表
-
-**`sessions` 表（NextAuth）：**
-- `sessionToken` text PK
-- `userId` text FK → users.id (cascade)
-- `expires` timestamp
-
-**`verification_tokens` 表（NextAuth）：**
-- `identifier` text、`token` text、`expires` timestamp
-- PK: compound(identifier, token)
-
-**`draft_snapshots` 表（v3.5 版本快照）：**
-- `id` uuid PK
-- `draftId` uuid FK → drafts.id (cascade)
-- `label` varchar(256)
-- `tutorialDraftSnapshot` jsonb（冻结的 TutorialDraft）
-- `stepCount` integer (default 0)
-- `createdAt` timestamp
-
-**`tutorial_tags` 表（v3.7 教程标签）：**
-- `id` uuid PK (auto gen_random_uuid)
-- `name` varchar(64) (unique)
-- `slug` varchar(64) (unique)
-- `createdAt` timestamp with time zone (default now)
-
-**`tutorial_tag_relations` 表（v3.7 标签关联）：**
-- `tutorialId` uuid FK → published_tutorials.id (cascade)
-- `tagId` uuid FK → tutorial_tags.id (cascade)
-- PK: compound(tutorialId, tagId)
-
-**`events` 表（v3.6 事件追踪）：**
-- `id` uuid PK
-- `eventType` varchar(64)
-- `payload` jsonb (default `{}`)
-- `userId` text
-- `sessionId` varchar(128)
-- `slug` varchar(256)
-- `createdAt` timestamp with time zone
-
-### 11.2 设计决策
+### 11.3 设计决策
 
 - 用 Drizzle 不用 Prisma（Drizzle schema 直接写 TS）
 - 用 PostgreSQL 不用 SQLite（兼容 serverless 部署如 Vercel）
 - 生成状态用**扁平字段**而非嵌套 JSON 对象
-- slug 通过 unique index 保证唯一性
-- 保留 slug 路径：`new`、`drafts`、`api`、`_next`、`explore`、`tags`、`u`、`admin`、`dashboard`、`settings`、`notifications` 等
 
 ---
 
@@ -915,7 +834,7 @@ GitHub 导入（v3.9 新增）：
   - 中部：步骤编辑器（完整编辑能力，见下方）
   - 底部：生成/重新生成按钮
 - 生成进度面板：实时 SSE 进度（阶段 → 步骤进度 → 验证），`max-height + overflow-y-auto + overscroll-contain` 防止撑爆布局
-- 失败恢复：已有 partial draft 但 `generationState=failed` 时，主编辑区顶部展示恢复条；“重新生成目录”会以新生成模式打开进度面板，terminal job 不再阻断 `/generate`，active job 仍走重连
+- 失败恢复：已有 partial draft 但 `generationState=failed` 时，主编辑区顶部展示恢复条；"重新生成目录"会以新生成模式打开进度面板，terminal job 不再阻断 `/generate`，active job 仍走重连
 - 全量重新生成目录/大纲会先清空旧教程内容；生成中实时预览只展示新 job 逐步写入的 partial draft，不沿用旧步骤
 
 #### 步骤编辑器详细规格
@@ -945,7 +864,7 @@ GitHub 导入（v3.9 新增）：
 - 调用 `getStepCodePreview()` 获取 `previousFiles` / `currentFiles` 和 diff 摘要
 - 多文件时有文件选择器切换预览目标
 - 修改 patches 后实时刷新预览
-- **交互式行选择模式**（v3.9 新增）：
+- **交互式行选择模式：**
   - 三种模式切换：关闭 / Focus / Mark
   - Focus 模式：点击行选择高亮范围（Shift+点击扩展范围），自动填充 focus find 文本
   - Mark 模式：点击行切换标记，自动生成 mark 条目
@@ -983,6 +902,7 @@ GitHub 导入（v3.9 新增）：
 - `components/ui/separator.tsx`
 - `components/ui/sheet.tsx`（移动端抽屉）
 - `components/ui/dialog.tsx`（模态对话框，基于 React Portal）
+- `components/ui/dropdown-menu.tsx`（下拉菜单）
 
 ---
 
@@ -1013,6 +933,7 @@ GitHub 导入（v3.9 新增）：
 | `lib/services/explore-service.ts` | 探索页数据查询（搜索 + 标签筛选 + 排序 + 分页） |
 | `lib/services/tag-service.ts` | 标签管理（AI 生成 + 手动设置 + 名称规范化） |
 | `lib/services/user-profile-service.ts` | 用户档案（公开 profile + username 设置 + profile 更新） |
+| `lib/services/follow-service.ts` | 标签关注（关注/取消关注/状态检查，by-slug 和 by-id 两种入口） |
 | `lib/services/export-markdown.ts` | 教程导出为 Markdown |
 | `lib/services/export-html.ts` | 教程导出为 HTML（独立 HTML + 行内样式） |
 | `lib/services/github-repo-service.ts` | GitHub 仓库导入（公开仓库匿名访问 + OAuth token 复用 + 并发限制 + partial failure） |
@@ -1034,6 +955,7 @@ GitHub 导入（v3.9 新增）：
 | `lib/ai/model-probe.ts` | 模型能力探测（可达性、延迟、response_format 支持） |
 | `lib/ai/model-capabilities.ts` | 模型能力定义（maxOutputTokens、supportsResponseFormat 等） |
 | `lib/ai/token-budget.ts` | Token 预算计算（根据模型能力分配 outline/step-fill token） |
+| `lib/ai/step-budget.ts` | 步骤预算推荐（根据源码量计算推荐步骤数范围，review 中惩罚过大步长） |
 | `lib/ai/source-preprocessor.ts` | 源码预处理（压缩、注释清理） |
 | `lib/ai/source-tools.ts` | 源码工具定义（outline 阶段使用的 retrieval tools） |
 | `lib/ai/outline-source-scope.ts` | Outline 阶段的源码范围计算 |
@@ -1068,28 +990,28 @@ GitHub 导入（v3.9 新增）：
 ### 16.1 已知陷阱
 
 1. **AI SDK v6 stream 消耗问题：** `partialOutputStream` 和 `toTextStreamResponse()` 共享底层流，消耗一个会耗尽另一个。必须手动从 `textStream` 构建 SSE
-2. **步骤编辑级联验证：** 修改某步骤的 patch 后，后续所有步骤的 patch 可能失效。解决方案：保存时先调用 `validateTutorialDraftThroughStep` 校验到当前步骤，通过后再同步调用 `validateTutorialDraft` 对整份草稿做全量校验并更新 `validationValid`/`validationErrors`
-3. **重排 API 安全：** 只接受 `stepIds` 顺序数组，服务端从 DB 取权威 step 对象重排，不信任客户端提交的完整 step 对象
+2. **步骤编辑级联验证：** 修改某步骤的 patch 后，后续所有步骤的 patch 可能失效。保存时先 `validateTutorialDraftThroughStep` 校验到当前步骤，通过后再全量校验
+3. **重排 API 安全：** 只接受 `stepIds` 数组，服务端从 DB 取权威 step 对象重排，不信任客户端提交的完整 step 对象
 4. **草稿列表性能：** 使用 `listDraftSummaries()` 在 SQL 层提取摘要，不返回大 JSONB
-5. **生成失败恢复：** 区分 outline 失败 vs step 失败，提供"重新生成大纲"和"从失败步骤重试"；partial draft 失败时必须在工作区主内容区提供恢复入口，不能只依赖侧边状态 badge
+5. **生成失败恢复：** 区分 outline 失败 vs step 失败，提供"重新生成大纲"和"从失败步骤重试"；partial draft 失败时必须在主内容区提供恢复入口
 6. **AI 输出 meta 遗漏：** `normalizeTutorialMeta()` 在 AI 生成后从 baseCode 推导缺失的 lang/fileName
 7. **Patch 文件名大小写：** `applyContentPatches` 支持大小写不敏感回退
 8. **生成轮询上限：** `MAX_POLL_ATTEMPTS = 30`（约 3 分钟超时），防止 DB 卡住时无限轮询
 9. **Assembler 性能优化：** 跳过未变更且非 activeFile 且无 focus/marks 的文件的高亮计算
 10. **Tailwind v4 source 检测：** 必须在 globals.css 中显式声明 `@source` 指令
-11. **Patch 编辑保存策略：** step-editor 将文案字段和结构字段（patches/focus/marks）分开处理——文案变更直接保存，结构变更时才包含 patches/focus/marks 并触发级联校验，避免无变更时的冗余校验开销
-12. **Edge Runtime 限制：** middleware 必须使用轻量级 NextAuth 实例（`providers: []`，无 adapter），因为 Edge Runtime 不支持 Node.js `crypto` 和 `pg` 模块。主 `auth.ts` 带 Drizzle adapter 只能在 Node.js runtime 使用
-13. **OG 图片 runtime：** `/api/og/[slug]` 必须声明 `runtime = 'nodejs'`，因为 `getTutorialMetadata()` 依赖 Drizzle（Node.js only）。`next/og` 的 `ImageResponse` 在 nodejs runtime 下工作
-14. **Auth middleware 路由区分：** API 路由返回 401 JSON（`{ message: "请先登录" }`），页面路由 redirect 到 `/api/auth/signin`，避免 API 请求被重定向到 HTML 登录页
-15. **Drizzle JSONB 查询陷阱：** `sql` 模板不支持 `->` / `->>` JSONB 操作符与 `${columnRef}` 插值混用。全文搜索等需要 JSONB 字段访问的场景，必须使用原始 SQL 列名（如 `"published_tutorials"."tutorial_draft_snapshot"`）
-16. **leftJoin(users) 必须：** 探索/搜索查询中 `drafts.userId` 可能为 NULL（未关联用户的草稿），必须用 `leftJoin(users)` 而非 `innerJoin`，否则会过滤掉无作者的教程
-17. **生成失败占位内容无效：** `step-fill` 重试耗尽后不再继续生成后续步骤；任何包含“自动生成失败 / 请手动编辑 / Failed to parse JSON”之类占位内容的 step 都必须在 validation 阶段判定为无效，避免坏草稿被标记成 `succeeded`
-18. **全文搜索配置：** 使用 PostgreSQL `simple` 配置（不分词、不词干化），适合中英混合场景。搜索 `ts_vector` 基于 `tutorialDraftSnapshot->meta->title` 和 `slug`
-19. **AI 标签生成 fire-and-forget：** `tag-generator.ts` 在教程发布后异步调用，失败不阻塞发布主流程。`getOrCreateTag` 处理并发竞争（unique constraint catch + fallback select）
-20. **generation job 约束必须双层保持：** SQL migration、Drizzle snapshot、schema 定义必须同时包含”同 draft 复合外键”和”单 active job 部分唯一索引”，否则后续 diff 会把约束漂掉
-21. **章节步骤连续性：** 同一 chapterId 的步骤必须在 steps[] 中连续排列。`validateChapterStructure()` 校验此约束。删除章节时需指定目标章节接收被迁移的步骤
-22. **旧格式草稿迁移：** `ensureDraftChapters()` 为没有 chapters 字段的旧草稿自动创建 “Chapter 1” 并将所有步骤归入。此函数在 `append-draft-step`、`chapter-crud` 等写入路径中自动调用
-23. **POST /api/drafts 幂等性：** 支持 `Idempotency-Key` / `X-Idempotency-Key` header（1 小时 TTL），基于内存存储，仅单实例部署有效
+11. **Patch 编辑保存策略：** 文案变更直接保存，结构变更（patches/focus/marks）时才触发级联校验
+12. **Edge Runtime 限制：** middleware 必须使用轻量级 NextAuth 实例（无 adapter），主 `auth.ts` 带 Drizzle adapter 只能在 Node.js runtime 使用
+13. **OG 图片 runtime：** `/api/og/[slug]` 必须声明 `runtime = 'nodejs'`
+14. **Auth middleware 路由区分：** API 路由返回 401 JSON，页面路由 redirect 到登录页
+15. **Drizzle JSONB 查询陷阱：** `sql` 模板不支持 `->` / `->>` 与 `${columnRef}` 插值混用，必须使用原始 SQL 列名
+16. **leftJoin(users) 必须：** 探索/搜索查询中 `drafts.userId` 可能为 NULL，必须用 `leftJoin`
+17. **生成失败占位内容无效：** 包含失败占位文本的 step 必须在 validation 阶段判定为无效
+18. **全文搜索配置：** PostgreSQL `simple` 配置（不分词），适合中英混合场景
+19. **AI 标签生成 fire-and-forget：** 异步调用，失败不阻塞发布主流程
+20. **generation job 约束双层保持：** SQL migration、Drizzle snapshot、schema 定义必须同时包含复合外键和部分唯一索引
+21. **章节步骤连续性：** 同一 chapterId 的步骤必须在 steps[] 中连续排列
+22. **旧格式草稿迁移：** `ensureDraftChapters()` 自动为旧草稿创建 default chapter
+23. **POST /api/drafts 幂等性：** 支持 `Idempotency-Key` header（1 小时 TTL，内存存储）
 
 ### 16.2 发布前置条件
 
@@ -1106,142 +1028,18 @@ GitHub 导入（v3.9 新增）：
 
 ### 16.4 环境变量
 
-```
-DATABASE_URL=postgresql://...       # PostgreSQL 连接
-DEEPSEEK_API_KEY=...                # DeepSeek API Key
-DEEPSEEK_BASE_URL=https://api.deepseek.com  # DeepSeek API 端点
-DEEPSEEK_MODEL=deepseek-chat        # 默认模型
-OPENAI_API_KEY=...                  # OpenAI API Key（可选，多 provider 支持）
-OPENAI_BASE_URL=...                 # OpenAI API 端点（可选）
-MINIMAX_API_KEY=...                 # MiniMax API Key（选择 minimax/MiniMax-M2.7 时需要）
-MINIMAX_BASE_URL=https://api.minimax.io/v1  # MiniMax OpenAI-compatible API 端点
-DEFAULT_AI_MODEL=...                # 默认 AI 模型（可选，覆盖 DEEPSEEK_MODEL）
-AUTH_SECRET=...                     # NextAuth v5 密钥（生产环境必须更换）
-AUTH_URL=https://example.com        # Auth.js canonical origin（不要包含 path）
-AUTH_REDIRECT_PROXY_URL=https://example.com/vibedocs/api/auth  # 子路径部署下 OAuth redirect_uri 基础路径
-NEXTAUTH_URL=https://example.com/vibedocs/api/auth  # NextAuth client base URL（子路径部署时包含 /api/auth）
-NEXT_BASE_PATH=/vibedocs            # 子路径部署 base path（可选）
-NEXT_PUBLIC_BASE_PATH=/vibedocs     # 客户端可见 base path（可选）
-GITHUB_ID=...                       # GitHub OAuth App Client ID
-GITHUB_SECRET=...                   # GitHub OAuth App Client Secret
-LINUXDO_ID=...                      # Linux.do OAuth Client ID
-LINUXDO_SECRET=...                  # Linux.do OAuth Client Secret
-LINUXDO_AUTHORIZATION_ENDPOINT=https://connect.linuxdo.org/oauth2/authorize
-LINUXDO_TOKEN_ENDPOINT=https://connect.linuxdo.org/oauth2/token
-LINUXDO_USERINFO_ENDPOINT=https://connect.linuxdo.org/api/user
-NEXT_PUBLIC_BASE_URL=https://...    # 公开访问基础 URL（SEO 生成用）
-```
+完整环境变量列表见 `.env.example`。关键分组：
 
-默认生成模型为 `minimax/MiniMax-M2.7`；前端模型下拉的首项也是 MiniMax M2.7。若设置 `DEFAULT_AI_MODEL`，服务端无显式 `modelId` 时优先使用该变量。
+- **数据库：** `DATABASE_URL`
+- **AI Providers：** `DEEPSEEK_API_KEY`、`OPENAI_API_KEY`（可选）、`MINIMAX_API_KEY`（默认模型 MiniMax-M2.7）、`DEFAULT_AI_MODEL`（可选覆盖）
+- **认证：** `AUTH_SECRET`、`GITHUB_ID`/`GITHUB_SECRET`、`LINUXDO_ID`/`LINUXDO_SECRET` + 端点配置
+- **部署：** `AUTH_URL`、`NEXT_BASE_PATH`（子路径部署）、`NEXT_PUBLIC_BASE_URL`（SEO）
+
+Linux.do 的 token/userinfo 端点建议使用 `connect.linuxdo.org` 备用地址（中国大陆服务端），授权端点保持 `connect.linux.do`。应用内 provider 需固定 `issuer=https://connect.linux.do/`。
 
 ---
 
-## 17. 实施阶段记录
-
-### Phase 1：渲染基础层 ✅ 已完成
-- TutorialData DSL 定义
-- Assembler（patch 应用、高亮、payload 构建）
-- 静态教程页面 + 远程加载页面
-- TutorialScrollyDemo 渲染器 + StepRail + MobileCodeFrame
-- 示例教程数据 + Registry
-
-### Phase 2：数据库 + 创建 ✅ 已完成
-- Drizzle schema + DB 连接
-- DraftRecord CRUD repository
-- 创建草稿页面（多文件输入 + Teaching Brief 表单）
-- `POST /api/drafts` + `POST /api/drafts/[id]/generate`
-
-### Phase 3：AI 生成 ✅ 已完成
-- v1 单次生成（prompt + streamObject）
-- v2 多阶段生成（outline → step-fill → validate）
-- SSE 协议 + 前端 GenerationProgress 解析
-- 生成质量评估
-
-### Phase 4：编辑工作区 ✅ 已完成
-- AppShell 布局
-- 草稿列表页 + 删除
-- 步骤编辑器（文案 + patches/focus/marks 全量编辑 + 代码预览 + 结构变更检测）
-- 步骤删除/重排
-- 单步重新生成
-- 多文件源码输入
-
-### Phase 5：预览 + 发布 ✅ 已完成
-- 预览页面（本地 + 远程）
-- 发布流程（前置检查 + 事务）
-- `/[slug]` 页面集成 DB 查询
-- 首页更新（已发布列表 + 创建入口）
-
-### Phase 6：v3.5 产品化 ✅ 已完成
-- NextAuth v5 认证（GitHub OAuth + JWT sessions + Drizzle adapter）
-- 用户系统（users/accounts/sessions/verification_tokens 表 + userId 草稿所有权）
-- 中间件路由保护（公开 vs 受保护路由）
-- 取消发布流程
-- 版本快照（draft_snapshots 表 + 创建/恢复/删除 API）
-- SEO 工具（OG 元数据、JSON-LD 结构化数据、阅读时间估算）
-- OG 图片生成（`/api/og/[slug]`）
-- 教程分享（ShareDialog + embed 端点 + 社交分享）
-- 取消生成按钮（暴露 AbortController + 取消状态处理）
-- 增量重新生成服务
-- 模型能力探测端点
-- CI/CD 自动化（GitHub Actions）
-- 监控工具（计时 + 计数）
-
-### Phase 7：v3.6 分析与增长基础 ✅ 已完成
-- 事件追踪系统（events 表 + event_types 注册 + 埋点 helpers）
-- 监控工具完善（analytics.ts convenience helpers + metrics.ts 计时计数）
-- 测试覆盖率提升（分层边界 + 纯函数 smoke tests）
-- CI/CD 部署自动化（GitHub Actions）
-
-### Phase 8：v3.7 发现、标签与创作者身份 ✅ 已完成
-- 探索页面（/explore — 全文搜索 + 标签筛选 + 排序 + 分页）
-- 标签系统（tutorial_tags + tutorial_tag_relations 表、AI 自动生成 + 手动编辑）
-- 用户档案（users 增加 username/bio、公开 profile 页面 /u/[username]）
-- 标签页面（/tags — 所有标签 + 教程计数）
-- API 扩展（/api/search、/api/tags、/api/tutorials/[slug]/tags、/api/user/*）
-- 导航更新（AppShell 新增"探索"和"标签"入口）
-- 保留 slug 扩展（explore、tags、u、admin、dashboard 等）
-
-### Phase 9：v3.8 导出 + 多 Provider + 可靠性基础设施 ✅ 已完成
-- Markdown/HTML 导出（`/api/tutorials/[slug]/export-markdown`、`export-html`）
-- AI 多 provider 支持（DeepSeek + OpenAI + MiniMax + Zhipu，`provider-registry.ts`）
-- Patch 自动修复（`patch-auto-fix.ts`）
-- 步骤编辑器子组件拆分（diff 视图、代码选择菜单、中间预览）
-- 错误分类层（`lib/errors/`）
-- `draft_generation_jobs` 表 + `drafts.activeGenerationJobId`
-- generation job schema / type / repository
-- 生成运行态持久化（phase、heartbeat、retry、终态写入 job 表）
-
-### Phase 10：v3.9 GitHub 仓库导入 + 编辑器增强 ✅ 已完成
-- GitHub 仓库文件树浏览（`/api/github/repo-tree`，代理 GitHub Trees API）
-- GitHub 大仓库子目录懒加载（`/api/github/repo-tree/subdirectory`，按目录 `sha` 继续拉取树）
-- GitHub 仓库文件内容批量获取（`/api/github/file-content`，代理 Contents API，返回 partial success 成功文件）
-- 公开仓库免登录导入；GitHub OAuth token 仅用于提升配额和降低限流概率
-- 文件树多选 UI（递归树渲染 + 目录全选 + 文件大小显示）
-- 导入状态机（URL 输入 → 树加载 → 文件选择 → 内容拉取 → 映射 SourceItem[]）
-- 创建表单 Tab 切换（手动粘贴 / GitHub 导入）
-- 导入限制（总计 ≤200 文件、≤15000 行；单批 ≤30 文件、≤5000 行）前端 + 后端双重校验
-- 步骤编辑器子组件重构：CodePreviewPanel、PatchItem、FocusMarksPanel 独立拆分
-- 交互式行选择：focus/mark 模式下点击 diff 行自动填充 find 文本（Shift+点击扩展范围）
-- diff 视图 memo 化 + useCallback 优化，避免不必要的重渲染
-- 工作区侧边栏宽度从 16rem 调整到 20rem
-- 步骤列表操作按钮改为 hover 浮层样式
-
-### Phase 11：v3.10 章节系统 ✅ 已完成
-- TutorialDraft 新增 `chapters` 字段，TutorialStep 新增 `chapterId`
-- 旧格式草稿自动迁移（`ensureDraftChapters()`）
-- 章节管理 API（addChapter、updateChapter、deleteChapter + 步骤迁移）
-- 结构批量更新 API（`PUT /api/drafts/[id]/structure`）
-- 侧边栏章节分组渲染（chaptered-step-list、chapter-row、chapter-step-row）
-- 渲染器章节分隔线 + 章节导航 rail
-- `lib/tutorial/chapters.ts`（章节推导、验证、归一化）
-- `lib/schemas/chapter.ts`（Chapter Zod schema）
-- `lib/services/chapter-crud.ts`（章节 CRUD 服务）
-
-
-
----
-
-## 18. 测试策略
+## 17. 测试策略
 
 - `npm test` 使用 `node:test`（tsx --test）
 - 优先覆盖：**分层边界**（app → service 导入规则）、**patch 链**（多步 patch 应用正确性）、**纯函数**（assembler 核心算法）
@@ -1250,13 +1048,9 @@ NEXT_PUBLIC_BASE_URL=https://...    # 公开访问基础 URL（SEO 生成用）
 
 ---
 
-## 19. 混合 JS/TS 策略
+## 18. 混合 JS/TS 策略
 
 - 已有 `.js`/`.jsx` 文件（渲染链路）保持不变
 - 新增功能默认用 `.ts`/`.tsx`
 - `tsconfig.json` 设置 `allowJs: true`
 - 不要强行统一为全 TS
-
----
-
-*本文档基于 VibeDocs v3.10 实现状态编写。v3.10 在 v3.9 之上完成了章节系统（TutorialDraft.chapters、章节管理 API、渲染器章节分隔线与导航）。*

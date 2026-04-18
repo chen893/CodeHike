@@ -31,11 +31,6 @@ TutorialDraft (DSL JSON)
   → components/tutorial/tutorial-scrolly-demo.jsx  # 客户端 scrollytelling 渲染（含 StepRail 导航 + MobileCodeFrame）
 ```
 
-### 两条消费路径
-
-1. **静态直出** — `app/[slug]/page.jsx`：服务端先查 DB published，回退到 registry → `buildTutorialSteps()` → 直接渲染
-2. **远程加载** — `app/[slug]/request/page.jsx`：客户端 fetch `/api/tutorials/[slug]` → payload → 渲染
-
 ### 草稿编辑流程
 
 ```text
@@ -119,11 +114,15 @@ lib/services/compute-generation-quality.ts # 质量指标计算
 用户浏览路径：
   /explore          → 搜索 + 标签筛选 + 排序 + 分页
   /tags             → 所有标签 + 教程计数
+  /tags/[slug]      → 标签详情 + 教程列表 + 相关标签 + 关注按钮
+  /following        → 我的关注（关注标签下的教程流，需登录）
   /u/[username]     → 公开用户档案 + 已发布教程列表
 
 数据流：
   app/explore/page.tsx       → lib/services/explore-service.ts  → lib/repositories/tutorial-search-repository.ts
   app/tags/page.tsx          → lib/services/explore-service.ts  → lib/repositories/tag-repository.ts
+  app/tags/[slug]/page.tsx   → lib/services/tag-service.ts      → lib/repositories/tag-repository.ts + tag-relation-repository.ts
+  app/following/page.tsx     → lib/services/follow-service.ts   → lib/repositories/follow-repository.ts
   app/u/[username]/page.tsx  → lib/services/user-profile-service.ts → lib/repositories/user-repository.ts
 
 标签生命周期：
@@ -143,6 +142,48 @@ lib/services/compute-generation-quality.ts # 质量指标计算
   username 自动加入 RESERVED_SLUGS 防止路由冲突
 ```
 
+### API 端点速查
+
+| 分组 | 路径 | 说明 |
+|------|------|------|
+| **草稿** | `POST /api/drafts` | 创建草稿（支持 `Idempotency-Key`） |
+| | `GET /api/drafts` | 草稿列表（摘要） |
+| | `GET /api/drafts/[id]` | 草稿详情 |
+| | `PATCH /api/drafts/[id]` | 更新 teachingBrief/meta/intro |
+| | `DELETE /api/drafts/[id]` | 删除（生成中/已发布不可删） |
+| **生成** | `POST /api/drafts/[id]/generate` | SSE 流式生成（30-60s） |
+| | `GET /api/drafts/[id]/generation-status` | 轮询状态（支持 `?lightweight=true`） |
+| | `POST /api/drafts/[id]/cancel` | 取消生成 |
+| | `POST /api/drafts/[id]/incremental-regenerate` | 增量重生成 |
+| **步骤** | `POST /api/drafts/[id]/steps` | 追加步骤 |
+| | `PUT /api/drafts/[id]/steps` | 重排（stepIds 数组） |
+| | `PATCH /api/drafts/[id]/steps/[stepId]` | 编辑步骤（结构变更触发级联校验） |
+| | `DELETE /api/drafts/[id]/steps/[stepId]` | 删除步骤 |
+| | `POST /api/drafts/[id]/steps/[stepId]/regenerate` | 重生成单步 |
+| **章节** | `PUT /api/drafts/[id]/structure` | 批量重组 chapters + step 归属 |
+| | `POST/PATCH/DELETE /api/drafts/[id]/chapters[/*]` | 章节增删改 |
+| **发布** | `POST /api/drafts/[id]/publish` | 发布（需 fresh + valid） |
+| | `POST /api/drafts/[id]/unpublish` | 取消发布 |
+| | `GET /api/drafts/[id]/payload` | 预览 payload |
+| **快照** | `GET/POST /api/drafts/[id]/snapshots` | 快照列表/创建 |
+| | `POST /api/drafts/[id]/snapshots/[sid]` | 恢复快照（自动备份当前） |
+| **教程** | `GET /api/tutorials/[slug]` | 已发布教程 payload |
+| | `GET /api/tutorials/[slug]/embed` | 嵌入式 HTML（CORS `*`） |
+| | `GET /api/tutorials/[slug]/export-markdown` | 导出 Markdown |
+| | `GET /api/tutorials/[slug]/export-html` | 导出 HTML |
+| | `GET/PUT /api/tutorials/[slug]/tags` | 教程标签读写 |
+| **发现** | `GET /api/search?q=` | 全文搜索（ts_vector） |
+| | `GET /api/tags` | 标签列表（含教程计数） |
+| | `POST/DELETE/GET /api/tags/[tagId]/follow` | 标签关注/取消关注/状态查询（POST/DELETE 需认证） |
+| **用户** | `GET/PATCH /api/user/profile` | 档案读写（需认证） |
+| | `POST /api/user/username` | 设置用户名（首次，已设返回 409） |
+| | `GET /api/og/[slug]` | OG 图片生成 |
+| **GitHub** | `GET /api/github/repo-tree?url=` | 仓库文件树（公开免登录） |
+| | `GET /api/github/repo-tree/subdirectory` | 大仓库子目录懒加载 |
+| | `POST /api/github/file-content` | 批量获取文件（≤30，partial success） |
+| **其他** | `POST /api/models/probe` | 模型能力探测 |
+| | `POST /api/events` | 事件追踪 |
+
 ### 关键约束
 
 - 所有 patch 应用、高亮、focus/marks/change 注入都在**服务端**完成
@@ -156,7 +197,7 @@ lib/services/compute-generation-quality.ts # 质量指标计算
 - generation 运行态的持久化真相源为 `draft_generation_jobs` + `drafts.activeGenerationJobId`；新增生成状态读写优先经过 repository / service，不要再扩展进程内 `Map` 作为唯一状态源
 - 生成质量评估（`GenerationQuality`）不阻塞发布，仅作数据监控
 - 生成质量迭代工作流走 `npm run review:generation` + `docs/workflow/generation-quality-loop.md`，所有 prompt / 流程实验都要落 CSV 和 JSON report
-- generation review rubric 会显式惩罚“大步长整文件注入”和 `outline -> step-fill` 漂移；总分高不代表真的渐进式，必须结合这些信号判断
+- generation review rubric 会显式惩罚"大步长整文件注入"和 `outline -> step-fill` 漂移；总分高不代表真的渐进式，必须结合这些信号判断
 - step-fill 重试耗尽后不再继续往后生成；失败占位文本属于无效教程内容，必须被 validation 拦截
 - 多文件输入允许在生成快照中为后续 `targetFiles` 预植入内部 placeholder stub，但最终 `tutorialDraft.baseCode` 只能 materialize 真正被 patch 过的这些文件，不能把未使用占位文件泄露到最终教程
 - DB schema 中 `generationOutline`、`generationQuality` 为可选 jsonb，向后兼容 v3.0 草稿
@@ -168,6 +209,19 @@ lib/services/compute-generation-quality.ts # 质量指标计算
 - 探索/搜索查询中用户表必须使用 `leftJoin(users)`，因为 `drafts.userId` 可能为 NULL（未关联用户的教程）
 - AI 标签生成（`lib/ai/tag-generator.ts`）为 fire-and-forget，发布失败不阻塞主流程
 - 监控埋点（`lib/monitoring/analytics.ts`）为 fire-and-forget，不得阻塞页面渲染
+
+### 高频陷阱（Top 10）
+
+1. **AI SDK v6 stream 互斥**：`partialOutputStream` 和 `toTextStreamResponse()` 共享底层流，消耗一个会耗尽另一个。手动从 `textStream` 构建 SSE
+2. **步骤编辑级联验证**：修改 patch 后后续步骤的 patch 可能失效，保存时先 `validateTutorialDraftThroughStep` 再全量校验
+3. **Drizzle JSONB 查询**：`sql` 模板不支持 `->`/`->>` 与 `${columnRef}` 插值混用，必须用原始 SQL 列名（如 `"published_tutorials"."tutorial_draft_snapshot"`）
+4. **Edge Runtime 限制**：middleware 必须用轻量 NextAuth（无 adapter）；`auth.ts` 带 Drizzle adapter 只能在 Node.js runtime
+5. **草稿列表性能**：用 `listDraftSummaries()` 在 SQL 层提取摘要，不返回大 JSONB
+6. **重排 API 安全**：只接受 `stepIds` 数组，服务端从 DB 取权威 step 对象重排，不信任客户端完整 step 对象
+7. **AI SDK v6 重命名**：`maxTokens` → `maxOutputTokens`；DeepSeek 上限 8192
+8. **Tailwind v4 source**：必须在 globals.css 显式声明 `@source` 指令，否则类检测不到
+9. **Auth middleware 路由区分**：API 路由返回 401 JSON，页面路由 redirect 到登录页，不能统一处理
+10. **Patch 文件名大小写**：`applyContentPatches` 支持大小写不敏感回退；AI 生成的 file 字段可能与 baseCode key 不完全一致
 
 ### 后续新建代码建议
 
@@ -181,7 +235,7 @@ lib/services/compute-generation-quality.ts # 质量指标计算
 
 - 任何新的客户端请求，默认先建 feature client：例如 `components/drafts/*-client.ts`、`components/tutorial/*-client.ts`。URL、`fetch`、响应解析、错误消息归一化都放这里。
 - 组件状态机、重试、竞态保护、轮询、SSE 解析放在 `use-*.ts` / `use-*-controller.ts`；视图组件只接收状态和回调，不直接 `fetch()`。
-- 如果一个客户端文件同时包含“协议解析 + 大量 JSX + 多个 mutation”，默认继续拆成 `client + hook/controller + view/subviews`，不要再堆回单个 500+ 行容器。
+- 如果一个客户端文件同时包含"协议解析 + 大量 JSX + 多个 mutation"，默认继续拆成 `client + hook/controller + view/subviews`，不要再堆回单个 500+ 行容器。
 
 #### 新组件 / 新目录
 
@@ -222,8 +276,6 @@ lib/services/compute-generation-quality.ts # 质量指标计算
 | `docs/vibedocs-technical-handbook.md` | **主文档** — 产品、架构、数据、API、UI、AI 生成的技术手册 |
 | `docs/tutorial-data-format.md` | 教程 DSL 权威规范 — JSON 结构、Patch 机制、代码组装算法、校验规则 |
 | `docs/v3-implementation-issues.md` | 实施问题记录 — 技术决策和解决方案（活跃维护） |
-| `docs/20260416-fullflow-reliability-implementation-plan.md` | 全流程可靠性实施方案 — 新建、生成、编辑、预览、发布的失败恢复与一致性改造计划 |
-| `docs/20260416-fullflow-reliability-task-list.md` | 全流程可靠性任务清单 — 按 P0/P1/P2 拆分的可执行任务、依赖和验收标准 |
 | `docs/workflow/generation-quality-loop.md` | 生成质量迭代工作流 — 标准评分、CSV 沉淀、keep/revert 决策和停机条件 |
 | `docs/ui-review-workflow.md` | UI 审查流程 — 截图规范、模型审查、修复验证（已迁移至 `docs/workflow/`） |
 | `docs/mini-redux.js` | Redux 核心源码实现（简化版），测试用样本源码 |
@@ -231,10 +283,6 @@ lib/services/compute-generation-quality.ts # 质量指标计算
 
 **修改代码前先阅读 `vibedocs-technical-handbook.md`。** 数据结构细节对照 `tutorial-data-format.md`。
 **实施过程中如遇到问题，必须将问题现象、根因分析和解决方案补充记录到 `docs/v3-implementation-issues.md`。**
-
-## AGENTS.md
-
-仓库根目录有 `AGENTS.md`，包含产品定位、权威数据模型定义、P0 范围边界、预览层交互硬约束、实现优先级。做产品决策前必读。
 
 ## Tech Stack
 
