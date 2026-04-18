@@ -21,10 +21,9 @@ export async function getExploreData(options: {
   if (options.category) tagFilters.push({ tagSlug: options.category, tagType: 'category' });
   if (options.level) tagFilters.push({ tagSlug: options.level, tagType: 'level' });
 
-  // Backward compat: ?tag=xxx maps to technology dimension (D-13)
-  if (options.tag && tagFilters.length === 0) {
-    tagFilters.push({ tagSlug: options.tag, tagType: 'technology' });
-  }
+  // Backward compat: ?tag=xxx uses slug-only filtering (no tagType constraint).
+  // Only use the new typed filters when explicit typed params are present.
+  const legacyTagSlug = (options.tag && tagFilters.length === 0) ? options.tag : undefined;
 
   let tutorials: ExploreTutorial[];
   let total: number;
@@ -35,7 +34,7 @@ export async function getExploreData(options: {
       options.search.trim(),
       searchLimit,
       {
-        tagSlug: tagFilters.length === 0 ? undefined : undefined, // handled by tagFilters now
+        tagSlug: legacyTagSlug,
         lang: options.lang,
         tagFilters: tagFilters.length > 0 ? tagFilters : undefined,
       },
@@ -47,7 +46,7 @@ export async function getExploreData(options: {
       page: options.page,
       pageSize: 20,
       sort: options.sort === 'popular' ? 'popular' : 'newest',
-      tagSlug: tagFilters.length === 0 ? options.tag : undefined,
+      tagSlug: legacyTagSlug,
       tagFilters: tagFilters.length > 0 ? tagFilters : undefined,
       lang: options.lang,
     });

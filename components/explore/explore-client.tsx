@@ -76,22 +76,33 @@ function ExploreClientInner({
   const toggleFilter = useCallback(
     (dimension: string, tagSlug: string) => {
       const params = new URLSearchParams(searchParams.toString());
-      const currentActive =
-        dimension === 'technology' ? activeTechnology
-        : dimension === 'category' ? activeCategory
-        : activeLevel;
+      const useLegacy = dimension === 'technology' && !tags.find(t => t.slug === tagSlug)?.tagType;
 
-      if (currentActive === tagSlug) {
-        params.delete(dimension);
+      if (useLegacy) {
+        // Backward compat: tag has no tagType, use ?tag= slug-only filtering
+        if (activeTechnology === tagSlug) {
+          params.delete('tag');
+        } else {
+          params.set('tag', tagSlug);
+        }
+        params.delete('technology');
       } else {
-        params.set(dimension, tagSlug);
+        const currentActive =
+          dimension === 'technology' ? activeTechnology
+          : dimension === 'category' ? activeCategory
+          : activeLevel;
+
+        if (currentActive === tagSlug) {
+          params.delete(dimension);
+        } else {
+          params.set(dimension, tagSlug);
+        }
+        params.delete('tag');
       }
-      // Remove legacy ?tag when using typed params
-      params.delete('tag');
       params.delete('page');
       router.push(`/explore?${params.toString()}`);
     },
-    [router, searchParams, activeTechnology, activeCategory, activeLevel],
+    [router, searchParams, activeTechnology, activeCategory, activeLevel, tags],
   );
 
   // Cleanup debounce on unmount

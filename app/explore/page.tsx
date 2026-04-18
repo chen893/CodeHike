@@ -179,55 +179,57 @@ export default async function ExplorePage({
         ) : (
           <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-3">
             {tutorials.map((tutorial) => (
-              <Link key={tutorial.id} href={`/${tutorial.slug}`} className="group block">
-                <Card className="flex h-full flex-col rounded-lg border-border/60 bg-card p-5 transition-all hover:border-primary/30 hover:-translate-y-1 hover:shadow-lg">
-                  <div className="flex-1 space-y-3">
+              <Card key={tutorial.id} className="group flex h-full flex-col rounded-lg border-border/60 bg-card p-5 transition-all hover:border-primary/30 hover:-translate-y-1 hover:shadow-lg">
+                <div className="flex-1 space-y-3">
+                  <Link href={`/${tutorial.slug}`}>
                     <CardTitle className="text-base font-bold text-foreground transition-colors group-hover:text-primary line-clamp-2">
                       {tutorial.title}
                     </CardTitle>
-                    {tutorial.description && (
+                  </Link>
+                  {tutorial.description && (
+                    <Link href={`/${tutorial.slug}`}>
                       <CardDescription className="line-clamp-2 text-sm leading-relaxed text-muted-foreground">
                         {tutorial.description}
                       </CardDescription>
-                    )}
-                    {tutorial.tags.length > 0 && (
-                      <div className="flex flex-wrap gap-1">
-                        {tutorial.tags.slice(0, 3).map((t) => (
-                          <Link
-                            key={t.id}
-                            href={`/explore?technology=${t.slug}`}
-                            className="inline-block rounded-full bg-primary/10 px-2 py-0.5 text-[10px] font-medium text-primary hover:bg-primary/20 transition-colors"
-                          >
-                            {t.name}
-                          </Link>
-                        ))}
-                        {tutorial.tags.length > 3 && (
-                          <span className="self-center text-[10px] text-muted-foreground">
-                            +{tutorial.tags.length - 3}
-                          </span>
-                        )}
-                      </div>
-                    )}
-                  </div>
-                  <div className="mt-auto flex items-center justify-between border-t border-border/30 pt-3">
-                    <div className="flex items-center gap-2 text-xs text-muted-foreground">
-                      {tutorial.authorUsername && (
-                        <>
-                          {tutorial.authorImage && (
-                            <img src={tutorial.authorImage} alt="" className="h-4 w-4 rounded-full" />
-                          )}
-                          <span>{tutorial.authorName || tutorial.authorUsername}</span>
-                          <span className="text-border">·</span>
-                        </>
+                    </Link>
+                  )}
+                  {tutorial.tags.length > 0 && (
+                    <div className="flex flex-wrap gap-1">
+                      {tutorial.tags.slice(0, 3).map((t) => (
+                        <Link
+                          key={t.id}
+                          href={`/explore?tag=${t.slug}`}
+                          className="inline-block rounded-full bg-primary/10 px-2 py-0.5 text-[10px] font-medium text-primary hover:bg-primary/20 transition-colors"
+                        >
+                          {t.name}
+                        </Link>
+                      ))}
+                      {tutorial.tags.length > 3 && (
+                        <span className="self-center text-[10px] text-muted-foreground">
+                          +{tutorial.tags.length - 3}
+                        </span>
                       )}
-                      {tutorial.lang && <span>{tutorial.lang}</span>}
-                      <span>{tutorial.stepCount} 步</span>
-                      <span>{tutorial.readingTime} 分钟</span>
                     </div>
-                    <span className="text-sm text-muted-foreground transition-colors group-hover:text-primary">→</span>
+                  )}
+                </div>
+                <div className="mt-auto flex items-center justify-between border-t border-border/30 pt-3">
+                  <div className="flex items-center gap-2 text-xs text-muted-foreground">
+                    {tutorial.authorUsername && (
+                      <>
+                        {tutorial.authorImage && (
+                          <img src={tutorial.authorImage} alt="" className="h-4 w-4 rounded-full" />
+                        )}
+                        <span>{tutorial.authorName || tutorial.authorUsername}</span>
+                        <span className="text-border">·</span>
+                      </>
+                    )}
+                    {tutorial.lang && <span>{tutorial.lang}</span>}
+                    <span>{tutorial.stepCount} 步</span>
+                    <span>{tutorial.readingTime} 分钟</span>
                   </div>
-                </Card>
-              </Link>
+                  <Link href={`/${tutorial.slug}`} className="text-sm text-muted-foreground transition-colors group-hover:text-primary">→</Link>
+                </div>
+              </Card>
             ))}
           </div>
         )}
