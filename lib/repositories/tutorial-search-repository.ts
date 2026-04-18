@@ -1,7 +1,7 @@
 import { eq, desc, and, inArray, sql } from 'drizzle-orm';
 import { db } from '../db';
 import { publishedTutorials, drafts, users, events, tutorialTags, tutorialTagRelations } from '../db/schema';
-import type { ExploreTutorial, TutorialTag } from '../types/api';
+import type { ExploreTutorial, TutorialTag, TagTypeType } from '../types/api';
 
 type TutorialTagRow = typeof tutorialTags.$inferSelect;
 
@@ -10,6 +10,7 @@ function toTutorialTag(row: TutorialTagRow): TutorialTag {
     id: row.id,
     name: row.name,
     slug: row.slug,
+    tagType: row.tagType ?? null,
     createdAt: row.createdAt,
   };
 }
@@ -65,6 +66,7 @@ async function attachTags(tutorialIds: string[]): Promise<Map<string, TutorialTa
       tagName: tutorialTags.name,
       tagSlug: tutorialTags.slug,
       tagCreatedAt: tutorialTags.createdAt,
+      tagType: tutorialTags.tagType,
     })
     .from(tutorialTagRelations)
     .innerJoin(tutorialTags, eq(tutorialTagRelations.tagId, tutorialTags.id))
@@ -76,6 +78,7 @@ async function attachTags(tutorialIds: string[]): Promise<Map<string, TutorialTa
       id: row.tagId,
       name: row.tagName,
       slug: row.tagSlug,
+      tagType: row.tagType ?? null,
       createdAt: row.tagCreatedAt,
     });
     tagMap.set(row.tutorialId, existing);
@@ -86,9 +89,64 @@ async function attachTags(tutorialIds: string[]): Promise<Map<string, TutorialTa
 export async function searchPublishedTutorials(
   query: string,
   limit: number = 20,
-  options?: { tagSlug?: string; lang?: string },
+  options?: { tagSlug?: string; lang?: string; tagFilters?: { tagSlug: string; tagType: string }[] },
 ): Promise<ExploreTutorial[]> {
-  // When tag filter is needed, use raw SQL with dynamic JOINs
+  // When multi-dimension tag filters are provided, build JOINs for each dimension
+  if (options?.tagFilters && options.tagFilters.length > 0) {
+    const tagJoinClauses: string[] = [];
+    let paramIndex = 0;
+
+    for (const filter of options.tagFilters) {
+      paramIndex++;
+      tagJoinClauses.push(`
+        INNER JOIN tutorial_tag_relations ttr_f${paramIndex} ON ttr_f${paramIndex}.tutorial_id = pt.id
+        INNER JOIN tutorial_tags tt_f${paramIndex} ON tt_f${paramIndex}.id = ttr_f${paramIndex}.tag_id
+          AND tt_f${paramIndex}.slug = ${filter.tagSlug}
+          AND tt_f${paramIndex}.tag_type = '${filter.tagType}'
+      `);
+    }
+
+    const rawRows = await db.execute(sql`
+      SELECT
+        pt.id,
+        pt.slug,
+        pt.tutorial_draft_snapshot,
+        pt.published_at as "publishedAt",
+        coalesce(vc.cnt, 0)::int as "viewCount",
+        u.name as "authorName",
+        u.username as "authorUsername",
+        u.image as "authorImage"
+      FROM published_tutorials pt
+      INNER JOIN drafts d ON d.id = pt.draft_record_id
+      LEFT JOIN users u ON u.id = d.user_id
+      LEFT JOIN (SELECT slug, count(*) as cnt FROM events WHERE event_type = 'tutorial_viewed' GROUP BY slug) vc ON vc.slug = pt.slug
+      ${sql.raw(tagJoinClauses.join('\n'))}
+      WHERE to_tsvector('simple', coalesce(pt.tutorial_draft_snapshot->'meta'->>'title','') || ' ' || coalesce(pt.slug,'')) @@ plainto_tsquery('simple', ${query})
+      ${options.lang ? sql`AND pt.tutorial_draft_snapshot->'meta'->>'lang' = ${options.lang}` : sql``}
+      ORDER BY coalesce(vc.cnt, 0) DESC
+      LIMIT ${limit}
+    `);
+
+    const rows = rawRows.rows as any[];
+    const tutorialIds = rows.map((r: any) => r.id);
+    const tagMap = await attachTags(tutorialIds);
+
+    return rows.map((row: any) =>
+      toExploreTutorial({
+        id: row.id,
+        slug: row.slug,
+        tutorialDraftSnapshot: row.tutorial_draft_snapshot ?? row.tutorialDraftSnapshot,
+        publishedAt: row.publishedAt ?? row.published_at,
+        viewCount: row.viewCount,
+        authorName: row.authorName,
+        authorUsername: row.authorUsername,
+        authorImage: row.authorImage,
+        tags: tagMap.get(row.id) || [],
+      }),
+    );
+  }
+
+  // When single tag filter is needed (backward compat), use raw SQL with dynamic JOINs
   if (options?.tagSlug) {
     const rawRows = await db.execute(sql`
       SELECT
@@ -183,6 +241,7 @@ export async function listPublishedForExplore(options: {
   pageSize?: number;
   sort?: 'newest' | 'popular';
   tagSlug?: string;
+  tagFilters?: { tagSlug: string; tagType: string }[];
   lang?: string;
 }): Promise<{ tutorials: ExploreTutorial[]; total: number }> {
   const page = options.page ?? 1;
@@ -193,7 +252,34 @@ export async function listPublishedForExplore(options: {
   // Build filter conditions
   const conditions = [];
 
-  if (options.tagSlug) {
+  // Multi-dimension tag filtering (D-12): intersect tutorial IDs per dimension
+  if (options.tagFilters && options.tagFilters.length > 0) {
+    for (const filter of options.tagFilters) {
+      const tag = await db
+        .select({ id: tutorialTags.id })
+        .from(tutorialTags)
+        .where(and(
+          eq(tutorialTags.slug, filter.tagSlug),
+          eq(tutorialTags.tagType, filter.tagType as TagTypeType),
+        ))
+        .limit(1);
+      if (tag.length > 0) {
+        const tutorialIdsWithTag = await db
+          .select({ tutorialId: tutorialTagRelations.tutorialId })
+          .from(tutorialTagRelations)
+          .where(eq(tutorialTagRelations.tagId, tag[0].id));
+        const ids = tutorialIdsWithTag.map((r) => r.tutorialId);
+        if (ids.length > 0) {
+          conditions.push(inArray(publishedTutorials.id, ids));
+        } else {
+          return { tutorials: [], total: 0 };
+        }
+      } else {
+        return { tutorials: [], total: 0 };
+      }
+    }
+  } else if (options.tagSlug) {
+    // Backward compat: single tag param (no tagType constraint)
     const tag = await db
       .select({ id: tutorialTags.id })
       .from(tutorialTags)

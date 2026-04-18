@@ -1,16 +1,30 @@
 import * as searchRepo from '../repositories/tutorial-search-repository';
 import * as tagRepo from '../repositories/tag-repository';
-import type { ExploreTutorial, TutorialTag } from '../types/api';
+import type { ExploreTutorial, TutorialTag, TagTypeType } from '../types/api';
 
 export async function getExploreData(options: {
   page?: number;
   sort?: string;
   tag?: string;
+  technology?: string;
+  category?: string;
+  level?: string;
   lang?: string;
   search?: string;
 }): Promise<{ tutorials: ExploreTutorial[]; total: number; tags: TutorialTag[] }> {
   // Always load tags for sidebar (cached)
   const tagsPromise = tagRepo.listAllTagsCached();
+
+  // Build multi-dimension tag filters (D-12/D-13)
+  const tagFilters: { tagSlug: string; tagType: string }[] = [];
+  if (options.technology) tagFilters.push({ tagSlug: options.technology, tagType: 'technology' });
+  if (options.category) tagFilters.push({ tagSlug: options.category, tagType: 'category' });
+  if (options.level) tagFilters.push({ tagSlug: options.level, tagType: 'level' });
+
+  // Backward compat: ?tag=xxx maps to technology dimension (D-13)
+  if (options.tag && tagFilters.length === 0) {
+    tagFilters.push({ tagSlug: options.tag, tagType: 'technology' });
+  }
 
   let tutorials: ExploreTutorial[];
   let total: number;
@@ -20,7 +34,11 @@ export async function getExploreData(options: {
     const result = await searchRepo.searchPublishedTutorials(
       options.search.trim(),
       searchLimit,
-      { tagSlug: options.tag, lang: options.lang },
+      {
+        tagSlug: tagFilters.length === 0 ? undefined : undefined, // handled by tagFilters now
+        lang: options.lang,
+        tagFilters: tagFilters.length > 0 ? tagFilters : undefined,
+      },
     );
     tutorials = Array.isArray(result) ? result : (result as any).tutorials ?? result;
     total = Array.isArray(result) ? result.length : (result as any).total ?? result.length;
@@ -29,7 +47,8 @@ export async function getExploreData(options: {
       page: options.page,
       pageSize: 20,
       sort: options.sort === 'popular' ? 'popular' : 'newest',
-      tagSlug: options.tag,
+      tagSlug: tagFilters.length === 0 ? options.tag : undefined,
+      tagFilters: tagFilters.length > 0 ? tagFilters : undefined,
       lang: options.lang,
     });
     tutorials = result.tutorials;

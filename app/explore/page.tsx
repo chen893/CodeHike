@@ -29,6 +29,9 @@ export default async function ExplorePage({
   const params = await searchParams;
   const search = typeof params.q === 'string' ? params.q : undefined;
   const tag = typeof params.tag === 'string' ? params.tag : undefined;
+  const technology = typeof params.technology === 'string' ? params.technology : undefined;
+  const category = typeof params.category === 'string' ? params.category : undefined;
+  const level = typeof params.level === 'string' ? params.level : undefined;
   const lang = typeof params.lang === 'string' ? params.lang : undefined;
   const sort = typeof params.sort === 'string' ? params.sort : undefined;
   const page = typeof params.page === 'string' ? Math.max(1, parseInt(params.page, 10) || 1) : 1;
@@ -37,6 +40,9 @@ export default async function ExplorePage({
   const { tutorials, total, tags } = await getExploreData({
     search,
     tag,
+    technology,
+    category,
+    level,
     lang,
     sort,
     page,
@@ -45,20 +51,32 @@ export default async function ExplorePage({
   // Fire-and-forget tracking
   trackExploreViewed(user?.id, undefined, {
     ...(search ? { search } : {}),
+    ...(technology ? { technology } : {}),
+    ...(category ? { category } : {}),
+    ...(level ? { level } : {}),
     ...(tag ? { tag } : {}),
     ...(lang ? { lang } : {}),
     ...(sort ? { sort } : {}),
   });
 
-  const activeTag = tag ? tags.find((t) => t.slug === tag) : null;
+  // Resolve active filter tags for display and tracking
+  const activeTechnology = technology ? tags.find((t) => t.slug === technology) : null;
+  const activeCategory = category ? tags.find((t) => t.slug === category) : null;
+  const activeLevel = level ? tags.find((t) => t.slug === level) : null;
+  // Backward compat: old ?tag= resolves as technology
+  const activeTag = (!technology && tag) ? tags.find((t) => t.slug === tag) : null;
 
   // Fire-and-forget tag view tracking
-  if (activeTag) {
-    trackTagViewed(activeTag.slug, 'explore', user?.id);
-  }
+  if (activeTechnology) trackTagViewed(activeTechnology.slug, 'explore', user?.id);
+  if (activeCategory) trackTagViewed(activeCategory.slug, 'explore', user?.id);
+  if (activeLevel) trackTagViewed(activeLevel.slug, 'explore', user?.id);
+  if (activeTag) trackTagViewed(activeTag.slug, 'explore', user?.id);
 
   const pageSize = 20;
   const totalPages = Math.ceil(total / pageSize);
+
+  // Determine if any filters are active
+  const hasFilters = activeTechnology || activeCategory || activeLevel || activeTag || lang;
 
   return (
     <AppShell activePath="/explore" user={user}>
@@ -74,19 +92,52 @@ export default async function ExplorePage({
         {/* Search + Filters (client component) */}
         <ExploreClient
           tags={JSON.parse(JSON.stringify(tags))}
-          activeTag={activeTag?.slug ?? null}
+          activeTechnology={activeTechnology?.slug ?? (activeTag?.slug ?? null)}
+          activeCategory={activeCategory?.slug ?? null}
+          activeLevel={activeLevel?.slug ?? null}
           sort={sort ?? 'newest'}
           searchQuery={search ?? ''}
         />
 
         {/* Active filters summary */}
-        {(activeTag || lang) && (
+        {hasFilters && (
           <div className="flex items-center gap-2 flex-wrap">
             <span className="text-sm text-muted-foreground">当前筛选：</span>
-            {activeTag && (
+            {(activeTechnology || activeTag) && (
               <Badge className="bg-primary/10 text-primary border-primary/30">
-                {activeTag.name}
-                <Link href={buildFilterUrl({ tag: undefined, lang, search, sort })} className="ml-1.5 hover:text-cyan-900">
+                技术: {(activeTechnology ?? activeTag)?.name}
+                <Link
+                  href={buildFilterUrl({
+                    technology: undefined, tag: undefined, category, level, lang, search, sort,
+                  })}
+                  className="ml-1.5 hover:text-cyan-900"
+                >
+                  ×
+                </Link>
+              </Badge>
+            )}
+            {activeCategory && (
+              <Badge className="bg-primary/10 text-primary border-primary/30">
+                领域: {activeCategory.name}
+                <Link
+                  href={buildFilterUrl({
+                    technology, tag, category: undefined, level, lang, search, sort,
+                  })}
+                  className="ml-1.5 hover:text-cyan-900"
+                >
+                  ×
+                </Link>
+              </Badge>
+            )}
+            {activeLevel && (
+              <Badge className="bg-primary/10 text-primary border-primary/30">
+                难度: {activeLevel.name}
+                <Link
+                  href={buildFilterUrl({
+                    technology, tag, category, level: undefined, lang, search, sort,
+                  })}
+                  className="ml-1.5 hover:text-cyan-900"
+                >
                   ×
                 </Link>
               </Badge>
@@ -94,7 +145,12 @@ export default async function ExplorePage({
             {lang && (
               <Badge className="bg-secondary text-secondary-foreground border-border">
                 {lang}
-                <Link href={buildFilterUrl({ tag, lang: undefined, search, sort })} className="ml-1.5 hover:text-foreground">
+                <Link
+                  href={buildFilterUrl({
+                    technology, tag, category, level, lang: undefined, search, sort,
+                  })}
+                  className="ml-1.5 hover:text-foreground"
+                >
                   ×
                 </Link>
               </Badge>
@@ -139,7 +195,7 @@ export default async function ExplorePage({
                         {tutorial.tags.slice(0, 3).map((t) => (
                           <Link
                             key={t.id}
-                            href={`/explore?tag=${t.slug}`}
+                            href={`/explore?technology=${t.slug}`}
                             className="inline-block rounded-full bg-primary/10 px-2 py-0.5 text-[10px] font-medium text-primary hover:bg-primary/20 transition-colors"
                           >
                             {t.name}
@@ -181,7 +237,7 @@ export default async function ExplorePage({
           <div className="flex items-center justify-center gap-2 pt-4">
             {page > 1 && (
               <Button asChild variant="outline" size="sm">
-                <Link href={buildFilterUrl({ tag, lang, search, sort, page: page - 1 })}>
+                <Link href={buildFilterUrl({ technology, tag, category, level, lang, search, sort, page: page - 1 })}>
                   上一页
                 </Link>
               </Button>
@@ -191,7 +247,7 @@ export default async function ExplorePage({
             </span>
             {page < totalPages && (
               <Button asChild variant="outline" size="sm">
-                <Link href={buildFilterUrl({ tag, lang, search, sort, page: page + 1 })}>
+                <Link href={buildFilterUrl({ technology, tag, category, level, lang, search, sort, page: page + 1 })}>
                   下一页
                 </Link>
               </Button>
@@ -204,6 +260,9 @@ export default async function ExplorePage({
 }
 
 function buildFilterUrl(opts: {
+  technology?: string | undefined;
+  category?: string | undefined;
+  level?: string | undefined;
   tag?: string | undefined;
   lang?: string | undefined;
   search?: string | undefined;
@@ -212,7 +271,13 @@ function buildFilterUrl(opts: {
 }) {
   const params = new URLSearchParams();
   if (opts.search) params.set('q', opts.search);
-  if (opts.tag) params.set('tag', opts.tag);
+  if (opts.technology) params.set('technology', opts.technology);
+  if (opts.category) params.set('category', opts.category);
+  if (opts.level) params.set('level', opts.level);
+  // Backward compat: keep ?tag if no typed dimension params are present
+  if (opts.tag && !opts.technology && !opts.category && !opts.level) {
+    params.set('tag', opts.tag);
+  }
   if (opts.lang) params.set('lang', opts.lang);
   if (opts.sort && opts.sort !== 'newest') params.set('sort', opts.sort);
   if (opts.page && opts.page > 1) params.set('page', String(opts.page));
