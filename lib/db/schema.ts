@@ -294,6 +294,22 @@ export const tagCandidates = pgTable('tag_candidates', {
     .notNull(),
 });
 
+// v3.11: Tag relations (co-occurrence + same-type supplement) (D-14)
+export const tagRelations = pgTable('tag_relations', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  fromTagId: uuid('from_tag_id')
+    .notNull()
+    .references(() => tutorialTags.id, { onDelete: 'cascade' }),
+  toTagId: uuid('to_tag_id')
+    .notNull()
+    .references(() => tutorialTags.id, { onDelete: 'cascade' }),
+  relationType: varchar('relation_type', { length: 32 }).default('co_occurrence'),
+  strength: integer('strength').default(0),
+  computedAt: timestamp('computed_at', { withTimezone: true }).defaultNow(),
+}, (table) => [
+  uniqueIndex('tag_relations_unique_pair').on(table.fromTagId, table.toTagId),
+]);
+
 export const draftSnapshots = pgTable('draft_snapshots', {
   id: uuid('id').primaryKey().defaultRandom(),
   draftId: uuid('draft_id')

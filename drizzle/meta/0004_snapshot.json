@@ -1,6 +1,6 @@
 {
-  "id": "7c600d5e-384c-4223-a91b-3c0361dd353a",
-  "prevId": "6d666636-c14c-44e9-926f-3d78c2d7d4fa",
+  "id": "f607b46b-4557-4945-bb79-7a62ce0bf244",
+  "prevId": "7c600d5e-384c-4223-a91b-3c0361dd353a",
   "version": "7",
   "dialect": "postgresql",
   "tables": {
@@ -834,6 +834,108 @@
       },
       "indexes": {},
       "foreignKeys": {},
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
+    "public.tag_relations": {
+      "name": "tag_relations",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "uuid",
+          "primaryKey": true,
+          "notNull": true,
+          "default": "gen_random_uuid()"
+        },
+        "from_tag_id": {
+          "name": "from_tag_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "to_tag_id": {
+          "name": "to_tag_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "relation_type": {
+          "name": "relation_type",
+          "type": "varchar(32)",
+          "primaryKey": false,
+          "notNull": false,
+          "default": "'co_occurrence'"
+        },
+        "strength": {
+          "name": "strength",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": false,
+          "default": 0
+        },
+        "computed_at": {
+          "name": "computed_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false,
+          "default": "now()"
+        }
+      },
+      "indexes": {
+        "tag_relations_unique_pair": {
+          "name": "tag_relations_unique_pair",
+          "columns": [
+            {
+              "expression": "from_tag_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "to_tag_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": true,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {
+        "tag_relations_from_tag_id_tutorial_tags_id_fk": {
+          "name": "tag_relations_from_tag_id_tutorial_tags_id_fk",
+          "tableFrom": "tag_relations",
+          "tableTo": "tutorial_tags",
+          "columnsFrom": [
+            "from_tag_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        },
+        "tag_relations_to_tag_id_tutorial_tags_id_fk": {
+          "name": "tag_relations_to_tag_id_tutorial_tags_id_fk",
+          "tableFrom": "tag_relations",
+          "tableTo": "tutorial_tags",
+          "columnsFrom": [
+            "to_tag_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        }
+      },
       "compositePrimaryKeys": {},
       "uniqueConstraints": {},
       "policies": {},

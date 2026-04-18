@@ -87,7 +87,7 @@ test('active generation job helper only accepts queued and running', () => {
 
 test('migration encodes same-draft and single-active-job invariants', () => {
   const migration = fs.readFileSync(
-    new URL('../drizzle/0003_cynical_daredevil.sql', import.meta.url),
+    new URL('../drizzle/0001_cynical_daredevil.sql', import.meta.url),
     'utf8'
   );
 
