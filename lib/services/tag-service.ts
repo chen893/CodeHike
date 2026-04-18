@@ -123,3 +123,35 @@ export async function getTagDetail(slug: string): Promise<{
 
   return { tag, relatedTags };
 }
+
+// --- Tag management operations (admin) ---
+
+/**
+ * Merge source tag into target tag.
+ * Migrates all tutorial associations to target, then deletes source atomically.
+ */
+export async function mergeTags(sourceTagId: string, targetTagId: string): Promise<void> {
+  if (sourceTagId === targetTagId) throw new Error('Cannot merge tag into itself');
+  await tagRepo.mergeTagRelations(sourceTagId, targetTagId);
+}
+
+/**
+ * Delete a tag. FK ON DELETE CASCADE removes associated tutorial relations.
+ */
+export async function deleteTag(tagId: string): Promise<void> {
+  await tagRepo.deleteTag(tagId);
+}
+
+/**
+ * Rename a tag and regenerate its slug.
+ */
+export async function renameTag(tagId: string, newName: string): Promise<TutorialTag> {
+  return tagRepo.renameTag(tagId, newName);
+}
+
+/**
+ * Update a tag's tagType classification.
+ */
+export async function updateTagType(tagId: string, tagType: 'technology' | 'category' | 'level' | null): Promise<TutorialTag> {
+  return tagRepo.updateTagType(tagId, tagType);
+}

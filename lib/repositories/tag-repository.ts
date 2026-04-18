@@ -227,6 +227,72 @@ export async function isVocabularyTag(tagName: string): Promise<boolean> {
   return !!row;
 }
 
+/**
+ * Merge source tag into target tag atomically.
+ * Migrates all tutorial associations to target, then deletes source.
+ * Returns void -- caller validates inputs before calling.
+ */
+export async function mergeTagRelations(sourceTagId: string, targetTagId: string): Promise<void> {
+  await db.transaction(async (tx) => {
+    // Get all tutorial IDs associated with the source tag
+    const sourceRelations = await tx
+      .select({ tutorialId: tutorialTagRelations.tutorialId })
+      .from(tutorialTagRelations)
+      .where(eq(tutorialTagRelations.tagId, sourceTagId));
+
+    // For each source tutorial, ensure target tag is associated
+    for (const rel of sourceRelations) {
+      const [existing] = await tx
+        .select()
+        .from(tutorialTagRelations)
+        .where(and(
+          eq(tutorialTagRelations.tutorialId, rel.tutorialId),
+          eq(tutorialTagRelations.tagId, targetTagId),
+        ));
+      if (!existing) {
+        await tx.insert(tutorialTagRelations).values({
+          tutorialId: rel.tutorialId,
+          tagId: targetTagId,
+        });
+      }
+    }
+
+    // Delete all source tag relations
+    await tx.delete(tutorialTagRelations)
+      .where(eq(tutorialTagRelations.tagId, sourceTagId));
+
+    // Delete the source tag
+    await tx.delete(tutorialTags)
+      .where(eq(tutorialTags.id, sourceTagId));
+  });
+}
+
+/** Delete a tag by ID. FK ON DELETE CASCADE removes tutorial associations. */
+export async function deleteTag(tagId: string): Promise<void> {
+  await db.delete(tutorialTags).where(eq(tutorialTags.id, tagId));
+}
+
+/** Rename a tag and regenerate its slug. */
+export async function renameTag(tagId: string, newName: string): Promise<TutorialTag> {
+  const newSlug = generateSlug(newName) || 'tag';
+  const [row] = await db.update(tutorialTags)
+    .set({ name: newName, slug: newSlug })
+    .where(eq(tutorialTags.id, tagId))
+    .returning();
+  if (!row) throw new Error('Tag not found');
+  return { id: row.id, name: row.name, slug: row.slug, tagType: row.tagType ?? null, createdAt: row.createdAt };
+}
+
+/** Update a tag's tagType classification. */
+export async function updateTagType(tagId: string, tagType: 'technology' | 'category' | 'level' | null): Promise<TutorialTag> {
+  const [row] = await db.update(tutorialTags)
+    .set({ tagType })
+    .where(eq(tutorialTags.id, tagId))
+    .returning();
+  if (!row) throw new Error('Tag not found');
+  return { id: row.id, name: row.name, slug: row.slug, tagType: row.tagType ?? null, createdAt: row.createdAt };
+}
+
 /** Delete tags that have no associated tutorials. Returns count of deleted orphans. */
 export async function deleteOrphanTags(): Promise<number> {
   const orphans = await db
