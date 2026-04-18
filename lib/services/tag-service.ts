@@ -8,6 +8,7 @@
 
 import { generateTags } from '../ai/tag-generator';
 import * as tagRepo from '../repositories/tag-repository';
+import * as tagRelationRepo from '../repositories/tag-relation-repository';
 import * as candidateRepo from '../repositories/tag-candidate-repository';
 import { trackTutorialTagged } from '../monitoring/analytics';
 import type { TutorialTag } from '../types/api';
@@ -105,4 +106,20 @@ export async function setTutorialTagsByName(
   trackTutorialTagged(tutorialId, tags.map((t) => t.name));
 
   return tags;
+}
+
+/**
+ * Get tag detail for the tag detail page: tag info + related tags (D-15).
+ * Tutorial list is fetched separately via explore-service with tag filter.
+ */
+export async function getTagDetail(slug: string): Promise<{
+  tag: TutorialTag;
+  relatedTags: (TutorialTag & { strength: number })[];
+} | null> {
+  const tag = await tagRepo.getTagBySlug(slug);
+  if (!tag) return null;
+
+  const relatedTags = await tagRelationRepo.getRelatedTags(tag.id, 10);
+
+  return { tag, relatedTags };
 }
