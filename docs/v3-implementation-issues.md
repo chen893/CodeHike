@@ -972,3 +972,72 @@
 - `docs/workflow/generation-quality-loop.md`
 - `docs/vibedocs-technical-handbook.md`
 - `AGENTS.md`
+
+---
+
+## 问题 41：生成状态重连不会回收 stale job，取消后 UI 没有即时反馈
+
+**现象**：
+- `/drafts/[id]` 打开一个很久以前中断的 running job 时，页面一直停在“等待生成完成”。
+- “取消生成”会调用 `/cancel`，但旧 job 已经没有活跃运行时，服务端只写入 `cancelRequested`，前端仍继续展示原来的 running 状态。
+- 错误面板里的“重新生成目录 / 从第 n 步重试”容易被旧 active job 挡住，看起来点击无反应。
+- 草稿已有 partial `tutorialDraft` 时，主编辑器会直接展示步骤编辑态，只在侧边栏显示“生成失败”，缺少明显的重试入口。
+- 重新生成大纲时，旧的 tutorialDraft 仍留在 draft 中，实时预览和编辑器可能继续看到旧步骤，用户无法判断新生成是否真的开始。
+
+**根因**：
+- stale job recovery 只在 `POST /generate` 前执行；`GET /generation-status` 作为页面重连和轮询路径不会回收过期 job。
+- `cancelRequested` 没有返回给前端状态机，取消请求成功后没有“正在取消”的中间态。
+- 前端 abort SSE 后直接依赖旧状态展示，无法区分“请求已发出，等待 job 终态”和“按钮没有生效”。
+- workspace 外部打开 `GenerationProgress` 时没有表达“这次要发起新生成”的意图，hook 看到最新 terminal job 后会停在旧错误页。
+- `/generate` 启动新 job 时只更新 generation state，没有清空旧 `tutorialDraft / generationOutline / generationQuality / validation`。
+
+**解决方案**：
+1. `getGenerationStatus()` 读取前先执行 stale recovery，过期 active job 标记为 `abandoned/JOB_STALE` 并清理 draft active 指针。
+2. generation-status 响应返回 `cancelRequested`，前端 active job 如果已请求取消则进入 `cancelling` 状态。
+3. `GenerationProgress` 增加 `cancelling` UI：按钮立即变为“正在取消...”，轮询持续到 `cancelled/failed/abandoned/succeeded` 终态，再显示可恢复动作。
+4. workspace 的 failed + partial draft 状态展示恢复 banner，提供“重新生成目录”入口。
+5. 外部 retry 通过 `startNewGeneration` 传入生成面板；hook 遇到 terminal job 时继续启动新 SSE，遇到 active job 时仍保持重连。
+6. 全量生成启动事务中先调用 `clearDraftTutorialForGeneration()`，清空旧教程内容和旧生成元数据，让新 outline / partial steps 从空状态重新写入。
+
+**影响文件**：
+- `lib/services/generate-tutorial-draft.ts`
+- `components/tutorial/use-generation-progress.ts`
+- `components/tutorial/generation-progress-types.ts`
+- `components/tutorial/generation-progress-utils.ts`
+- `components/tutorial/generation-progress-view.tsx`
+- `components/drafts/draft-client.ts`
+- `components/generation-progress.tsx`
+- `components/draft-workspace.tsx`
+- `components/drafts/draft-workspace-content.tsx`
+- `components/drafts/use-draft-workspace-controller.ts`
+- `tests/stale-recovery.test.js`
+- `lib/repositories/draft-repository.ts`
+
+---
+
+## 问题 42：CodeHike 行变更注解插入 JSDoc 内部后泄漏为源码文本
+
+**现象**：
+- draft 实时预览 / 复制代码中可能出现 `// !change-indicator(1) added`。
+- 同一段代码旁边还会有视觉上的 `+` 行标记，容易误以为 AI 生成了带 diff 元信息的脏源码。
+- 查询 draft JSON 时没有这些字符串，但旧实现会在 `/api/drafts/[id]/payload` 的 `highlightedFiles[*].value` 和部分 `highlightedFiles[*].code` 中暴露临时注解。
+
+**根因**：
+- `lib/tutorial/assembler.js` 会在调用 CodeHike `highlight()` 前把 focus / mark / change 注解插入源码字符串。
+- 对 TypeScript / JavaScript 的 JSDoc 块，旧逻辑直接在目标行前插入 `// !change-indicator(...)`。
+- 如果目标行位于 `/** ... */` 内部，`//` 不再是独立行注释，而是 JSDoc 文本的一部分，CodeHike 无法消费这条注解，最终 `highlighted.code` 和复制结果都会保留它。
+- draft 持久化数据本身没有被污染，污染发生在服务端组装高亮 payload 阶段。
+
+**解决方案**：
+1. 增加 slash-style block comment 范围扫描，识别 TypeScript / JavaScript / Java / Go / Rust 等语言中的 `/* ... */` 区间。
+2. 行级注解如果目标行落在块注释内部，不再插入块注释中，而是提前放到块注释开始前，并把 `!change-indicator(1)` / `!mark(1)` 改成 CodeHike 相对行号，例如 `!change-indicator(3)`。
+3. `focus(start/end)` 这类不能安全重定向的范围标记如果会落入块注释内部，则跳过该内部插入，优先保证源码不泄漏内部注解。
+4. `highlight()` 完成后把 payload 中的 `value` 归一为清理后的 `highlighted.code`，避免 API 响应和复制 fallback 暴露临时注解。
+5. 补回归测试：JSDoc 新增行经过 `buildTutorialSteps()` 后，`highlighted.code` / `highlighted.value` 不再包含 `!change-indicator`，但仍存在 `change-indicator` annotation 元数据。
+
+**影响文件**：
+- `lib/tutorial/assembler.js`
+- `tests/assembler.test.js`
+- `docs/tutorial-data-format.md`
+- `docs/vibedocs-technical-handbook.md`
+- `docs/v3-implementation-issues.md`

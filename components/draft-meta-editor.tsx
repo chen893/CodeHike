@@ -45,44 +45,44 @@ export function DraftMetaEditor({
   return (
     <div className="space-y-6">
       <div className="space-y-1">
-        <h3 className="text-xl font-bold tracking-tight text-slate-900">元信息编辑</h3>
-        <p className="text-xs text-slate-500">
+        <h3 className="text-xl font-bold tracking-tight text-foreground">元信息编辑</h3>
+        <p className="text-xs text-muted-foreground">
           修改教程的标题、描述和开场白。
         </p>
       </div>
-      
+
       <div className="space-y-5">
         <label className="block space-y-1.5">
-          <span className="text-sm font-medium text-slate-700">标题</span>
+          <span className="text-sm font-medium text-foreground">标题</span>
           <Input
-            className="bg-white border-slate-200 focus:ring-slate-400"
+            className="bg-card border-border focus:ring-ring"
             value={title}
             onChange={(e) => setTitle(e.target.value)}
           />
         </label>
         <label className="block space-y-1.5">
-          <span className="text-sm font-medium text-slate-700">描述</span>
+          <span className="text-sm font-medium text-foreground">描述</span>
           <Input
-            className="bg-white border-slate-200 focus:ring-slate-400"
+            className="bg-card border-border focus:ring-ring"
             value={description}
             onChange={(e) => setDescription(e.target.value)}
           />
         </label>
         <label className="block space-y-1.5">
-          <span className="text-sm font-medium text-slate-700">开场白</span>
+          <span className="text-sm font-medium text-foreground">开场白</span>
           <Textarea
-            className="min-h-[120px] bg-white border-slate-200 focus:ring-slate-400 leading-6"
+            className="min-h-[120px] bg-card border-border focus:ring-ring leading-6"
             value={intro}
             onChange={(e) => setIntro(e.target.value)}
             rows={5}
           />
         </label>
-        <div className="flex items-center justify-end border-t border-slate-100 pt-5">
-          <Button 
-            type="button" 
-            onClick={handleSave} 
+        <div className="flex items-center justify-end border-t border-border/50 pt-5">
+          <Button
+            type="button"
+            onClick={handleSave}
             disabled={saving}
-            className="bg-slate-900 text-slate-50 hover:bg-slate-900/90 rounded-md h-9 px-4"
+            className="bg-primary text-primary-foreground hover:bg-primary/90 rounded-md h-9 px-4"
           >
             {saving ? '保存中...' : '保存元信息'}
           </Button>

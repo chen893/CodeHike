@@ -26,7 +26,7 @@ import { validateOutlineSourceScope, deriveStepSourceScope } from './outline-sou
 import { recommendStepBudget } from './step-budget';
 
 const MAX_STEP_RETRIES = 3;
-const LOC_CAP_FLOOR = 60;
+const LOC_WARNING_FLOOR = 60;
 const LOC_DEFAULT_BUDGET = 8;
 const STEP_FILL_TOOLS_ENABLED = process.env.VIBEDOCS_STEP_FILL_TOOLS === '1';
 
@@ -552,15 +552,15 @@ export function createMultiPhaseGenerationStream(
                   }
                 }
 
-                // Check LOC budget — reject steps that are far beyond the estimated size
+                // LOC budget is a quality signal; do not block generation here.
                 const locBudget = outline.steps[i]?.estimatedLocChange ?? LOC_DEFAULT_BUDGET;
                 const actualLoc = step.patches.reduce((sum, p) => {
                   return sum + Math.abs(p.replace.split('\n').length - p.find.split('\n').length);
                 }, 0);
-                const hardLocCap = Math.max(locBudget * 2, LOC_CAP_FLOOR);
-                if (actualLoc > hardLocCap) {
-                  throw new Error(
-                    `Step LOC ${actualLoc} exceeds hard cap ${hardLocCap} (budget ${locBudget}); split the implementation into a smaller step and only keep the minimum skeleton for this round.`,
+                const warningThreshold = Math.max(locBudget * 2, LOC_WARNING_FLOOR);
+                if (actualLoc > warningThreshold) {
+                  console.warn(
+                    `[multi-phase] Step ${i + 1} LOC ${actualLoc} exceeds warning threshold ${warningThreshold} (budget ${locBudget}) — accepting and leaving granularity assessment to review`,
                   );
                 }
               }

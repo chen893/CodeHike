@@ -6,9 +6,9 @@ import { StepEditor } from '@/components/step-editor';
 import type { ClientDraftRecord } from '@/lib/types/client';
 
 const secondaryButton =
-  'inline-flex h-10 items-center justify-center rounded-md border border-slate-200 bg-white px-4 py-2 text-sm font-medium text-slate-900 shadow-sm transition-colors hover:bg-slate-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-slate-400 focus-visible:ring-offset-2 disabled:pointer-events-none disabled:opacity-50';
+  'inline-flex h-10 items-center justify-center rounded-md border border-border bg-card px-4 py-2 text-sm font-medium text-foreground shadow-sm transition-colors hover:bg-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:pointer-events-none disabled:opacity-50';
 const sectionCard =
-  'rounded-xl border border-slate-200 bg-white p-6 shadow-sm';
+  'rounded-xl border border-border bg-card p-6 shadow-sm';
 
 interface DraftWorkspaceContentProps {
   draft: ClientDraftRecord;
@@ -21,6 +21,7 @@ interface DraftWorkspaceContentProps {
   generationRunNonce: number;
   generationContext: GenerationContext;
   generationModelId?: string;
+  startNewGeneration: boolean;
   repairingStartIndex: number | null;
   firstInvalidStep: {
     stepIndex: number;
@@ -36,7 +37,7 @@ interface DraftWorkspaceContentProps {
   onSaveStep: (stepId: string, data: unknown) => Promise<void>;
   onRegenerateStep: (stepId: string, mode: 'prose' | 'step') => Promise<void>;
   onRetryGeneration: () => void;
-  onRetryFromStep: (stepIndex: number) => Promise<void>;
+  onExitGenerationProgress: () => void;
 }
 
 export function DraftWorkspaceContent({
@@ -50,6 +51,7 @@ export function DraftWorkspaceContent({
   generationRunNonce,
   generationContext,
   generationModelId,
+  startNewGeneration,
   repairingStartIndex,
   firstInvalidStep,
   onGenerationComplete,
@@ -58,20 +60,44 @@ export function DraftWorkspaceContent({
   onSaveStep,
   onRegenerateStep,
   onRetryGeneration,
-  onRetryFromStep,
+  onExitGenerationProgress,
 }: DraftWorkspaceContentProps) {
   return (
-    <div className="mx-auto flex w-full max-w-6xl flex-col gap-6 px-4 py-6 sm:px-6 lg:px-8 lg:py-8">
+    <div className="mx-auto flex w-full max-w-5xl flex-col gap-5 p-5 sm:p-6 lg:p-8">
       {showGenerationProgress && (
         <div className={sectionCard}>
           <GenerationProgress
             key={`${draft.id}:${generationRunNonce}`}
             draftId={draft.id}
             onComplete={() => void onGenerationComplete()}
+            onExit={onExitGenerationProgress}
             context={generationContext}
             modelId={generationModelId}
-            onRetryFromStep={(stepIndex) => void onRetryFromStep(stepIndex)}
+            startNewGeneration={startNewGeneration}
           />
+        </div>
+      )}
+
+      {!showGenerationProgress && hasDraft && draft.generationState === 'failed' && (
+        <div className="rounded-3xl border border-rose-200 bg-rose-50/90 p-5 text-rose-950 shadow-[0_18px_40px_-24px_rgba(225,29,72,0.35)]">
+          <div className="flex flex-wrap items-start justify-between gap-4">
+            <div className="max-w-3xl space-y-2">
+              <p className="text-sm font-semibold uppercase tracking-[0.2em] text-rose-700">
+                生成失败
+              </p>
+              <p className="text-sm leading-6 text-rose-900">
+                {draft.generationErrorMessage || '上一次生成没有完成，可以重新设计大纲并生成完整教程。'}
+              </p>
+            </div>
+            <button
+              type="button"
+              className={secondaryButton}
+              onClick={onRetryGeneration}
+              disabled={saving}
+            >
+              重新生成目录
+            </button>
+          </div>
         </div>
       )}
 
@@ -132,9 +158,9 @@ export function DraftWorkspaceContent({
       )}
 
       {!hasDraft && !showGenerationProgress && (
-        <div className="flex min-h-[320px] items-center justify-center rounded-3xl border border-slate-200 bg-white/85 p-8 text-slate-600 shadow-[0_18px_40px_-24px_rgba(15,23,42,0.35)]">
+        <div className="flex min-h-[320px] items-center justify-center rounded-3xl border border-border bg-card/85 p-8 text-muted-foreground shadow-[0_18px_40px_-24px_rgba(15,23,42,0.35)]">
           <div className="max-w-md space-y-4 text-center">
-            <p className="text-sm font-semibold uppercase tracking-[0.2em] text-slate-400">
+            <p className="text-sm font-semibold uppercase tracking-[0.2em] text-muted-foreground">
               {draft.generationState === 'idle'
                 ? '教程尚未生成'
                 : draft.generationState === 'running'
@@ -143,7 +169,7 @@ export function DraftWorkspaceContent({
                     ? '生成失败'
                     : '未知状态'}
             </p>
-            <p className="text-base leading-7 text-slate-700">
+            <p className="text-base leading-7 text-foreground">
               {draft.generationState === 'failed'
                 ? `生成失败: ${draft.generationErrorMessage}`
                 : '创建后会自动开始生成。'}

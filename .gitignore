@@ -22,7 +22,7 @@ test-results/
 # Historical local Drizzle artifact
 drizzle/0000_jittery_spencer_smythe.sql
 
-tmp
+tmp/
 
 docs/roadmaps/
 

@@ -27,9 +27,9 @@ export function IntermediatePatchPreview({
   }
 
   return (
-    <div className="border border-slate-200 rounded-lg overflow-hidden mt-4">
-      <div className="flex items-center justify-between px-3 py-2 bg-slate-50">
-        <span className="text-[10px] font-bold uppercase tracking-wider text-slate-700">
+    <div className="border border-border rounded-lg overflow-hidden mt-4">
+      <div className="flex items-center justify-between px-3 py-2 bg-muted/30">
+        <span className="text-[10px] font-bold uppercase tracking-wider text-foreground">
           Patch 逐步预览 ({patches.length} patches)
         </span>
       </div>
@@ -38,14 +38,14 @@ export function IntermediatePatchPreview({
         const isOpen = openIndex === state.patchIndex
 
         return (
-          <div key={state.patchIndex} className="border-t border-slate-200">
+          <div key={state.patchIndex} className="border-t border-border">
             <button
               type="button"
-              className="flex items-center justify-between w-full px-3 py-2 bg-slate-50 cursor-pointer hover:bg-slate-100"
+              className="flex items-center justify-between w-full px-3 py-2 bg-muted/20 cursor-pointer hover:bg-accent"
               onClick={() => setOpenIndex(isOpen ? null : state.patchIndex)}
             >
               <div className="flex items-center gap-2">
-                <span className="text-[10px] font-bold text-slate-600">
+                <span className="text-[10px] font-bold text-muted-foreground">
                   Patch {state.patchIndex + 1}
                 </span>
                 {state.error ? (
@@ -58,13 +58,13 @@ export function IntermediatePatchPreview({
                   </span>
                 )}
               </div>
-              <span className="text-[10px] text-slate-400">
+              <span className="text-[10px] text-muted-foreground">
                 {isOpen ? '\u25BC' : '\u25B6'}
               </span>
             </button>
 
             {isOpen && (
-              <div className="px-3 py-2 bg-white">
+              <div className="px-3 py-2 bg-card">
                 {state.error ? (
                   <p className="text-xs text-red-600">{state.error}</p>
                 ) : (

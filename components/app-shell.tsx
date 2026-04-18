@@ -32,16 +32,16 @@ export function AppShell({ children, activePath, user }: AppShellProps) {
   const [drawerOpen, setDrawerOpen] = useState(false);
 
   return (
-    <div className="relative isolate min-h-screen overflow-hidden bg-slate-50 text-slate-900">
+    <div className="relative isolate min-h-screen overflow-hidden bg-background text-foreground">
       <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_top_left,_rgba(56,189,248,0.08),_transparent_35%),linear-gradient(180deg,_#f8fafc_0%,_#f1f5f9_100%)]" />
 
-      <aside className="sticky left-0 top-0 z-20 hidden h-screen w-60 shrink-0 border-r border-slate-200 bg-slate-900 text-slate-100 lg:fixed lg:flex lg:flex-col">
+      <aside className="sticky left-0 top-0 z-20 hidden h-screen w-60 shrink-0 border-r border-border bg-slate-900 text-slate-100 lg:fixed lg:flex lg:flex-col">
         <SidebarContent activePath={activePath} user={user} />
       </aside>
 
       <button
         type="button"
-        className="fixed left-4 top-4 z-40 inline-flex h-11 w-11 items-center justify-center rounded-lg border border-slate-200 bg-white text-slate-600 shadow-md transition-all hover:bg-slate-50 active:scale-95 lg:hidden"
+        className="fixed left-4 top-4 z-40 inline-flex h-11 w-11 items-center justify-center rounded-lg border border-border bg-card text-muted-foreground shadow-md transition-all hover:bg-accent active:scale-95 lg:hidden"
         onClick={() => setDrawerOpen(true)}
         aria-label="打开菜单"
         aria-expanded={drawerOpen}

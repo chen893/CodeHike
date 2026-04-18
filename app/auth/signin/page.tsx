@@ -5,11 +5,13 @@ import Link from 'next/link'
 
 export default function SignInPage() {
   return (
-    <div className="flex min-h-screen flex-col items-center justify-center bg-slate-50 px-4 py-12 dark:bg-slate-950">
-      <div className="w-full max-w-md space-y-8 text-center">
+    <div className="relative flex min-h-screen flex-col items-center justify-center bg-background px-4 py-12">
+      <div className="pointer-events-none fixed inset-0 bg-[radial-gradient(circle_at_top,_var(--primary)/0.06,_transparent_40%)]" />
+
+      <div className="relative z-10 w-full max-w-md space-y-8 text-center">
         <div className="flex flex-col items-center space-y-2">
           <Link href="/" className="group flex items-center space-x-2 transition-opacity hover:opacity-80">
-            <div className="flex h-12 w-12 items-center justify-center rounded-lg bg-cyan-600 text-white shadow-lg shadow-cyan-500/20">
+            <div className="flex h-12 w-12 items-center justify-center rounded-lg bg-primary text-primary-foreground shadow-lg shadow-primary/20">
               <svg
                 xmlns="http://www.w3.org/2000/svg"
                 viewBox="0 0 24 24"
@@ -25,20 +27,20 @@ export default function SignInPage() {
                 <path d="m12 18-2-12" />
               </svg>
             </div>
-            <span className="text-3xl font-bold text-slate-900 dark:text-slate-50">
+            <span className="text-3xl font-bold text-foreground">
               VibeDocs
             </span>
           </Link>
-          <p className="mt-4 text-slate-600 dark:text-slate-400">
+          <p className="mt-4 text-muted-foreground">
             登录后可以创建、编辑和发布源码教程。
           </p>
         </div>
 
-        <div className="rounded-lg border border-slate-200 bg-white p-8 shadow-sm dark:border-slate-800 dark:bg-slate-900">
+        <div className="rounded-lg border border-border bg-card p-8 shadow-sm">
           <div className="space-y-6">
             <button
               onClick={() => signIn('github', { callbackUrl: '/' })}
-              className="group relative flex w-full items-center justify-center gap-3 rounded-lg bg-cyan-600 px-4 py-3 text-sm font-semibold text-white transition-all hover:bg-cyan-500 active:scale-[0.98] dark:bg-cyan-500 dark:text-slate-950 dark:hover:bg-cyan-400"
+              className="group relative flex w-full items-center justify-center gap-3 rounded-lg bg-primary px-4 py-3 text-sm font-semibold text-primary-foreground transition-all hover:bg-primary/90 active:scale-[0.98]"
               style={{ minHeight: '44px' }}
             >
               <svg
@@ -53,10 +55,10 @@ export default function SignInPage() {
 
             <div className="relative">
               <div className="absolute inset-0 flex items-center">
-                <span className="w-full border-t border-slate-200 dark:border-slate-800" />
+                <span className="w-full border-t border-border" />
               </div>
               <div className="relative flex justify-center text-xs uppercase">
-                <span className="bg-white px-2 text-slate-500 dark:bg-slate-900 dark:text-slate-400">
+                <span className="bg-card px-2 text-muted-foreground">
                   或
                 </span>
               </div>
@@ -64,7 +66,7 @@ export default function SignInPage() {
 
             <button
               onClick={() => signIn('linuxdo', { callbackUrl: '/' })}
-              className="group relative flex w-full items-center justify-center gap-3 rounded-lg bg-slate-800 px-4 py-3 text-sm font-semibold text-white transition-all hover:bg-slate-700 active:scale-[0.98] dark:bg-slate-200 dark:text-slate-900 dark:hover:bg-slate-300"
+              className="group relative flex w-full items-center justify-center gap-3 rounded-lg bg-secondary px-4 py-3 text-sm font-semibold text-secondary-foreground transition-all hover:bg-secondary/80 active:scale-[0.98]"
               style={{ minHeight: '44px' }}
             >
               <svg className="h-5 w-5" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
@@ -73,7 +75,7 @@ export default function SignInPage() {
               <span>使用 Linux.do 账号登录</span>
             </button>
 
-            <p className="text-center text-xs leading-relaxed text-slate-500 dark:text-slate-400">
+            <p className="text-center text-xs leading-relaxed text-muted-foreground">
               认证完成后会回到首页，你也可以从侧边栏继续进入草稿箱。
             </p>
           </div>
@@ -82,7 +84,7 @@ export default function SignInPage() {
         <div className="pt-4">
           <Link
             href="/"
-            className="inline-flex items-center text-sm font-medium text-slate-600 transition-colors hover:text-cyan-600 dark:text-slate-400 dark:hover:text-cyan-400"
+            className="inline-flex items-center text-sm font-medium text-muted-foreground transition-colors hover:text-primary"
           >
             <svg
               xmlns="http://www.w3.org/2000/svg"

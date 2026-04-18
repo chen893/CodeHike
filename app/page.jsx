@@ -29,10 +29,10 @@ export default async function Page() {
 
   return (
     <AppShell activePath="/" user={user}>
-      <div className="mx-auto w-full max-w-6xl space-y-20 px-4 py-12 sm:px-6 lg:px-8">
+      <div className="container-app space-y-20 py-12">
         <div className="relative overflow-hidden rounded-lg bg-slate-900 px-6 py-8 text-white shadow-2xl sm:px-12 sm:py-12">
           <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_top_left,_rgba(56,189,248,0.25),_transparent_45%),linear-gradient(135deg,_#0f172a_0%,_#1e293b_100%)]" />
-          
+
           <div className="relative z-10 flex flex-col items-start gap-8">
             <div className="space-y-6">
               <h1 className="text-4xl font-extrabold sm:text-5xl">
@@ -43,7 +43,7 @@ export default async function Page() {
               </p>
             </div>
             <div className="flex flex-wrap gap-4">
-              <Button asChild size="lg" className="h-12 px-8 bg-cyan-400 font-bold text-slate-950 shadow-[0_0_25px_rgba(34,211,238,0.35)] transition-all hover:bg-cyan-300 active:scale-95">
+              <Button asChild size="lg" className="h-12 px-8 bg-primary font-bold text-primary-foreground shadow-[0_0_25px_rgba(34,211,238,0.35)] transition-all hover:bg-primary/90 active:scale-95">
                 <Link href="/new">开始创建</Link>
               </Button>
               <Button
@@ -77,37 +77,37 @@ export default async function Page() {
               {publishedTutorials.map((pub) => (
                 <Card
                   key={pub.id}
-                  className="group flex flex-col overflow-hidden rounded-lg border-slate-200/60 bg-white shadow-sm transition-all hover:-translate-y-1.5 hover:shadow-xl"
+                  className="group flex flex-col overflow-hidden rounded-lg border-border/60 bg-card shadow-sm transition-all hover:-translate-y-1.5 hover:shadow-xl"
                 >
                   <CardHeader className="flex-1 p-6 pb-4">
                     <div className="mb-4 flex items-center justify-between">
-                      <Badge variant="secondary" className="bg-slate-100/80 text-slate-600 font-medium">
+                      <Badge variant="secondary" className="bg-secondary/80 text-muted-foreground font-medium">
                         /{pub.slug}
                       </Badge>
-                      <Badge className="bg-cyan-500/10 text-cyan-700 border-cyan-500/20 font-semibold">已发布</Badge>
+                      <Badge className="bg-primary/10 text-primary border-primary/20 font-semibold">已发布</Badge>
                     </div>
-                    <CardTitle className="mb-3 text-lg font-bold text-slate-900 group-hover:text-cyan-600 transition-colors line-clamp-2">
+                    <CardTitle className="mb-3 text-lg font-bold text-foreground group-hover:text-primary transition-colors line-clamp-2">
                       {pub.tutorialDraftSnapshot.meta.title}
                     </CardTitle>
-                    <CardDescription className="line-clamp-3 text-[14px] leading-relaxed text-slate-500">
+                    <CardDescription className="line-clamp-3 text-[14px] leading-relaxed text-muted-foreground">
                       {pub.tutorialDraftSnapshot.meta.description}
                     </CardDescription>
                   </CardHeader>
-                  <CardContent className="space-y-4 border-t border-slate-50 p-6 pt-5">
+                  <CardContent className="space-y-4 border-t border-border/30 p-6 pt-5">
                     <div className="flex flex-wrap gap-2">
                       {pub.lang && (
-                        <Badge variant="outline" className="text-xs border-slate-200 text-slate-500 font-normal">
+                        <Badge variant="outline" className="text-xs border-border text-muted-foreground font-normal">
                           {pub.lang}
                         </Badge>
                       )}
-                      <Badge variant="outline" className="text-xs border-slate-200 text-slate-500 font-normal">
+                      <Badge variant="outline" className="text-xs border-border text-muted-foreground font-normal">
                         {pub.stepCount} 步
                       </Badge>
-                      <Badge variant="outline" className="text-xs border-slate-200 text-slate-500 font-normal">
+                      <Badge variant="outline" className="text-xs border-border text-muted-foreground font-normal">
                         约 {pub.readingTime} 分钟
                       </Badge>
                     </div>
-                    <Button asChild className="h-11 w-full bg-slate-900 text-white hover:bg-cyan-600 transition-colors font-semibold">
+                    <Button asChild className="h-11 w-full bg-primary text-primary-foreground hover:bg-primary/90 transition-colors font-semibold">
                       <Link href={`/${pub.slug}`}>阅读全文</Link>
                     </Button>
                   </CardContent>
@@ -127,42 +127,42 @@ export default async function Page() {
             {tutorials.map((tutorial) => (
               <Card
                 key={tutorial.slug}
-                className="group flex flex-col overflow-hidden rounded-lg border-slate-200/60 bg-white shadow-sm transition-all hover:-translate-y-1.5 hover:shadow-xl"
+                className="group flex flex-col overflow-hidden rounded-lg border-border/60 bg-card shadow-sm transition-all hover:-translate-y-1.5 hover:shadow-xl"
               >
                 <CardHeader className="flex-1 p-6 pb-4">
-                  <Badge variant="outline" className="mb-4 w-fit border-slate-200 text-slate-500 font-medium">
+                  <Badge variant="outline" className="mb-4 w-fit border-border text-muted-foreground font-medium">
                     /{tutorial.slug}
                   </Badge>
-                  <CardTitle className="mb-3 text-lg font-bold text-slate-900 group-hover:text-cyan-600 transition-colors line-clamp-2">
+                  <CardTitle className="mb-3 text-lg font-bold text-foreground group-hover:text-primary transition-colors line-clamp-2">
                     {tutorial.title}
                   </CardTitle>
-                  <CardDescription className="line-clamp-3 text-[14px] leading-relaxed text-slate-500">
+                  <CardDescription className="line-clamp-3 text-[14px] leading-relaxed text-muted-foreground">
                     {tutorial.description}
                   </CardDescription>
                 </CardHeader>
-                <CardContent className="space-y-4 border-t border-slate-50 p-6 pt-5">
+                <CardContent className="space-y-4 border-t border-border/30 p-6 pt-5">
                   <div className="flex flex-wrap gap-2">
                     {tutorial.lang && (
-                      <Badge variant="outline" className="text-xs border-slate-200 text-slate-500 font-normal">
+                      <Badge variant="outline" className="text-xs border-border text-muted-foreground font-normal">
                         {tutorial.lang}
                       </Badge>
                     )}
-                    <Badge variant="outline" className="text-xs border-slate-200 text-slate-500 font-normal">
+                    <Badge variant="outline" className="text-xs border-border text-muted-foreground font-normal">
                       {tutorial.stepCount} 步
                     </Badge>
-                    <Badge variant="outline" className="text-xs border-slate-200 text-slate-500 font-normal">
+                    <Badge variant="outline" className="text-xs border-border text-muted-foreground font-normal">
                       约 {tutorial.readingTime} 分钟
                     </Badge>
                   </div>
                   <div className="flex gap-3">
-                    <Button asChild variant="secondary" className="h-11 flex-1 bg-slate-100 text-slate-700 hover:bg-slate-200 font-semibold">
+                    <Button asChild variant="secondary" className="h-11 flex-1 font-semibold">
                       <Link href={`/${tutorial.slug}`}>静态</Link>
                     </Button>
-                    <Button asChild variant="secondary" className="h-11 flex-1 bg-slate-100 text-slate-700 hover:bg-slate-200 font-semibold">
+                    <Button asChild variant="secondary" className="h-11 flex-1 font-semibold">
                       <Link href={`/${tutorial.slug}/request`}>远程</Link>
                     </Button>
                   </div>
-                  <Button asChild variant="outline" className="h-11 w-full border-slate-200 text-slate-500 hover:bg-slate-50 font-medium">
+                  <Button asChild variant="outline" className="h-11 w-full border-border text-muted-foreground hover:bg-accent font-medium">
                     <Link href={`/api/tutorials/${tutorial.slug}`}>查看原始数据</Link>
                   </Button>
                 </CardContent>
@@ -179,13 +179,13 @@ function SectionHeading({ eyebrow, title, description }) {
   return (
     <div className="space-y-4">
       <div className="flex items-center gap-3">
-        <div className="h-px w-10 bg-cyan-500" />
-        <p className="text-xs font-bold uppercase text-cyan-600">
+        <div className="h-px w-10 bg-primary" />
+        <p className="text-xs font-bold uppercase text-primary">
           {eyebrow}
         </p>
       </div>
-      <h2 className="text-3xl font-bold text-slate-900 sm:text-4xl">{title}</h2>
-      <p className="max-w-3xl text-base leading-relaxed text-slate-500">{description}</p>
+      <h2 className="text-3xl font-bold text-foreground sm:text-4xl">{title}</h2>
+      <p className="max-w-3xl text-base leading-relaxed text-muted-foreground">{description}</p>
     </div>
   )
 }

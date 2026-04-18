@@ -16,7 +16,7 @@ export function TutorialScrollyDemo({
   title,
   fileName,
   slug = undefined,
-  showBreadcrumb = true,
+  showBreadcrumb = false,
   chapters,
   stepChapterMeta,
   previewMode = false,
@@ -32,16 +32,16 @@ export function TutorialScrollyDemo({
 
   return (
     <SelectionProvider
-      className="grid min-h-screen bg-[#f7f8fa] text-slate-900 lg:grid-cols-[1fr_1fr] lg:gap-x-8 xl:gap-x-12"
+      className="grid min-h-screen bg-background text-foreground lg:grid-cols-[1fr_1fr] lg:gap-x-8 xl:gap-x-12"
       rootMargin={previewMode ? "0px 0px -68% 0px" : "0% 0% -42% 0%"}
     >
-      <aside className="hidden min-h-screen min-w-0 border-r border-slate-200 bg-[#1e1e2e] lg:block">
-        <div className="sticky top-0 flex h-screen items-start justify-center overflow-hidden">
+      <aside className={`hidden min-w-0 border-r border-border bg-[#1e1e2e] lg:block ${previewMode ? 'min-h-[100cqh]' : 'min-h-screen'}`}>
+        <div className={`sticky top-0 flex items-start justify-center overflow-hidden ${previewMode ? 'h-[100cqh]' : 'h-screen'}`}>
           <SelectedCodeFrame steps={steps} fileName={fileName} />
         </div>
       </aside>
 
-      <div className="relative min-h-screen min-w-0 bg-[#f7f8fa] px-6 pb-12 lg:px-0 lg:pb-0">
+      <div className="relative min-h-screen min-w-0 bg-background px-6 pb-12 lg:px-0 lg:pb-0">
         {chapters && chapters.length > 1 && stepChapterMeta ? (
           <ChapterRail
             steps={steps}
@@ -55,18 +55,18 @@ export function TutorialScrollyDemo({
         )}
 
         {showBreadcrumb && (
-          <nav className="flex items-center gap-2 px-4 py-6 text-xs text-slate-400 sm:px-8 sm:text-sm lg:px-12 lg:pt-10">
+          <nav className="flex items-center gap-2 px-4 py-4 text-xs text-muted-foreground sm:px-8 sm:text-sm lg:px-12 lg:pt-8">
             {slug ? (
-              <Link href="/" className="transition-colors hover:text-slate-900">
+              <Link href="/" className="transition-colors hover:text-foreground">
                 VibeDocs
               </Link>
             ) : (
               <span className="cursor-default">VibeDocs</span>
             )}
-            <span className="select-none text-slate-300">/</span>
-            <span className="cursor-default transition-colors hover:text-slate-600">教程</span>
-            <span className="select-none text-slate-300">/</span>
-            <span className="max-w-[120px] truncate font-medium text-slate-900 sm:max-w-[240px]">
+            <span className="select-none text-border">/</span>
+            <span className="cursor-default transition-colors hover:text-foreground">教程</span>
+            <span className="select-none text-border">/</span>
+            <span className="max-w-[120px] truncate font-medium text-foreground sm:max-w-[240px]">
               {title || "教程"}
             </span>
           </nav>
@@ -76,7 +76,7 @@ export function TutorialScrollyDemo({
           <>
             <button
               onClick={() => setShareOpen(true)}
-              className="fixed right-4 top-4 z-40 flex h-11 w-11 items-center justify-center rounded-lg border border-slate-200 bg-white/90 text-slate-500 shadow-sm backdrop-blur-sm transition-all hover:bg-white hover:text-slate-700 hover:shadow-md lg:right-8 lg:top-8"
+              className="fixed right-4 top-4 z-40 flex h-11 w-11 items-center justify-center rounded-lg border border-border bg-card/90 text-muted-foreground shadow-sm backdrop-blur-sm transition-all hover:bg-card hover:text-foreground hover:shadow-md lg:right-8 lg:top-8"
               aria-label="分享教程"
             >
               <svg className="h-5 w-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
@@ -98,14 +98,14 @@ export function TutorialScrollyDemo({
 
         {intro ? (
           <section className="flex min-h-auto flex-col justify-center py-10 pl-4 sm:py-12 sm:pl-8 lg:min-h-screen lg:pl-12 lg:pr-16 lg:pb-16 lg:pt-12">
-            <h1 className="text-5xl font-extrabold leading-tight text-slate-900 sm:text-6xl lg:text-7xl">
+            <h1 className="text-5xl font-extrabold leading-tight text-foreground sm:text-6xl lg:text-7xl">
               {title || "教程渲染器"}
             </h1>
             <div className="mt-6">
               {intro.map((paragraph, index) => (
                 <p
                   key={`intro-${index}`}
-                  className="mt-4 w-full max-w-2xl text-lg leading-relaxed text-slate-500 sm:text-xl"
+                  className="mt-4 w-full max-w-2xl text-lg leading-relaxed text-muted-foreground sm:text-xl"
                 >
                   {paragraph}
                 </p>
@@ -142,11 +142,11 @@ export function TutorialScrollyDemo({
                         {step.eyebrow}
                       </p>
                     )}
-                    <h2 className="text-3xl font-bold leading-tight text-slate-900 sm:text-4xl lg:text-5xl">
+                    <h2 className="text-3xl font-bold leading-tight text-foreground sm:text-4xl lg:text-5xl">
                       {step.title}
                     </h2>
                     {step.lead && (
-                      <p className="mt-8 text-lg font-medium leading-relaxed text-slate-800 sm:text-xl">
+                      <p className="mt-8 text-lg font-medium leading-relaxed text-foreground/80 sm:text-xl">
                         {step.lead}
                       </p>
                     )}
@@ -154,7 +154,7 @@ export function TutorialScrollyDemo({
                       {step.paragraphs.map((paragraph, paragraphIndex) => (
                         <p
                           key={`step-${index}-p-${paragraphIndex}`}
-                          className="mt-6 text-base leading-relaxed text-slate-600 sm:text-lg"
+                          className="mt-6 text-base leading-relaxed text-muted-foreground sm:text-lg"
                         >
                           {paragraph}
                         </p>
@@ -174,7 +174,7 @@ export function TutorialScrollyDemo({
           
           {showCompletion && (
             <div className="px-4 pb-16 pt-10 sm:px-2 lg:pl-4 lg:pr-16">
-              <div className="max-w-2xl border-t border-slate-200 pt-16">
+              <div className="max-w-2xl border-t border-border pt-16">
                 <div className="mb-6 flex items-center gap-2 text-emerald-600">
                   <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2.5">
                     <path strokeLinecap="round" strokeLinejoin="round" d="M9 12.75L11.25 15 15 9.75M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
@@ -182,24 +182,24 @@ export function TutorialScrollyDemo({
                   <span className="text-sm font-bold uppercase">教程学习完成</span>
                 </div>
 
-                <h2 className="text-3xl font-bold text-slate-900 sm:text-4xl">
+                <h2 className="text-3xl font-bold text-foreground sm:text-4xl">
                   干得漂亮！你已经完成了本教程。
                 </h2>
 
-                <p className="mt-6 text-lg text-slate-600">
+                <p className="mt-6 text-lg text-muted-foreground">
                   感谢阅读。希望这些步骤对你有所帮助，现在你可以继续探索或尝试自己创作一个教程。
                 </p>
 
                 <div className="mt-10 flex flex-wrap gap-4">
                   <Link
                     href="/"
-                    className="inline-flex h-11 items-center justify-center rounded-lg border border-slate-200 bg-white px-5 text-sm font-medium text-slate-600 transition-colors hover:bg-slate-50 hover:text-slate-900"
+                    className="inline-flex h-11 items-center justify-center rounded-lg border border-border bg-card px-5 text-sm font-medium text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
                   >
                     返回首页
                   </Link>
                   <Link
                     href="/explore"
-                    className="inline-flex h-11 items-center justify-center rounded-lg border border-slate-200 bg-white px-5 text-sm font-medium text-slate-600 transition-colors hover:bg-slate-50 hover:text-slate-900"
+                    className="inline-flex h-11 items-center justify-center rounded-lg border border-border bg-card px-5 text-sm font-medium text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
                   >
                     发现更多
                   </Link>

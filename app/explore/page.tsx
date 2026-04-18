@@ -58,19 +58,19 @@ export default async function ExplorePage({
 
   return (
     <AppShell activePath="/explore" user={user}>
-      <div className="mx-auto w-full max-w-6xl space-y-8 px-4 py-10 sm:px-6 lg:px-8">
+      <div className="container-app space-y-8 py-10">
         {/* Header */}
         <div className="space-y-3">
           <div className="flex items-center gap-3">
-            <div className="h-px w-8 bg-cyan-500" />
-            <p className="text-[10px] font-bold uppercase tracking-[0.2em] text-cyan-600">
+            <div className="h-px w-8 bg-primary" />
+            <p className="text-[10px] font-bold uppercase tracking-[0.2em] text-primary">
               探索
             </p>
           </div>
-          <h1 className="text-3xl font-bold tracking-tight text-slate-900 sm:text-4xl">
+          <h1 className="text-3xl font-bold tracking-tight text-foreground sm:text-4xl">
             探索教程
           </h1>
-          <p className="max-w-2xl text-base leading-relaxed text-slate-500">
+          <p className="max-w-2xl text-base leading-relaxed text-muted-foreground">
             浏览所有已发布的交互式编程教程，按标签或关键词搜索。
           </p>
         </div>
@@ -87,9 +87,9 @@ export default async function ExplorePage({
         {/* Active filters summary */}
         {(activeTag || lang) && (
           <div className="flex items-center gap-2 flex-wrap">
-            <span className="text-sm text-slate-500">当前筛选：</span>
+            <span className="text-sm text-muted-foreground">当前筛选：</span>
             {activeTag && (
-              <Badge className="bg-cyan-50 text-cyan-700 border-cyan-200">
+              <Badge className="bg-primary/10 text-primary border-primary/30">
                 {activeTag.name}
                 <Link href={buildFilterUrl({ tag: undefined, lang, search, sort })} className="ml-1.5 hover:text-cyan-900">
                   ×
@@ -97,9 +97,9 @@ export default async function ExplorePage({
               </Badge>
             )}
             {lang && (
-              <Badge className="bg-slate-100 text-slate-700 border-slate-200">
+              <Badge className="bg-secondary text-secondary-foreground border-border">
                 {lang}
-                <Link href={buildFilterUrl({ tag, lang: undefined, search, sort })} className="ml-1.5 hover:text-slate-900">
+                <Link href={buildFilterUrl({ tag, lang: undefined, search, sort })} className="ml-1.5 hover:text-foreground">
                   ×
                 </Link>
               </Badge>
@@ -108,19 +108,19 @@ export default async function ExplorePage({
         )}
 
         {/* Results count */}
-        <p className="text-sm text-slate-500">
+        <p className="text-sm text-muted-foreground">
           {search ? `搜索 "${search}" 找到 ` : '共 '}
           {total} 篇教程
         </p>
 
         {/* Tutorial grid */}
         {tutorials.length === 0 ? (
-          <div className="rounded-xl border border-dashed border-slate-300 p-12 text-center">
+          <div className="rounded-xl border border-dashed border-border p-12 text-center">
             <p className="text-sm text-slate-400">
               {search ? '没有找到匹配的教程。试试其他关键词？' : '暂无已发布的教程。'}
             </p>
             {!search && (
-              <Button asChild className="mt-4 bg-cyan-400 text-slate-950 hover:bg-cyan-300">
+              <Button asChild className="mt-4 bg-primary text-primary-foreground">
                 <Link href="/new">创建第一篇教程</Link>
               </Button>
             )}
@@ -130,7 +130,7 @@ export default async function ExplorePage({
             {tutorials.map((tutorial) => (
               <Card
                 key={tutorial.id}
-                className="group flex flex-col border-slate-200/60 bg-white shadow-sm transition-all hover:-translate-y-1 hover:shadow-xl"
+                className="group flex flex-col border-border/60 bg-white shadow-sm transition-all hover:-translate-y-1 hover:shadow-xl"
               >
                 <CardHeader className="flex-1 p-5 pb-4">
                   <div className="mb-3 flex items-center justify-between">
@@ -138,22 +138,22 @@ export default async function ExplorePage({
                       /{tutorial.slug}
                     </Badge>
                   </div>
-                  <CardTitle className="mb-2 text-base font-bold text-slate-900 group-hover:text-cyan-600 transition-colors">
+                  <CardTitle className="mb-2 text-base font-bold text-foreground group-hover:text-primary transition-colors">
                     {tutorial.title}
                   </CardTitle>
                   {tutorial.description && (
-                    <CardDescription className="line-clamp-3 text-sm leading-relaxed text-slate-500">
+                    <CardDescription className="line-clamp-3 text-sm leading-relaxed text-muted-foreground">
                       {tutorial.description}
                     </CardDescription>
                   )}
                 </CardHeader>
-                <CardContent className="space-y-3 border-t border-slate-50 p-5 pt-4">
+                <CardContent className="space-y-3 border-t border-border/30 p-5 pt-4">
                   {/* Tags */}
                   {tutorial.tags.length > 0 && (
                     <div className="flex flex-wrap gap-1">
                       {tutorial.tags.slice(0, 4).map((t) => (
                         <Link key={t.id} href={`/explore?tag=${t.slug}`}>
-                          <Badge variant="outline" className="text-[10px] border-cyan-200 text-cyan-600 hover:bg-cyan-50">
+                          <Badge variant="outline" className="text-[10px] border-primary/30 text-primary hover:bg-primary/10">
                             {t.name}
                           </Badge>
                         </Link>
@@ -163,18 +163,18 @@ export default async function ExplorePage({
                   {/* Meta badges */}
                   <div className="flex flex-wrap gap-1.5">
                     {tutorial.lang && (
-                      <Badge variant="outline" className="text-[11px] border-slate-200 text-slate-500">
+                      <Badge variant="outline" className="text-[11px] border-border text-muted-foreground">
                         {tutorial.lang}
                       </Badge>
                     )}
-                    <Badge variant="outline" className="text-[11px] border-slate-200 text-slate-500">
+                    <Badge variant="outline" className="text-[11px] border-border text-muted-foreground">
                       {tutorial.stepCount} 步
                     </Badge>
-                    <Badge variant="outline" className="text-[11px] border-slate-200 text-slate-500">
+                    <Badge variant="outline" className="text-[11px] border-border text-muted-foreground">
                       约 {tutorial.readingTime} 分钟
                     </Badge>
                     {tutorial.viewCount > 0 && (
-                      <Badge variant="outline" className="text-[11px] border-slate-200 text-slate-500">
+                      <Badge variant="outline" className="text-[11px] border-border text-muted-foreground">
                         {tutorial.viewCount} 次浏览
                       </Badge>
                     )}
@@ -184,7 +184,7 @@ export default async function ExplorePage({
                     {tutorial.authorUsername ? (
                       <Link
                         href={`/u/${tutorial.authorUsername}`}
-                        className="flex items-center gap-2 text-xs text-slate-400 hover:text-cyan-600 transition-colors"
+                        className="flex items-center gap-2 text-xs text-muted-foreground hover:text-primary transition-colors"
                       >
                         {tutorial.authorImage && (
                           <img src={tutorial.authorImage} alt="" className="h-5 w-5 rounded-full" />
@@ -194,7 +194,7 @@ export default async function ExplorePage({
                     ) : (
                       <span />
                     )}
-                    <Button asChild size="sm" className="bg-slate-900 text-white hover:bg-slate-800">
+                    <Button asChild size="sm" className="bg-primary text-primary-foreground hover:bg-primary/90">
                       <Link href={`/${tutorial.slug}`}>阅读</Link>
                     </Button>
                   </div>
@@ -214,7 +214,7 @@ export default async function ExplorePage({
                 </Link>
               </Button>
             )}
-            <span className="text-sm text-slate-500">
+            <span className="text-sm text-muted-foreground">
               第 {page} / {totalPages} 页
             </span>
             {page < totalPages && (

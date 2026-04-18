@@ -40,6 +40,13 @@ const activeGenerations = new Map<
 
 const GENERATION_JOB_LEASE_MS = 5 * 60 * 1000;
 
+async function recoverStaleGenerationJobsFor(context: string) {
+  const recoveredCount = await generationJobRepo.recoverStaleGenerationJobs();
+  if (recoveredCount > 0) {
+    console.log(`[generate-v2] Recovered ${recoveredCount} stale generation job(s) before ${context}`);
+  }
+}
+
 /**
  * Request cancellation of an in-progress generation.
  *
@@ -263,10 +270,7 @@ export async function initiateGeneration(
   // Clean up stale jobs before checking the draft state. A crashed request can
   // leave drafts.generationState='running'; recovery must get the first chance
   // to clear that state before we reject a new generation.
-  const recoveredCount = await generationJobRepo.recoverStaleGenerationJobs();
-  if (recoveredCount > 0) {
-    console.log(`[generate-v2] Recovered ${recoveredCount} stale generation job(s)`);
-  }
+  await recoverStaleGenerationJobsFor("starting generation");
 
   const draft = await draftRepo.getDraftById(draftId, userId);
   if (!draft) throw new Error("Draft not found");
@@ -295,6 +299,7 @@ export async function initiateGeneration(
       },
       tx
     );
+    await draftRepo.clearDraftTutorialForGeneration(draftId, tx);
     await draftRepo.updateDraftGenerationState(draftId, "running", undefined, tx);
     await draftRepo.updateDraftActiveGenerationJobId(draftId, job.id, tx);
   });
@@ -550,6 +555,11 @@ export async function getGenerationStatus(draftId: string, userId: string) {
   const { eq } = await import("drizzle-orm");
   const { mapJobToRecoverability } = await import("../types/generation-job");
 
+  // Status polling is the reconnect path. Recover stale jobs here too so a
+  // page opened on an expired running job can leave the progress screen without
+  // requiring the user to start another generation first.
+  await recoverStaleGenerationJobsFor("reading generation status");
+
   const [draft] = await db
     .select({ id: drafts.id, userId: drafts.userId })
     .from(drafts)
@@ -575,6 +585,7 @@ export async function getGenerationStatus(draftId: string, userId: string) {
       currentStepIndex: job.currentStepIndex,
       totalSteps: job.totalSteps,
       modelId: job.modelId,
+      cancelRequested: job.cancelRequested,
       errorCode: job.errorCode,
       errorMessage: job.errorMessage,
       recoverability: mapJobToRecoverability(job),

@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
+import { Loader2 } from 'lucide-react';
 import type {
   GenerationContext,
   GenerationProgressViewModel,
@@ -19,7 +20,6 @@ import {
   secondaryButton,
   sectionLabel,
   shellClass,
-  softCardClass,
   titleClass,
 } from './generation-progress-utils';
 import type { V2Status } from './generation-progress-types';
@@ -41,12 +41,14 @@ interface GenerationProgressViewProps {
   draftId: string;
   context: GenerationContext;
   controller: GenerationProgressViewModel;
+  onExit?: () => void;
 }
 
 export function GenerationProgressView({
   draftId,
   context,
   controller,
+  onExit,
 }: GenerationProgressViewProps) {
   return (
     <V2ProgressUI
@@ -68,6 +70,7 @@ export function GenerationProgressView({
       onRetry={controller.onRetry}
       onRetryFromStep={controller.onRetryFromStep}
       onCancel={controller.onCancel}
+      onExit={onExit}
       isGenerating={controller.isGenerating}
     />
   );
@@ -92,6 +95,7 @@ function V2ProgressUI({
   onRetry,
   onRetryFromStep,
   onCancel,
+  onExit,
   isGenerating,
 }: {
   context: GenerationContext;
@@ -112,6 +116,7 @@ function V2ProgressUI({
   onRetry: () => void;
   onRetryFromStep: (stepIndex: number) => void;
   onCancel: () => void;
+  onExit?: () => void;
   isGenerating: boolean;
 }) {
   const router = useRouter();
@@ -163,12 +168,12 @@ function V2ProgressUI({
           </div>
           <button
             type="button"
-            className="inline-flex shrink-0 items-center gap-2 rounded-md border border-cyan-200 bg-cyan-50 px-3 py-2 text-xs font-semibold text-cyan-700 shadow-sm transition hover:border-cyan-300 hover:bg-cyan-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-300 focus-visible:ring-offset-2"
+            className="inline-flex shrink-0 items-center gap-2 rounded-md bg-primary/10 px-3 py-2 text-xs font-semibold text-primary transition hover:bg-primary/20 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
             onClick={() => setPreviewOpen(true)}
           >
             实时预览
             {completedSteps.length > 0 && totalSteps > 0 && (
-              <span className="rounded-full bg-white px-2 py-0.5 text-[10px] font-bold text-cyan-700">
+              <span className="rounded-full bg-card px-2 py-0.5 text-[10px] font-bold text-primary">
                 {completedSteps.length}/{totalSteps}
               </span>
             )}
@@ -176,18 +181,9 @@ function V2ProgressUI({
         </div>
       )}
 
-      <div className="grid gap-5 p-5 lg:grid-cols-[1.6fr_1fr] lg:p-6">
+      <div className="grid gap-5 p-5 lg:grid-cols-[1fr_1fr] lg:p-6">
         <section className={heroClass}>
           <div className="space-y-4">
-            <div className="flex flex-wrap items-center gap-2">
-              <span className="inline-flex items-center rounded-md border border-slate-200 bg-white px-2 py-0.5 text-[10px] font-bold uppercase tracking-widest text-slate-500">
-                教程生成
-              </span>
-              <span className="inline-flex items-center rounded-md border border-slate-200 bg-white px-2 py-0.5 text-[10px] font-medium text-slate-400">
-                {draftId.slice(0, 8)}
-              </span>
-            </div>
-
             <div className="space-y-2">
               <h2 className="text-xl font-bold tracking-tight text-slate-900">
                 {context.topic ? `正在生成《${context.topic}》` : headline.title}
@@ -206,237 +202,194 @@ function V2ProgressUI({
                   />
                 )}
               </div>
-              <div className="flex items-center justify-between text-[10px] font-bold uppercase tracking-wider text-slate-400">
+              <div className="flex items-center justify-between text-[11px] font-semibold text-slate-500">
                 <div className="flex items-center gap-2">
                   {status !== 'error' && (
-                    <span className="inline-flex h-2 w-2 animate-pulse rounded-full bg-slate-900" />
+                    <Loader2 className="h-3.5 w-3.5 animate-spin text-muted-foreground" />
                   )}
                   <span>{headline.title}</span>
                 </div>
-                <span>{totalSteps > 0 ? `${completedCount} / ${totalSteps} 步` : '准备中'}</span>
+                <span>{totalSteps > 0 ? `已完成 ${completedCount} / ${totalSteps} 步` : '准备中'}</span>
               </div>
               {isGenerating && (
                 <div className="pt-1">
                   <button
                     type="button"
-                    className="inline-flex items-center justify-center rounded-md border border-slate-300 bg-white px-3 py-1.5 text-xs font-medium text-slate-600 transition-colors hover:border-rose-300 hover:bg-rose-50 hover:text-rose-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-slate-400 focus-visible:ring-offset-2"
+                    className="text-xs font-medium text-muted-foreground transition-colors hover:text-rose-700 focus-visible:outline-none"
                     onClick={onCancel}
+                    disabled={status === 'cancelling'}
                   >
-                    取消生成
+                    {status === 'cancelling' ? '正在取消...' : '取消生成'}
                   </button>
                 </div>
               )}
             </div>
           </div>
 
-          <div className="mt-6 grid gap-2 grid-cols-2 sm:grid-cols-3 xl:grid-cols-5">
-            <ContextStat label="源文件" value={`${context.sourceCount} ${context.sourceLanguageSummary} 文件`} />
-            <ContextStat label="读者" value={context.audienceLabel} />
-            <ContextStat label="输出" value={context.outputLanguage} />
-            <ContextStat label="规模" value={`${context.codeLineCount} LOC`} />
+          <div className="mt-5 flex flex-wrap items-center gap-2">
+            <ContextPill label="源文件" value={`${context.sourceCount} ${context.sourceLanguageSummary} 文件`} />
+            <ContextPill label="读者" value={context.audienceLabel} />
+            <ContextPill label="输出" value={context.outputLanguage} />
+            <ContextPill label="规模" value={`${context.codeLineCount} LOC`} />
           </div>
         </section>
 
-        <div className="space-y-5">
-          <section className={cardClass}>
-            <div className="flex items-start justify-between gap-4">
-              <div className="space-y-1">
-                <p className={sectionLabel}>教学步骤</p>
-                <h3 className={titleClass}>生成进度</h3>
-                <p className={mutedText}>
-                  {outline
-                    ? status === 'reconnecting'
-                      ? '生成仍在进行中，正在等待服务端完成。'
-                      : '大纲已就绪，正在逐步填充内容。'
-                    : totalSteps > 0
-                      ? '大纲还未返回，可以追踪当前进度。'
-                      : '正在等待大纲。'}
-                </p>
-              </div>
-              <span className="inline-flex items-center rounded-full bg-slate-100 px-3 py-1 text-xs font-medium text-slate-600">
-                {totalSteps > 0 ? `${totalSteps} 步` : '规划中'}
-              </span>
-            </div>
-
-            {outline?.meta.description && (
-              <p className="mt-4 rounded-2xl bg-slate-50 px-4 py-3 text-sm leading-6 text-slate-600">
-                {outline.meta.description}
+        <section className={cardClass}>
+          <div className="flex items-start justify-between gap-4">
+            <div className="space-y-1">
+              <p className={sectionLabel}>教学步骤</p>
+              <h3 className={titleClass}>生成进度</h3>
+              <p className={mutedText}>
+                {outline
+                  ? status === 'reconnecting'
+                    ? '生成仍在进行中，正在等待服务端完成。'
+                    : '大纲已就绪，正在逐步填充内容。'
+                  : totalSteps > 0
+                    ? '大纲还未返回，可以追踪当前进度。'
+                    : '正在等待大纲。'}
               </p>
-            )}
+            </div>
+            <span className="inline-flex items-center rounded-full bg-slate-100 px-3 py-1 text-xs font-medium text-slate-600">
+              {totalSteps > 0 ? `${totalSteps} 步` : '规划中'}
+            </span>
+          </div>
 
-            {displaySteps.length > 0 ? (
-              <div className={`${progressListClass} space-y-3`}>
-                {displaySteps.map((step) => (
-                  <article
-                    key={step.id}
-                    className={`flex gap-4 rounded-3xl border px-4 py-4 transition ${
+          {outline?.meta.description && (
+            <p className="mt-4 rounded-xl bg-slate-50 px-4 py-3 text-sm leading-6 text-slate-600">
+              {outline.meta.description}
+            </p>
+          )}
+
+          {displaySteps.length > 0 ? (
+            <div className={`${progressListClass} space-y-1.5`}>
+              {displaySteps.map((step) => (
+                <article
+                  key={step.id}
+                  className={`flex gap-3 rounded-lg px-3 py-2.5 transition ${
+                    step.isCompleted
+                      ? 'bg-emerald-50/80'
+                      : step.isCurrent
+                        ? 'bg-primary/8'
+                        : 'bg-muted/20'
+                  }`}
+                >
+                  <div
+                    className={`flex h-7 w-7 shrink-0 items-center justify-center rounded-full text-[11px] font-semibold ${
                       step.isCompleted
-                        ? 'border-emerald-200 bg-emerald-50/80'
+                        ? 'bg-emerald-500 text-white'
                         : step.isCurrent
-                          ? 'border-cyan-200 bg-cyan-50/80'
-                          : 'border-slate-200 bg-white'
+                          ? 'bg-primary text-primary-foreground'
+                          : 'bg-slate-100 text-slate-400'
+                    }`}
+                  >
+                    {step.isCompleted ? '✓' : step.index + 1}
+                  </div>
+                  <div className="min-w-0">
+                    <h4 className="text-sm font-medium text-slate-900">{step.title}</h4>
+                    <p className="mt-0.5 text-xs leading-5 text-slate-500">{step.meta}</p>
+                  </div>
+                </article>
+              ))}
+            </div>
+          ) : (
+            <div className={`${progressListClass} space-y-1.5`}>
+              {PLACEHOLDER_STEPS.map((step, index) => {
+                const completedIdx = getPlaceholderCompletedCount(status);
+                const isDone = index < completedIdx;
+                const isActive = index === completedIdx;
+                return (
+                  <div
+                    key={step.id}
+                    className={`flex gap-3 rounded-lg px-3 py-2.5 transition ${
+                      isDone
+                        ? 'bg-emerald-50/80'
+                        : isActive
+                          ? 'bg-primary/8'
+                          : 'bg-muted/20'
                     }`}
                   >
                     <div
-                      className={`mt-0.5 flex h-10 w-10 shrink-0 items-center justify-center rounded-full text-sm font-semibold ${
-                        step.isCompleted
+                      className={`flex h-7 w-7 shrink-0 items-center justify-center rounded-full text-[11px] font-semibold ${
+                        isDone
                           ? 'bg-emerald-500 text-white'
-                          : step.isCurrent
-                            ? 'bg-cyan-500 text-white'
-                            : 'bg-slate-100 text-slate-500'
+                          : isActive
+                            ? 'bg-primary text-primary-foreground'
+                            : 'bg-slate-100 text-slate-400'
                       }`}
                     >
-                      {step.isCompleted ? '✓' : step.index + 1}
+                      {isDone ? '✓' : index + 1}
                     </div>
                     <div className="min-w-0">
-                      <h4 className="font-medium text-slate-900">{step.title}</h4>
-                      <p className="mt-1 text-sm leading-6 text-slate-600">{step.meta}</p>
+                      <h4 className={`text-sm font-medium ${isDone ? 'text-slate-500' : isActive ? 'text-slate-900' : 'text-slate-400'}`}>
+                        {step.title}
+                      </h4>
+                      <p className={`mt-0.5 text-xs leading-5 ${isDone ? 'text-slate-400' : isActive ? 'text-slate-600' : 'text-slate-400'}`}>
+                        {isDone ? '已完成' : isActive ? '进行中...' : '等待中'}
+                      </p>
                     </div>
-                  </article>
-                ))}
-              </div>
-            ) : (
-              <div className={`${progressListClass} space-y-3`}>
-                {PLACEHOLDER_STEPS.map((step, index) => {
-                  const completedIdx = getPlaceholderCompletedCount(status);
-                  const isDone = index < completedIdx;
-                  const isActive = index === completedIdx;
-                  return (
-                    <div
-                      key={step.id}
-                      className={`flex gap-4 rounded-3xl border px-4 py-4 transition ${
-                        isDone
-                          ? 'border-emerald-200 bg-emerald-50/80'
-                          : isActive
-                            ? 'border-cyan-200 bg-cyan-50/80'
-                            : 'border-slate-200 bg-white'
-                      }`}
-                    >
-                      <div
-                        className={`mt-0.5 flex h-10 w-10 shrink-0 items-center justify-center rounded-full text-sm font-semibold ${
-                          isDone
-                            ? 'bg-emerald-500 text-white'
-                            : isActive
-                              ? 'bg-cyan-500 text-white'
-                              : 'bg-slate-100 text-slate-500'
-                        }`}
-                      >
-                        {isDone ? '✓' : index + 1}
-                      </div>
-                      <div className="min-w-0">
-                        <h4 className={`font-medium ${isDone ? 'text-slate-500' : isActive ? 'text-slate-900' : 'text-slate-400'}`}>
-                          {step.title}
-                        </h4>
-                        <p className={`mt-1 text-sm leading-6 ${isDone ? 'text-slate-400' : isActive ? 'text-slate-600' : 'text-slate-400'}`}>
-                          {isDone ? '已完成' : isActive ? '进行中...' : '等待中'}
-                        </p>
-                      </div>
-                    </div>
-                  );
-                })}
-              </div>
-            )}
-          </section>
-
-          <section className={cardClass}>
-            <div className="space-y-1">
-              <p className={sectionLabel}>任务摘要</p>
-              <h3 className={titleClass}>输入上下文</h3>
-              <p className={mutedText}>你提供的信息概览。</p>
-            </div>
-
-            <div className="mt-4 space-y-4">
-              <div className={softCardClass}>
-                <span className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-400">
-                  核心问题
-                </span>
-                <p className="mt-2 text-sm leading-6 text-slate-700">{context.coreQuestion}</p>
-              </div>
-
-              {focusStep && (
-                <div className={softCardClass}>
-                  <span className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-400">
-                    当前焦点
-                  </span>
-                  <h4 className="mt-2 font-medium text-slate-900">{focusStep.title}</h4>
-                  <p className="mt-1 text-sm leading-6 text-slate-600">{focusStep.teachingGoal}</p>
-                  <div className="mt-3 flex flex-wrap gap-2 text-xs text-slate-600">
-                    <span className="rounded-full bg-white px-3 py-1">{focusStep.conceptIntroduced}</span>
-                    <span className="rounded-full bg-white px-3 py-1">±{focusStep.estimatedLocChange} LOC</span>
                   </div>
-                </div>
-              )}
-
-              <div className="grid gap-2">
-                <PhaseItem
-                  label="设计大纲"
-                  status={
-                    ['outline-received', 'filling-step', 'validating', 'stream-complete', 'reconnecting'].includes(status)
-                      ? 'done'
-                      : status === 'generating-outline'
-                        ? 'active'
-                        : 'idle'
-                  }
-                />
-                <PhaseItem
-                  label="生成步骤"
-                  status={
-                    ['validating', 'stream-complete'].includes(status)
-                      ? 'done'
-                      : ['filling-step', 'reconnecting'].includes(status)
-                        ? 'active'
-                        : 'idle'
-                  }
-                />
-                <PhaseItem
-                  label="校验保存"
-                  status={
-                    status === 'stream-complete'
-                      ? 'done'
-                      : status === 'validating'
-                        ? 'active'
-                        : 'idle'
-                  }
-                />
-              </div>
-
-              {errorMessage && (
-                <div className="rounded-3xl border border-rose-200 bg-rose-50 p-4 text-rose-950">
-                  <span className="text-xs font-semibold uppercase tracking-[0.18em] text-rose-600">
-                    错误详情
-                  </span>
-                  {errorLabel && (
-                    <p className="mt-1 text-xs font-semibold text-rose-700">{errorLabel}</p>
-                  )}
-                  <p className="mt-2 text-sm leading-6 text-rose-900">{errorMessage}</p>
-                  <div className="mt-4 flex flex-wrap gap-2">
-                    {canRetryFromStep && failedStepIndex !== null && (
-                      <button
-                        type="button"
-                        className={`${secondaryButton} border-rose-200 text-rose-800 hover:bg-rose-100`}
-                        onClick={() => onRetryFromStep(failedStepIndex)}
-                      >
-                        从第 {failedStepIndex + 1} 步重试
-                      </button>
-                    )}
-                    {canRetry && (
-                      <button type="button" className={secondaryButton} onClick={onRetry}>
-                        {errorPhase === 'step-fill' ? '从当前进度重新生成' : '重新生成目录'}
-                      </button>
-                    )}
-                    <button
-                      type="button"
-                      className={secondaryButton}
-                      onClick={() => router.push(`/drafts/${draftId}`)}
-                    >
-                      前往草稿编辑器
-                    </button>
-                  </div>
-                </div>
-              )}
+                );
+              })}
             </div>
-          </section>
-        </div>
+          )}
+
+          {/* Outline focus preview */}
+          {focusStep && (
+            <div className="mt-4 rounded-xl bg-muted/20 px-4 py-3">
+              <span className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">
+                当前焦点
+              </span>
+              <h4 className="mt-1.5 text-sm font-medium text-foreground">{focusStep.title}</h4>
+              <p className="mt-0.5 text-xs leading-5 text-muted-foreground">{focusStep.teachingGoal}</p>
+              <div className="mt-2 flex flex-wrap gap-1.5 text-[11px] text-muted-foreground">
+                <span className="rounded-full bg-card px-2.5 py-0.5">{focusStep.conceptIntroduced}</span>
+                <span className="rounded-full bg-card px-2.5 py-0.5">±{focusStep.estimatedLocChange} LOC</span>
+              </div>
+            </div>
+          )}
+
+          {/* Error section — only shown when there's an error */}
+          {errorMessage && (
+            <div className="mt-4 rounded-xl bg-rose-50 p-4 text-rose-950">
+              <span className="text-xs font-semibold uppercase tracking-[0.18em] text-rose-600">
+                错误详情
+              </span>
+              {errorLabel && (
+                <p className="mt-1 text-xs font-semibold text-rose-700">{errorLabel}</p>
+              )}
+              <p className="mt-2 text-sm leading-6 text-rose-900">{errorMessage}</p>
+              <div className="mt-4 flex flex-wrap gap-2">
+                {canRetryFromStep && failedStepIndex !== null && (
+                  <button
+                    type="button"
+                    className={`${secondaryButton} border-rose-200 text-rose-800 hover:bg-rose-100`}
+                    onClick={() => onRetryFromStep(failedStepIndex)}
+                  >
+                    从第 {failedStepIndex + 1} 步重试
+                  </button>
+                )}
+                {canRetry && (
+                  <button type="button" className={secondaryButton} onClick={onRetry}>
+                    {errorPhase === 'step-fill' ? '从当前进度重新生成' : '重新生成目录'}
+                  </button>
+                )}
+                <button
+                  type="button"
+                  className={secondaryButton}
+                  onClick={() => {
+                    if (onExit) {
+                      onExit();
+                    } else {
+                      router.push(`/drafts/${draftId}`);
+                    }
+                  }}
+                >
+                  前往草稿编辑器
+                </button>
+              </div>
+            </div>
+          )}
+        </section>
       </div>
 
       {previewOpen && (
@@ -454,7 +407,7 @@ function V2ProgressUI({
             <header className="flex shrink-0 items-center justify-between gap-4 border-b border-slate-200 bg-white/95 px-4 py-3 backdrop-blur sm:px-5">
               <div className="min-w-0">
                 <div className="flex items-center gap-2">
-                  <span className="inline-flex h-2 w-2 animate-pulse rounded-full bg-cyan-500" />
+                  <span className="inline-flex h-2 w-2 animate-pulse rounded-full bg-primary" />
                   <h3 className="truncate text-sm font-bold text-slate-900">
                     实时教程预览
                   </h3>
@@ -467,7 +420,7 @@ function V2ProgressUI({
               </div>
               <button
                 type="button"
-                className="inline-flex h-9 shrink-0 items-center justify-center rounded-md border border-slate-200 bg-white px-3 text-xs font-semibold text-slate-600 transition hover:bg-slate-50 hover:text-slate-900 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-slate-400 focus-visible:ring-offset-2"
+                className="inline-flex h-9 shrink-0 items-center justify-center rounded-md bg-slate-50 px-3 text-xs font-semibold text-slate-600 transition hover:bg-slate-100 hover:text-slate-900 focus-visible:outline-none"
                 onClick={() => setPreviewOpen(false)}
               >
                 关闭
@@ -487,44 +440,11 @@ function V2ProgressUI({
   );
 }
 
-function ContextStat({ label, value }: { label: string; value: string }) {
+function ContextPill({ label, value }: { label: string; value: string }) {
   return (
-    <div className="rounded-2xl border border-slate-200 bg-white px-4 py-3">
-      <span className="block text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-400">
-        {label}
-      </span>
-      <strong className="mt-1 block text-sm font-medium text-slate-900">{value}</strong>
-    </div>
-  );
-}
-
-function PhaseItem({
-  label,
-  status,
-}: {
-  label: string;
-  status: 'done' | 'active' | 'idle';
-}) {
-  return (
-    <div
-      className={`flex items-center gap-3 rounded-lg border px-4 py-2 text-xs font-bold transition-colors ${
-        status === 'done'
-          ? 'border-emerald-100 bg-emerald-50 text-emerald-700'
-          : status === 'active'
-            ? 'border-slate-200 bg-slate-100 text-slate-900'
-            : 'border-slate-100 bg-slate-50/50 text-slate-400'
-      }`}
-    >
-      <span
-        className={`h-2 w-2 rounded-full ${
-          status === 'done'
-            ? 'bg-emerald-500'
-            : status === 'active'
-              ? 'bg-slate-900'
-              : 'bg-slate-300'
-        }`}
-      />
-      <span className="uppercase tracking-wider">{label}</span>
-    </div>
+    <span className="inline-flex items-center gap-1.5 rounded-full bg-muted/60 px-3 py-1 text-xs text-muted-foreground">
+      <span className="font-medium">{label}</span>
+      <span className="font-semibold text-foreground">{value}</span>
+    </span>
   );
 }

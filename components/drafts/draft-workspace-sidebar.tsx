@@ -10,10 +10,10 @@ import type { ClientDraftRecord } from '@/lib/types/client';
 import type { DraftStatusInfo } from '@/lib/draft-status';
 
 const buttonBase =
-  'inline-flex h-10 items-center justify-center rounded-md px-4 py-2 text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-slate-400 focus-visible:ring-offset-2 disabled:pointer-events-none disabled:opacity-50';
-const primaryButton = `${buttonBase} bg-slate-900 text-slate-50 shadow-sm hover:bg-slate-900/90`;
-const secondaryButton = `${buttonBase} border border-slate-200 bg-white text-slate-900 shadow-sm hover:bg-slate-50`;
-const dangerButton = `${buttonBase} border border-slate-200 bg-white text-red-600 shadow-sm hover:border-red-200 hover:bg-red-50`;
+  'inline-flex h-10 items-center justify-center rounded-md px-4 py-2 text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:pointer-events-none disabled:opacity-50';
+const primaryButton = `${buttonBase} bg-primary text-primary-foreground shadow-sm hover:bg-primary/90`;
+const secondaryButton = `${buttonBase} border border-border bg-card text-foreground shadow-sm hover:bg-accent`;
+const dangerButton = `${buttonBase} border border-border bg-card text-destructive shadow-sm hover:bg-destructive/10 hover:text-destructive`;
 
 interface DraftWorkspaceSidebarProps {
   draft: ClientDraftRecord;
@@ -87,24 +87,25 @@ export function DraftWorkspaceSidebar({
   onAppendStepToChapter,
 }: DraftWorkspaceSidebarProps) {
   return (
-    <div className="flex h-full flex-col gap-6 p-6">
-      <div className="space-y-4">
+    <div className="flex h-full flex-col p-5">
+      {/* Fixed header — never scrolls */}
+      <div className="shrink-0 space-y-3 pb-4">
         <Link
           href="/"
-          className="inline-flex w-fit items-center gap-3 rounded-lg border border-slate-200 bg-white px-4 py-2.5 text-sm font-bold uppercase tracking-[0.2em] text-slate-900 shadow-sm transition hover:bg-slate-50"
+          className="inline-flex w-fit items-center gap-3 rounded-lg bg-muted/40 px-4 py-2.5 text-sm font-bold uppercase tracking-[0.2em] text-foreground transition hover:bg-accent"
         >
-          <span className="h-2 w-2 rounded-full bg-slate-900" />
+          <span className="h-2 w-2 rounded-full bg-primary" />
           VibeDocs
         </Link>
         <div className="space-y-2">
-          <p className="text-[11px] font-bold uppercase tracking-[0.2em] text-slate-500">
+          <p className="text-[11px] font-bold uppercase tracking-[0.2em] text-muted-foreground">
             编辑器
           </p>
           <div className="flex flex-col gap-3">
-            <h1 className="text-xl font-bold tracking-tight text-slate-900">
+            <h1 className="text-xl font-bold tracking-tight text-foreground">
               {draft.tutorialDraft?.meta.title || '新草稿'}
             </h1>
-            <p className="text-xs leading-5 text-slate-500">
+            <p className="text-xs leading-5 text-muted-foreground">
               编辑步骤、预览效果、一键发布。
             </p>
             <Badge variant={status.variant}>{status.label}</Badge>
@@ -112,7 +113,8 @@ export function DraftWorkspaceSidebar({
         </div>
       </div>
 
-      <div className="rounded-xl border border-slate-200 bg-white/50 p-2">
+      {/* Scrollable step list — fills remaining space */}
+      <div className="flex-1 min-h-0 rounded-xl bg-muted/20 p-2 overflow-y-auto">
         {hasDraft ? (
           <ChapteredStepList
             steps={steps}
@@ -130,13 +132,14 @@ export function DraftWorkspaceSidebar({
             saving={saving}
           />
         ) : (
-          <div className="rounded-lg border border-dashed border-slate-200 px-4 py-8 text-center text-xs text-slate-400">
+          <div className="rounded-lg border border-dashed border-border/50 px-4 py-8 text-center text-xs text-muted-foreground">
             生成后步骤会显示在这里。
           </div>
         )}
       </div>
 
-      <div className="grid gap-3">
+      {/* Fixed bottom buttons */}
+      <div className="shrink-0 grid gap-3 pt-4">
         <button className={secondaryButton} onClick={() => void onAppendStep()} disabled={saving || !hasDraft}>
           追加步骤
         </button>
@@ -207,14 +210,14 @@ function PublishDialog({
 
   const dialog = (
     <div className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/30 backdrop-blur-sm">
-      <div className="w-full max-w-md rounded-xl border border-slate-200 bg-white p-6 shadow-2xl">
-        <h3 className="text-lg font-semibold text-slate-900">发布教程</h3>
-        <p className="mt-2 text-sm text-slate-500">
+      <div className="w-full max-w-md rounded-xl border border-border bg-card p-6 shadow-2xl">
+        <h3 className="text-lg font-semibold text-foreground">发布教程</h3>
+        <p className="mt-2 text-sm text-muted-foreground">
           输入自定义 URL slug，或留空自动生成。
         </p>
         <input
           type="text"
-          className="mt-4 w-full rounded-md border border-slate-300 px-3 py-2 text-sm text-slate-900 placeholder:text-slate-400 focus:border-slate-500 focus:outline-none focus:ring-1 focus:ring-slate-500"
+          className="mt-4 w-full rounded-md border border-border px-3 py-2 text-sm text-foreground placeholder:text-muted-foreground focus:border-ring focus:outline-none focus:ring-1 focus:ring-ring"
           placeholder="例如: my-react-tutorial"
           value={slug}
           onChange={(e) => setSlug(e.target.value)}

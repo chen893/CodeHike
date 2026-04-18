@@ -134,10 +134,10 @@ export function GenerationPreviewPanel({
     : completedStepCount;
 
   return (
-    <div className={`min-h-0 overflow-y-auto bg-[#f7f8fa] ${className}`}>
-      <div className="sticky top-0 z-30 border-b border-cyan-200/50 bg-cyan-50/90 px-4 py-2.5 text-center text-xs font-medium text-cyan-700 backdrop-blur-sm">
+    <div className={`min-h-0 overflow-y-auto bg-[#f7f8fa] ${className}`} style={{ containerType: 'size' }}>
+      <div className="sticky top-0 z-30 border-b border-primary/30 bg-primary/10 px-4 py-2.5 text-center text-xs font-medium text-primary backdrop-blur-sm">
         <span className="inline-flex items-center gap-1.5">
-          <span className="inline-block h-1.5 w-1.5 animate-pulse rounded-full bg-cyan-500" />
+          <span className="inline-block h-1.5 w-1.5 animate-pulse rounded-full bg-primary" />
           {isGenerating
             ? `正在生成中，仅预览已完成的 ${renderedStepCount}/${Math.max(totalSteps, renderedStepCount)} 步`
             : `已生成 ${renderedStepCount} 步`}

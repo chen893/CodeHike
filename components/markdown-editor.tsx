@@ -93,11 +93,11 @@ export function MarkdownEditor({ value, onChange, placeholder }: MarkdownEditorP
   }
 
   return (
-    <div className="overflow-hidden rounded-md border border-slate-200 bg-white shadow-sm focus-within:ring-2 focus-within:ring-slate-400 focus-within:ring-offset-1 transition-shadow">
-      <div className="flex flex-wrap items-center gap-1.5 border-b border-slate-200 bg-slate-50 px-2.5 py-1.5">
+    <div className="overflow-hidden rounded-md border border-border bg-card shadow-sm focus-within:ring-2 focus-within:ring-ring focus-within:ring-offset-1 transition-shadow">
+      <div className="flex flex-wrap items-center gap-1.5 border-b border-border/50 bg-muted/30 px-2.5 py-1.5">
         <button
           type="button"
-          className="inline-flex h-8 w-8 items-center justify-center rounded-md border border-slate-200 bg-white text-xs font-bold text-slate-700 transition-colors hover:bg-slate-100"
+          className="inline-flex h-8 w-8 items-center justify-center rounded-md text-xs font-bold text-foreground transition-colors hover:bg-accent"
           onClick={() => handleToolbar('bold')}
           title="Bold"
         >
@@ -105,7 +105,7 @@ export function MarkdownEditor({ value, onChange, placeholder }: MarkdownEditorP
         </button>
         <button
           type="button"
-          className="inline-flex h-8 w-8 items-center justify-center rounded-md border border-slate-200 bg-white text-xs italic font-bold text-slate-700 transition-colors hover:bg-slate-100"
+          className="inline-flex h-8 w-8 items-center justify-center rounded-md text-xs italic font-bold text-foreground transition-colors hover:bg-accent"
           onClick={() => handleToolbar('italic')}
           title="Italic"
         >
@@ -113,16 +113,16 @@ export function MarkdownEditor({ value, onChange, placeholder }: MarkdownEditorP
         </button>
         <button
           type="button"
-          className="inline-flex h-8 w-8 items-center justify-center rounded-md border border-slate-200 bg-white text-[10px] font-mono font-bold text-slate-700 transition-colors hover:bg-slate-100"
+          className="inline-flex h-8 w-8 items-center justify-center rounded-md text-[10px] font-mono font-bold text-foreground transition-colors hover:bg-accent"
           onClick={() => handleToolbar('code')}
           title="Inline code"
         >
           {'{}'}
         </button>
-        <div className="mx-1 h-4 w-px bg-slate-200" />
+        <div className="mx-1 h-4 w-px bg-border" />
         <button
           type="button"
-          className="inline-flex h-8 w-8 items-center justify-center rounded-md border border-slate-200 bg-white text-xs text-slate-700 transition-colors hover:bg-slate-100"
+          className="inline-flex h-8 w-8 items-center justify-center rounded-md text-xs text-foreground transition-colors hover:bg-accent"
           onClick={() => handleToolbar('quote')}
           title="Blockquote"
         >
@@ -130,19 +130,19 @@ export function MarkdownEditor({ value, onChange, placeholder }: MarkdownEditorP
         </button>
         <button
           type="button"
-          className="inline-flex h-8 w-8 items-center justify-center rounded-md border border-slate-200 bg-white text-xs text-slate-700 transition-colors hover:bg-slate-100"
+          className="inline-flex h-8 w-8 items-center justify-center rounded-md text-xs text-foreground transition-colors hover:bg-accent"
           onClick={() => handleToolbar('link')}
           title="Link"
         >
           🔗
         </button>
-        <div className="ml-auto flex items-center rounded-md border border-slate-200 bg-white p-0.5">
+        <div className="ml-auto flex items-center rounded-md border border-border bg-card p-0.5">
           <button
             type="button"
             className={`rounded px-3 py-1 text-xs font-bold transition-colors ${
               tab === 'edit'
-                ? 'bg-slate-900 text-slate-50'
-                : 'text-slate-500 hover:text-slate-900'
+                ? 'bg-primary text-primary-foreground'
+                : 'text-muted-foreground hover:text-foreground'
             }`}
             onClick={() => setTab('edit')}
           >
@@ -152,8 +152,8 @@ export function MarkdownEditor({ value, onChange, placeholder }: MarkdownEditorP
             type="button"
             className={`rounded px-3 py-1 text-xs font-bold transition-colors ${
               tab === 'preview'
-                ? 'bg-slate-900 text-slate-50'
-                : 'text-slate-500 hover:text-slate-900'
+                ? 'bg-primary text-primary-foreground'
+                : 'text-muted-foreground hover:text-foreground'
             }`}
             onClick={() => setTab('preview')}
           >
@@ -161,18 +161,18 @@ export function MarkdownEditor({ value, onChange, placeholder }: MarkdownEditorP
           </button>
         </div>
       </div>
-      <div className="bg-white">
+      <div className="bg-card">
         {tab === 'edit' ? (
           <textarea
             ref={textareaRef}
-            className="min-h-[200px] w-full bg-white px-4 py-3 text-sm leading-6 text-slate-900 outline-none placeholder:text-slate-400 font-mono"
+            className="min-h-[200px] w-full bg-card px-4 py-3 text-sm leading-6 text-foreground outline-none placeholder:text-muted-foreground font-mono"
             value={value}
             onChange={(e) => onChange(e.target.value)}
             placeholder={placeholder}
           />
         ) : (
           <div
-            className="min-h-[200px] space-y-4 px-4 py-3 text-sm leading-6 text-slate-700 [&_a]:text-slate-900 [&_a]:underline [&_blockquote]:border-l-4 [&_blockquote]:border-slate-200 [&_blockquote]:pl-4 [&_blockquote]:italic [&_blockquote]:text-slate-500 [&_code]:rounded [&_code]:bg-slate-100 [&_code]:px-1 [&_code]:py-0.5 [&_code]:font-mono [&_code]:text-slate-900 [&_strong]:font-bold [&_p]:mb-4"
+            className="min-h-[200px] space-y-4 px-4 py-3 text-sm leading-6 text-foreground [&_a]:text-foreground [&_a]:underline [&_blockquote]:border-l-4 [&_blockquote]:border-border [&_blockquote]:pl-4 [&_blockquote]:italic [&_blockquote]:text-muted-foreground [&_code]:rounded [&_code]:bg-muted [&_code]:px-1 [&_code]:py-0.5 [&_code]:font-mono [&_code]:text-foreground [&_strong]:font-bold [&_p]:mb-4"
             dangerouslySetInnerHTML={{ __html: simpleMarkdownToHtml(value) }}
           />
         )}

@@ -28,16 +28,16 @@ export function StepList({
           key={step.id}
           className={`group/step relative flex cursor-pointer items-center gap-3 rounded-lg border p-2.5 pr-10 transition-colors ${
             index === selectedIndex
-              ? 'border-slate-300 bg-slate-100 text-slate-900 shadow-sm'
-              : 'border-transparent bg-transparent text-slate-600 hover:bg-slate-50 hover:text-slate-900'
+              ? 'border-transparent bg-accent/50 text-foreground shadow-sm'
+              : 'border-transparent bg-transparent text-muted-foreground hover:bg-accent hover:text-foreground'
           }`}
           onClick={() => onSelect(index)}
         >
           <span
-            className={`flex h-6 w-6 shrink-0 items-center justify-center rounded bg-slate-200 text-[10px] font-bold ${
+            className={`flex h-6 w-6 shrink-0 items-center justify-center rounded bg-muted text-[10px] font-bold ${
               index === selectedIndex
-                ? 'bg-slate-300 text-slate-900'
-                : 'text-slate-500'
+                ? 'bg-accent text-foreground'
+                : 'text-muted-foreground'
             }`}
           >
             {index + 1}
@@ -47,10 +47,10 @@ export function StepList({
           </span>
 
           {/* action buttons — visible on hover or focus-within */}
-          <div className="absolute right-1.5 top-1/2 flex -translate-y-1/2 shrink-0 items-center gap-0.5 rounded-md bg-white/90 p-0.5 opacity-0 shadow-sm backdrop-blur-sm transition-opacity group-hover/step:opacity-100 focus-within:opacity-100 group-hover/step:[&:has(button:disabled)]:bg-white group-hover/step:[&:not(:has(button:disabled))]:bg-slate-50">
+          <div className="absolute right-1.5 top-1/2 flex -translate-y-1/2 shrink-0 items-center gap-0.5 rounded-md bg-card/90 p-0.5 opacity-0 shadow-sm backdrop-blur-sm transition-opacity group-hover/step:opacity-100 focus-within:opacity-100 group-hover/step:[&:has(button:disabled)]:bg-card group-hover/step:[&:not(:has(button:disabled))]:bg-accent">
             <button
               type="button"
-              className="inline-flex h-7 w-7 items-center justify-center rounded-md border border-slate-200 bg-white text-slate-500 transition-colors hover:border-slate-300 hover:bg-slate-50 hover:text-slate-900 focus-visible:opacity-100 disabled:pointer-events-none disabled:opacity-40"
+              className="inline-flex h-7 w-7 items-center justify-center rounded-md border border-border bg-card text-muted-foreground transition-colors hover:border-border hover:bg-accent hover:text-foreground focus-visible:opacity-100 disabled:pointer-events-none disabled:opacity-40"
               onClick={(event) => {
                 event.stopPropagation();
                 void onMoveUp(step.id);
@@ -62,7 +62,7 @@ export function StepList({
             </button>
             <button
               type="button"
-              className="inline-flex h-7 w-7 items-center justify-center rounded-md border border-slate-200 bg-white text-slate-500 transition-colors hover:border-slate-300 hover:bg-slate-50 hover:text-slate-900 focus-visible:opacity-100 disabled:pointer-events-none disabled:opacity-40"
+              className="inline-flex h-7 w-7 items-center justify-center rounded-md border border-border bg-card text-muted-foreground transition-colors hover:border-border hover:bg-accent hover:text-foreground focus-visible:opacity-100 disabled:pointer-events-none disabled:opacity-40"
               onClick={(event) => {
                 event.stopPropagation();
                 void onMoveDown(step.id);
@@ -74,7 +74,7 @@ export function StepList({
             </button>
             <button
               type="button"
-              className="inline-flex h-7 w-7 items-center justify-center rounded-md border border-slate-200 bg-white text-slate-400 transition-colors hover:border-red-200 hover:bg-red-50 hover:text-red-600 focus-visible:opacity-100 disabled:pointer-events-none disabled:opacity-40"
+              className="inline-flex h-7 w-7 items-center justify-center rounded-md border border-border bg-card text-muted-foreground transition-colors hover:bg-destructive/10 hover:text-destructive focus-visible:opacity-100 disabled:pointer-events-none disabled:opacity-40"
               onClick={(event) => {
                 event.stopPropagation();
                 void onDelete(step.id);

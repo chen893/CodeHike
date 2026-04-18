@@ -21,6 +21,7 @@ export type V2Status =
   | 'validating'
   | 'stream-complete'
   | 'reconnecting'
+  | 'cancelling'
   | 'error';
 
 export interface GenerationContext {

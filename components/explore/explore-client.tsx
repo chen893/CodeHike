@@ -96,13 +96,13 @@ function ExploreClientInner({
           value={query}
           onChange={(e) => updateSearch(e.target.value)}
           placeholder="搜索教程..."
-          className="flex-1 rounded-lg border border-slate-200 bg-white px-4 py-2 text-sm text-slate-900 placeholder:text-slate-400 focus:border-cyan-500 focus:outline-none focus:ring-1 focus:ring-cyan-500"
+          className="flex-1 rounded-lg border border-border bg-white px-4 py-2 text-sm text-slate-900 placeholder:text-slate-400 focus:border-ring focus:outline-none focus:ring-1 focus:ring-ring"
         />
         <Button
           variant="outline"
           size="sm"
           onClick={toggleSort}
-          className="whitespace-nowrap border-slate-200 text-slate-600 hover:bg-slate-50"
+          className="whitespace-nowrap border-border text-muted-foreground hover:bg-accent"
         >
           {sort === 'popular' ? '热门优先' : '最新优先'}
         </Button>
@@ -117,8 +117,8 @@ function ExploreClientInner({
               onClick={() => toggleTag(tag.slug)}
               className={`inline-flex items-center gap-1 rounded-full border px-3 py-1 text-xs font-medium transition-colors ${
                 activeTag === tag.slug
-                  ? 'border-cyan-400 bg-cyan-50 text-cyan-700'
-                  : 'border-slate-200 bg-white text-slate-600 hover:bg-slate-50'
+                  ? 'border-primary/40 bg-primary/10 text-primary'
+                  : 'border-border bg-card text-muted-foreground hover:bg-slate-50'
               }`}
             >
               {tag.name}

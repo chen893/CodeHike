@@ -1,6 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
+  buildTutorialSteps,
   computeLineChanges,
   findLineRange,
 } from '../lib/tutorial/assembler.js';
@@ -87,4 +88,74 @@ test('computeLineChanges handles completely replaced content', () => {
   assert.equal(changes.get(1), 'modified');
   assert.equal(changes.get(2), 'modified');
   assert.equal(changes.get(3), 'added');
+});
+
+test('buildTutorialSteps does not leak line annotations inside JSDoc comments', async () => {
+  const before = `export interface Tool {
+  name: string;
+}
+`;
+  const after = `export interface Tool {
+  name: string;
+  /**
+   * Tool 的参数使用 JSON Schema（简化版）来描述。
+   */
+  inputSchema: JsonObject;
+}
+`;
+
+  const steps = await buildTutorialSteps({
+    meta: {
+      title: 'Tool tutorial',
+      description: 'Test tutorial',
+      lang: 'typescript',
+      fileName: 'src/tools/tool.ts',
+    },
+    intro: { paragraphs: [] },
+    baseCode: {
+      'src/tools/tool.ts': before,
+    },
+    chapters: [
+      {
+        id: 'chapter-1',
+        title: 'Chapter 1',
+        description: 'Chapter 1',
+        stepIds: ['step-1', 'step-2'],
+      },
+    ],
+    steps: [
+      {
+        id: 'step-1',
+        chapterId: 'chapter-1',
+        title: 'Initial code',
+        paragraphs: ['Initial code.'],
+      },
+      {
+        id: 'step-2',
+        chapterId: 'chapter-1',
+        title: 'Add schema docs',
+        paragraphs: ['Add schema docs.'],
+        patches: [
+          {
+            file: 'src/tools/tool.ts',
+            find: before,
+            replace: after,
+          },
+        ],
+      },
+    ],
+  });
+
+  const highlighted = steps[1].highlightedFiles['src/tools/tool.ts'];
+  assert.match(highlighted.code, /Tool 的参数使用 JSON Schema/);
+  assert.doesNotMatch(highlighted.code, /!change-indicator/);
+  assert.doesNotMatch(highlighted.value, /!change-indicator/);
+  assert.ok(
+    highlighted.annotations.some(
+      (annotation) =>
+        annotation.name === 'change-indicator' &&
+        annotation.query === 'added' &&
+        annotation.fromLineNumber === 3
+    )
+  );
 });

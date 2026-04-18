@@ -141,13 +141,13 @@ export function TagEditor({ tutorialId, currentTags }: TagEditorProps) {
         {tags.map((tag) => (
           <Badge
             key={tag.id}
-            className="gap-1 bg-cyan-50 text-cyan-700 border-cyan-200 pr-1"
+            className="gap-1 bg-primary/10 text-primary border-primary/30 pr-1"
           >
             {tag.name}
             <button
               onClick={() => handleRemoveTag(tag.id)}
               disabled={saving}
-              className="ml-0.5 rounded-full p-0.5 transition-colors hover:bg-cyan-200 disabled:opacity-50"
+              className="ml-0.5 rounded-full p-0.5 transition-colors hover:bg-primary/20 disabled:opacity-50"
               aria-label={`移除标签 ${tag.name}`}
             >
               <X className="h-3 w-3" />
@@ -172,7 +172,7 @@ export function TagEditor({ tutorialId, currentTags }: TagEditorProps) {
               onKeyDown={handleKeyDown}
               placeholder="输入标签名称..."
               disabled={saving}
-              className="w-full rounded-md border border-slate-200 bg-white px-3 py-1.5 text-sm text-slate-900 placeholder:text-slate-400 focus:border-cyan-500 focus:outline-none focus:ring-1 focus:ring-cyan-500 disabled:opacity-50"
+              className="w-full rounded-md border border-input bg-card px-3 py-1.5 text-sm text-foreground placeholder:text-muted-foreground focus:border-ring focus:outline-none focus:ring-1 focus:ring-ring disabled:opacity-50"
             />
           </div>
           <button

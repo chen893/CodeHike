@@ -80,29 +80,29 @@ export function RemotePreviewPage({ fetchUrl, title }: RemotePreviewPageProps) {
 
   return (
     <main className="flex min-h-screen flex-col bg-[radial-gradient(circle_at_top,_rgba(14,165,233,0.18),_transparent_35%),linear-gradient(180deg,_#020617_0%,_#0f172a_42%,_#111827_100%)] text-slate-100">
-      <header className="sticky top-0 z-50 border-b border-slate-200/50 bg-white/80 backdrop-blur-xl">
-        <div className="mx-auto flex h-14 max-w-7xl items-center justify-between px-4 sm:px-6 lg:px-8">
+      <header className="sticky top-0 z-50 border-b border-border/50 bg-card/80 backdrop-blur-xl">
+        <div className="mx-auto flex h-12 max-w-7xl items-center justify-between px-4 sm:px-6 lg:px-8">
           <div className="flex min-w-0 items-center gap-3">
             <Link
               href={`/drafts/${draftId}`}
-              className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border border-slate-200 bg-white text-slate-500 transition hover:bg-slate-50 hover:text-slate-900"
+              className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg border border-border bg-card text-muted-foreground transition hover:bg-accent hover:text-foreground"
               aria-label="返回编辑"
             >
-              <ChevronLeft size={18} />
+              <ChevronLeft size={16} />
             </Link>
             <div className="flex min-w-0 flex-col">
               <div className="flex items-center gap-2 overflow-hidden">
-                <h1 className="truncate text-sm font-bold text-slate-900">
+                <h1 className="truncate text-sm font-bold text-foreground">
                   {payload.title}
                 </h1>
-                <Badge variant="outline" className="h-5 shrink-0 border-slate-300 bg-slate-100 text-[10px] font-bold uppercase text-slate-600">
+                <Badge variant="outline" className="h-5 shrink-0 border-border bg-secondary text-[10px] font-bold uppercase text-muted-foreground">
                   预览
                 </Badge>
               </div>
-              <div className="flex items-center gap-2 overflow-hidden text-[10px] font-medium text-slate-400">
+              <div className="flex items-center gap-2 overflow-hidden text-[10px] font-medium text-muted-foreground">
                 <span className="truncate">草稿: {draftId}</span>
                 <span className="shrink-0">·</span>
-                <span className="shrink-0 text-cyan-600/60">自动同步</span>
+                <span className="shrink-0 text-primary/60">自动同步</span>
               </div>
             </div>
           </div>
@@ -110,7 +110,7 @@ export function RemotePreviewPage({ fetchUrl, title }: RemotePreviewPageProps) {
             <Button
               asChild
               variant="outline"
-              className="hidden h-9 border-slate-200 px-4 text-slate-600 transition hover:bg-slate-50 hover:text-slate-900 sm:flex"
+              className="hidden h-8 border-border px-4 text-muted-foreground transition hover:bg-accent hover:text-foreground sm:flex"
             >
               <Link href={`/drafts/${draftId}`}>
                 <Edit3 size={14} className="mr-2" />
@@ -118,7 +118,7 @@ export function RemotePreviewPage({ fetchUrl, title }: RemotePreviewPageProps) {
               </Link>
             </Button>
             <Button
-              className="h-9 bg-cyan-500 px-4 text-slate-950 hover:bg-cyan-400 shadow-[0_0_12px_rgba(6,182,212,0.25)] transition-all active:scale-95"
+              className="h-8 bg-primary px-4 text-primary-foreground hover:bg-primary/90 transition-all active:scale-95"
             >
               <Rocket size={14} className="sm:mr-2" />
               <span className="hidden sm:inline">发布教程</span>

@@ -22,13 +22,13 @@ export function PatchItem({
   onDelete,
 }: PatchItemProps) {
   return (
-    <div className="space-y-3 rounded-lg border border-slate-200 bg-white p-3 shadow-sm">
+    <div className="space-y-3 rounded-lg bg-muted/30 p-3">
       <div className="flex items-center justify-between gap-3">
-        <strong className="text-[10px] font-bold uppercase tracking-wider text-slate-400">Patch {index + 1}</strong>
+        <strong className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">Patch {index + 1}</strong>
         <div className="flex items-center gap-2">
           {isMultiFile && (
             <select
-              className="h-6 rounded border border-slate-200 bg-white px-1.5 text-[10px] text-slate-600"
+              className="h-6 rounded border border-border bg-card px-1.5 text-[10px] text-muted-foreground"
               value={patch.file || ''}
               onChange={(e) => onUpdate(patch.localId, 'file', e.target.value)}
             >
@@ -51,7 +51,7 @@ export function PatchItem({
       <div className="grid gap-3">
         <label className="space-y-1">
           <div className="flex items-center gap-2">
-            <span className="text-[10px] font-bold uppercase text-slate-500">find</span>
+            <span className="text-[10px] font-bold uppercase text-muted-foreground">find</span>
             {validationState && patch.find.trim() ? (
               validationState.isValid ? (
                 <span className="inline-flex items-center gap-0.5 text-[10px] font-bold text-emerald-600">
@@ -69,7 +69,7 @@ export function PatchItem({
             ) : null}
           </div>
           <textarea
-            className="flex min-h-[80px] w-full rounded-md border border-slate-200 bg-slate-50 px-2 py-1.5 text-xs font-mono transition-colors focus:bg-white focus:outline-none focus:ring-1 focus:ring-slate-400"
+            className="flex min-h-[80px] w-full rounded-md border border-border bg-muted/20 px-2 py-1.5 text-xs font-mono transition-colors focus:bg-card focus:outline-none focus:ring-1 focus:ring-ring"
             value={patch.find}
             onChange={(e) => onUpdate(patch.localId, 'find', e.target.value)}
             rows={4}
@@ -77,9 +77,9 @@ export function PatchItem({
         </label>
 
         <label className="space-y-1">
-          <span className="text-[10px] font-bold uppercase text-slate-500">replace</span>
+          <span className="text-[10px] font-bold uppercase text-muted-foreground">replace</span>
           <textarea
-            className="flex min-h-[120px] w-full rounded-md border border-slate-200 bg-slate-50 px-2 py-1.5 text-xs font-mono transition-colors focus:bg-white focus:outline-none focus:ring-1 focus:ring-slate-400"
+            className="flex min-h-[120px] w-full rounded-md border border-border bg-muted/20 px-2 py-1.5 text-xs font-mono transition-colors focus:bg-card focus:outline-none focus:ring-1 focus:ring-ring"
             value={patch.replace}
             onChange={(e) => onUpdate(patch.localId, 'replace', e.target.value)}
             rows={6}

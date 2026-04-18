@@ -135,6 +135,69 @@ test('stale recovery is called before initiating a new generation', async () => 
   assert.match(source, /recoveredCount/);
 });
 
+test('stale recovery is called before reading generation status', async () => {
+  const fs = await import('node:fs');
+  const path = await import('node:path');
+  const url = await import('node:url');
+
+  const __filename = url.fileURLToPath(import.meta.url);
+  const __dirname = path.dirname(__filename);
+  const source = fs.readFileSync(
+    path.join(__dirname, '..', 'lib', 'services', 'generate-tutorial-draft.ts'),
+    'utf8'
+  );
+
+  const statusMatch = source.match(
+    /export async function getGenerationStatus[\s\S]*?^}/m
+  );
+  assert.ok(statusMatch, 'getGenerationStatus function should exist');
+
+  assert.match(statusMatch[0], /recoverStaleGenerationJobsFor\("reading generation status"\)/);
+});
+
+test('generation progress can start a new generation after a terminal job', async () => {
+  const fs = await import('node:fs');
+  const path = await import('node:path');
+  const url = await import('node:url');
+
+  const __filename = url.fileURLToPath(import.meta.url);
+  const __dirname = path.dirname(__filename);
+  const source = fs.readFileSync(
+    path.join(__dirname, '..', 'components', 'tutorial', 'use-generation-progress.ts'),
+    'utf8'
+  );
+
+  assert.match(source, /startNewGeneration/);
+  assert.match(source, /shouldStartNewGeneration/);
+  assert.match(source, /job\.status === 'cancelled'/);
+  assert.match(source, /job\.status === 'failed'/);
+  assert.match(source, /job\.status === 'abandoned'/);
+});
+
+test('full generation clears old tutorial content before marking draft running', async () => {
+  const fs = await import('node:fs');
+  const path = await import('node:path');
+  const url = await import('node:url');
+
+  const __filename = url.fileURLToPath(import.meta.url);
+  const __dirname = path.dirname(__filename);
+  const serviceSource = fs.readFileSync(
+    path.join(__dirname, '..', 'lib', 'services', 'generate-tutorial-draft.ts'),
+    'utf8'
+  );
+  const repoSource = fs.readFileSync(
+    path.join(__dirname, '..', 'lib', 'repositories', 'draft-repository.ts'),
+    'utf8'
+  );
+
+  assert.match(serviceSource, /clearDraftTutorialForGeneration\(draftId, tx\)/);
+  assert.match(repoSource, /export async function clearDraftTutorialForGeneration/);
+  assert.match(repoSource, /tutorialDraft:\s*null/);
+  assert.match(repoSource, /generationOutline:\s*null/);
+  assert.match(repoSource, /generationQuality:\s*null/);
+  assert.match(repoSource, /validationErrors:\s*\[\]/);
+});
+
 test('DB has index on leaseUntil for active jobs', async () => {
   const fs = await import('node:fs');
   const path = await import('node:path');

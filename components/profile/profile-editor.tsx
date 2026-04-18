@@ -34,30 +34,30 @@ export function ProfileEditor({ initialData }: ProfileEditorProps) {
   }
 
   return (
-    <div className="space-y-4 rounded-xl border border-slate-200 bg-white p-5">
-      <h3 className="text-sm font-semibold text-slate-900">编辑个人资料</h3>
+    <div className="space-y-4 rounded-xl border border-border bg-card p-5">
+      <h3 className="text-sm font-semibold text-foreground">编辑个人资料</h3>
       <div className="space-y-3">
         <div>
-          <label className="block text-xs font-medium text-slate-600 mb-1">
+          <label className="block text-xs font-medium text-muted-foreground mb-1">
             显示名称
           </label>
           <input
             type="text"
             value={name}
             onChange={(e) => setName(e.target.value)}
-            className="w-full rounded-md border border-slate-200 bg-white px-3 py-1.5 text-sm text-slate-900 focus:border-cyan-500 focus:outline-none focus:ring-1 focus:ring-cyan-500"
+            className="w-full rounded-md border border-input bg-card px-3 py-1.5 text-sm text-foreground focus:border-ring focus:outline-none focus:ring-1 focus:ring-ring"
             placeholder="你的显示名称"
           />
         </div>
         <div>
-          <label className="block text-xs font-medium text-slate-600 mb-1">
+          <label className="block text-xs font-medium text-muted-foreground mb-1">
             个人简介
           </label>
           <textarea
             value={bio}
             onChange={(e) => setBio(e.target.value)}
             rows={3}
-            className="w-full rounded-md border border-slate-200 bg-white px-3 py-1.5 text-sm text-slate-900 focus:border-cyan-500 focus:outline-none focus:ring-1 focus:ring-cyan-500"
+            className="w-full rounded-md border border-input bg-card px-3 py-1.5 text-sm text-foreground focus:border-ring focus:outline-none focus:ring-1 focus:ring-ring"
             placeholder="简单介绍一下自己..."
           />
         </div>
@@ -68,7 +68,7 @@ export function ProfileEditor({ initialData }: ProfileEditorProps) {
         onClick={handleSave}
         disabled={saving}
         size="sm"
-        className="bg-cyan-400 text-slate-950 hover:bg-cyan-300"
+        className="bg-primary text-primary-foreground hover:bg-primary/90"
       >
         {saving ? '保存中...' : '保存'}
       </Button>

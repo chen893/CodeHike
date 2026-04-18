@@ -11,7 +11,7 @@ export default async function NewPage() {
 
   return (
     <AppShell activePath="/new" user={user}>
-      <div className="mx-auto flex min-h-screen w-full flex-col px-4 py-10 sm:px-6 lg:px-8">
+      <div className="container-app flex min-h-screen flex-col py-10">
         <CreateDraftForm />
       </div>
     </AppShell>

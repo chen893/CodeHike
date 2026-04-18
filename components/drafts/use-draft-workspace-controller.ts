@@ -60,6 +60,7 @@ export function useDraftWorkspaceController({
   const status = getDraftStatusInfo(draft);
   const firstInvalidStep = draft.tutorialDraft ? findFirstInvalidStep(draft.tutorialDraft) : null;
   const generationContext = buildGenerationContext(draft);
+  const startNewGeneration = startGeneration || generationRunNonce > 0;
 
   // Chapter-related computed state
   const normalizedTutorialDraft = draft.tutorialDraft
@@ -389,6 +390,17 @@ export function useDraftWorkspaceController({
     }
   }
 
+  async function exitGenerationProgress() {
+    try {
+      await reloadDraft();
+    } catch (error) {
+      console.error('刷新草稿失败:', error);
+    } finally {
+      setShowGenerationProgress(false);
+      router.replace(`/drafts/${draft.id}`);
+    }
+  }
+
   function openPreview() {
     router.push(`/drafts/${draft.id}/preview`);
   }
@@ -569,6 +581,7 @@ export function useDraftWorkspaceController({
     editingMeta,
     showGenerationProgress,
     generationRunNonce,
+    startNewGeneration,
     repairingStartIndex,
     status,
     firstInvalidStep,
@@ -601,6 +614,7 @@ export function useDraftWorkspaceController({
     retryGeneration,
     retryFromFailedStep,
     completeGeneration,
+    exitGenerationProgress,
     openPreview,
     openPublishedTutorial,
     addChapter,

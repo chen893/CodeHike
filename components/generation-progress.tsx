@@ -9,29 +9,33 @@ export type { GenerationContext } from '@/components/tutorial/generation-progres
 interface GenerationProgressProps {
   draftId: string;
   onComplete: () => void;
+  onExit?: () => void;
   context: GenerationContext;
   modelId?: string;
-  onRetryFromStep?: (stepIndex: number) => void;
+  startNewGeneration?: boolean;
 }
 
 export function GenerationProgress({
   draftId,
   onComplete,
+  onExit,
   context,
   modelId,
-  onRetryFromStep,
+  startNewGeneration = false,
 }: GenerationProgressProps) {
-  const controller = useGenerationProgress({ draftId, onComplete, modelId });
-
-  const mergedController = onRetryFromStep
-    ? { ...controller, onRetryFromStep }
-    : controller;
+  const controller = useGenerationProgress({
+    draftId,
+    onComplete,
+    modelId,
+    startNewGeneration,
+  });
 
   return (
     <GenerationProgressView
       draftId={draftId}
       context={context}
-      controller={mergedController}
+      controller={controller}
+      onExit={onExit}
     />
   );
 }

@@ -73,11 +73,11 @@ export function CodePreviewPanel({
   }
 
   return (
-    <section className="space-y-4 rounded-xl border border-slate-200 bg-slate-50 p-4">
+    <section className="space-y-4 rounded-lg bg-muted/30 p-4">
       <div className="flex items-start justify-between gap-3">
         <div className="space-y-1">
-          <h4 className="text-xs font-bold uppercase tracking-wider text-slate-900">代码预览</h4>
-          <p className="text-[10px] text-slate-500">
+          <h4 className="text-xs font-bold uppercase tracking-wider text-foreground">代码预览</h4>
+          <p className="text-[10px] text-muted-foreground">
             {selectionMode === 'focus'
               ? '点击行选择高亮范围（Shift+点击扩展）'
               : selectionMode === 'mark'
@@ -86,7 +86,7 @@ export function CodePreviewPanel({
           </p>
         </div>
         <div className="flex items-center gap-2 text-[10px] font-bold">
-          <div className="flex rounded border border-slate-200 bg-white overflow-hidden">
+          <div className="flex rounded border border-border bg-card overflow-hidden">
             {MODE_OPTIONS.map(([mode, label]) => (
               <button
                 key={mode}
@@ -98,8 +98,8 @@ export function CodePreviewPanel({
                       ? 'bg-blue-100 text-blue-700'
                       : mode === 'mark'
                       ? 'bg-purple-100 text-purple-700'
-                      : 'bg-slate-100 text-slate-700'
-                    : 'text-slate-400 hover:text-slate-600 hover:bg-slate-50'
+                      : 'bg-muted text-foreground'
+                    : 'text-muted-foreground hover:text-foreground hover:bg-accent'
                 }`}
               >
                 {label}
@@ -108,7 +108,7 @@ export function CodePreviewPanel({
           </div>
           {isMultiFile && (
             <select
-              className="h-7 rounded border border-slate-200 bg-white px-2 text-[10px] font-medium text-slate-600"
+              className="h-7 rounded border border-border bg-card px-2 text-[10px] font-medium text-muted-foreground"
               value={previewFile}
               onChange={(e) => onPreviewFileChange(e.target.value)}
             >
@@ -137,7 +137,7 @@ export function CodePreviewPanel({
           </span>
           <button
             type="button"
-            className="text-[10px] text-slate-400 hover:text-slate-600"
+            className="text-[10px] text-muted-foreground hover:text-foreground"
             onClick={onFocusRangeClear}
           >
             清空
@@ -151,7 +151,7 @@ export function CodePreviewPanel({
           </span>
           <button
             type="button"
-            className="text-[10px] text-slate-400 hover:text-slate-600"
+            className="text-[10px] text-muted-foreground hover:text-foreground"
             onClick={onMarkedLinesClear}
           >
             清空
@@ -178,7 +178,7 @@ export function CodePreviewPanel({
             onLineClick={onLineClick}
           />
         ) : !previewError ? (
-          <div className="rounded-md border border-slate-200 bg-slate-50 px-3 py-4 text-center text-xs text-slate-400">
+          <div className="rounded-md border border-border/50 bg-muted/20 px-3 py-4 text-center text-xs text-muted-foreground">
             当前步骤无代码变更
           </div>
         ) : null}

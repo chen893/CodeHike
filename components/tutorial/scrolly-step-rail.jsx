@@ -54,17 +54,17 @@ export function StepRail({ steps, className = defaultRailClass }) {
                   ? "h-2 w-2 rounded-full bg-[#2563eb] ring-4 ring-[#2563eb]/20"
                   : state === "completed"
                     ? `h-[3px] rounded-[1.5px] bg-[#2563eb]/40 ${isHovered ? "w-5" : "w-3"}`
-                    : `h-[3px] rounded-[1.5px] bg-slate-300 ${isHovered ? "w-5" : "w-3"}`
+                    : `h-[3px] rounded-[1.5px] bg-muted-foreground/30 ${isHovered ? "w-5" : "w-3"}`
               }`}
             />
 
             {isHovered && (
-              <div className="absolute right-[calc(100%+10px)] top-1/2 flex w-[220px] -translate-y-1/2 flex-col gap-1 rounded-lg border border-slate-200 bg-white px-3 py-2 text-left shadow-lg">
-                <div className="block text-[13px] font-semibold leading-[1.35] text-slate-900">
+              <div className="absolute right-[calc(100%+10px)] top-1/2 flex w-[220px] -translate-y-1/2 flex-col gap-1 rounded-lg border border-border bg-card px-3 py-2 text-left shadow-lg">
+                <div className="block text-[13px] font-semibold leading-[1.35] text-foreground">
                   {step.title}
                 </div>
                 {changeHint && (
-                  <span className="block text-[11px] text-slate-400">
+                  <span className="block text-[11px] text-muted-foreground">
                     {changeHint}
                   </span>
                 )}

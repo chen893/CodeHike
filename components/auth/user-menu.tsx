@@ -13,7 +13,7 @@ export function UserMenu({ user }: UserMenuProps) {
         <img
           src={user.image}
           alt={user.name || ''}
-          className="h-9 w-9 shrink-0 rounded-full border border-slate-700 shadow-sm"
+          className="h-9 w-9 shrink-0 rounded-full border border-border shadow-sm"
         />
       )}
       <div className="flex flex-1 flex-col min-w-0">

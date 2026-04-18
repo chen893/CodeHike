@@ -240,6 +240,29 @@ export async function writePartialTutorial(
     .where(eq(drafts.id, id));
 }
 
+export async function clearDraftTutorialForGeneration(
+  id: string,
+  tx?: TransactionClient
+): Promise<DraftRecord | null> {
+  const executor = tx || db;
+  const [row] = await executor
+    .update(drafts)
+    .set({
+      tutorialDraft: null,
+      syncState: 'empty',
+      tutorialDraftInputHash: null,
+      generationOutline: null,
+      generationQuality: null,
+      validationValid: false,
+      validationErrors: [],
+      validationCheckedAt: null,
+      updatedAt: new Date(),
+    })
+    .where(eq(drafts.id, id))
+    .returning();
+  return row ? toDraftRecord(row) : null;
+}
+
 export async function updateDraftGenerationState(
   id: string,
   state: 'idle' | 'running' | 'succeeded' | 'failed',

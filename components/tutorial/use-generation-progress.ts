@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState } from 'react';
 import {
   cancelDraftGeneration,
+  DraftClientError,
   fetchDraft,
   fetchGenerationStatus,
   regenerateDraftStepRequest,
@@ -20,6 +21,7 @@ interface UseGenerationProgressOptions {
   draftId: string;
   onComplete: () => void;
   modelId?: string;
+  startNewGeneration?: boolean;
 }
 
 interface SSEEventData {
@@ -51,6 +53,7 @@ export function useGenerationProgress({
   draftId,
   onComplete,
   modelId,
+  startNewGeneration = false,
 }: UseGenerationProgressOptions): GenerationProgressViewModel {
   const [runNonce, setRunNonce] = useState(0);
   const [v2Status, setV2Status] = useState<V2Status>('connecting');
@@ -90,9 +93,10 @@ export function useGenerationProgress({
     const controller = new AbortController();
     controllerRef.current = controller;
     let currentEvent = '';
-    // When runNonce > 0, this is a user-initiated retry — skip reconnect check
-    // and go straight to starting a new SSE stream.
-    const isRetry = runNonce > 0;
+    // External workspace retries and in-panel retries should start a new
+    // generation after terminal jobs, while still reconnecting if a job is
+    // genuinely active.
+    const shouldStartNewGeneration = startNewGeneration || runNonce > 0;
 
     function handleV2Event(event: string, data: SSEEventData) {
       switch (event) {
@@ -173,8 +177,7 @@ export function useGenerationProgress({
     }
 
     async function run() {
-      // ── Reconnect check: only on initial load (not retry) ──
-      if (!isRetry) {
+      // ── Reconnect / terminal-state check ──
       try {
         const { job } = await fetchGenerationStatus(draftId);
 
@@ -185,41 +188,49 @@ export function useGenerationProgress({
           onCompleteRef.current();
           return;
         } else if (job.status === 'cancelled') {
-          setErrorMessage(job.errorMessage || '生成已取消');
-          setV2Status('error');
-          return;
+          if (shouldStartNewGeneration) {
+            // Fall through to SSE stream below.
+          } else {
+            setErrorMessage(job.errorMessage || '生成已取消');
+            setV2Status('error');
+            return;
+          }
         } else if (
           job.status === 'failed' ||
           job.status === 'abandoned'
         ) {
-          // Terminal failure — derive error state from job's errorCode
-          setErrorMessage(job.errorMessage || '生成失败');
-          setV2Status('error');
-          if (job.errorCode === 'OUTLINE_GENERATION_FAILED') {
-            setErrorPhase('outline');
-            setErrorLabel('大纲生成失败');
-          } else if (
-            job.errorCode === 'STEP_GENERATION_FAILED' ||
-            job.errorCode === 'PATCH_VALIDATION_FAILED'
-          ) {
-            setErrorPhase('step-fill');
-            if (job.currentStepIndex != null && job.currentStepIndex >= 0) {
-              setFailedStepIndex(job.currentStepIndex);
-              setErrorLabel(`步骤 ${job.currentStepIndex + 1} 填充失败`);
+          if (shouldStartNewGeneration) {
+            // Fall through to SSE stream below.
+          } else {
+            // Terminal failure — derive error state from job's errorCode
+            setErrorMessage(job.errorMessage || '生成失败');
+            setV2Status('error');
+            if (job.errorCode === 'OUTLINE_GENERATION_FAILED') {
+              setErrorPhase('outline');
+              setErrorLabel('大纲生成失败');
+            } else if (
+              job.errorCode === 'STEP_GENERATION_FAILED' ||
+              job.errorCode === 'PATCH_VALIDATION_FAILED'
+            ) {
+              setErrorPhase('step-fill');
+              if (job.currentStepIndex != null && job.currentStepIndex >= 0) {
+                setFailedStepIndex(job.currentStepIndex);
+                setErrorLabel(`步骤 ${job.currentStepIndex + 1} 填充失败`);
+              }
+            } else if (job.errorCode === 'JOB_STALE') {
+              setErrorLabel('生成任务超时');
+            } else if (
+              job.errorCode === 'DRAFT_VALIDATION_FAILED' ||
+              job.errorCode === 'PERSIST_FAILED'
+            ) {
+              setErrorLabel('保存失败，请重试');
+            } else if (job.errorCode === 'MODEL_CAPABILITY_MISMATCH') {
+              setErrorLabel('模型能力不匹配，请更换模型重试');
+            } else if (job.errorCode === 'SOURCE_IMPORT_RATE_LIMITED') {
+              setErrorLabel('源码导入被限流，请稍后重试');
             }
-          } else if (job.errorCode === 'JOB_STALE') {
-            setErrorLabel('生成任务超时');
-          } else if (
-            job.errorCode === 'DRAFT_VALIDATION_FAILED' ||
-            job.errorCode === 'PERSIST_FAILED'
-          ) {
-            setErrorLabel('保存失败，请重试');
-          } else if (job.errorCode === 'MODEL_CAPABILITY_MISMATCH') {
-            setErrorLabel('模型能力不匹配，请更换模型重试');
-          } else if (job.errorCode === 'SOURCE_IMPORT_RATE_LIMITED') {
-            setErrorLabel('源码导入被限流，请稍后重试');
+            return;
           }
-          return;
         } else {
           // Job is running or queued — restore progress from job and enter reconnect mode
           jobIdRef.current = job.id;
@@ -246,13 +257,12 @@ export function useGenerationProgress({
             }
             setCompletedSteps(completed);
           }
-          setV2Status('reconnecting'); // triggers the polling effect
+          setV2Status(job.cancelRequested ? 'cancelling' : 'reconnecting'); // triggers the polling effect
           return;
         }
       } catch {
         // Fetch failed — proceed to start SSE stream, let it handle errors
       }
-      } // end of reconnect check (only runs on initial load)
 
       // ── Start a new SSE generation stream ──
       try {
@@ -296,11 +306,11 @@ export function useGenerationProgress({
       } catch (err: any) {
         if (err.name === 'AbortError') {
           if (isCancelledRef.current) {
-            setErrorMessage('生成已取消');
+            setErrorMessage(null);
             setErrorPhase(null);
             setFailedStepIndex(null);
             setErrorLabel(null);
-            setV2Status('error');
+            setV2Status('cancelling');
           }
           // Otherwise it was an unmount cleanup — silently ignore
         } else {
@@ -319,10 +329,14 @@ export function useGenerationProgress({
       controller.abort();
       controllerRef.current = null;
     };
-  }, [draftId, modelId, runNonce]);
+  }, [draftId, modelId, runNonce, startNewGeneration]);
 
   useEffect(() => {
-    if (v2Status !== 'stream-complete' && v2Status !== 'reconnecting') return;
+    if (
+      v2Status !== 'stream-complete' &&
+      v2Status !== 'reconnecting' &&
+      v2Status !== 'cancelling'
+    ) return;
 
     const BASE_POLL_MS = 1000;
     const MAX_POLL_MS = 8000;
@@ -348,6 +362,9 @@ export function useGenerationProgress({
 
         if (job.status === 'cancelled') {
           setErrorMessage(job.errorMessage || '生成已取消');
+          setErrorPhase(null);
+          setFailedStepIndex(null);
+          setErrorLabel(null);
           setV2Status('error');
           return;
         }
@@ -357,6 +374,9 @@ export function useGenerationProgress({
           job.status === 'abandoned'
         ) {
           setErrorMessage(job.errorMessage || '生成失败');
+          setErrorPhase(null);
+          setFailedStepIndex(null);
+          setErrorLabel(null);
           if (job.errorCode === 'OUTLINE_GENERATION_FAILED') {
             setErrorPhase('outline');
             setErrorLabel('大纲生成失败');
@@ -396,6 +416,9 @@ export function useGenerationProgress({
         if (job.totalSteps != null && job.totalSteps > 0) {
           setTotalSteps(job.totalSteps);
         }
+        if (job.cancelRequested) {
+          setV2Status('cancelling');
+        }
       } catch {
         // ignore fetch errors, retry
       }
@@ -424,7 +447,10 @@ export function useGenerationProgress({
   const displayError = getErrorText(v2Status, errorMessage);
   const canRetry =
     v2Status === 'error' &&
-    (!outline || errorPhase === 'outline' || errorPhase === 'step-fill');
+    (errorPhase === null ||
+      !outline ||
+      errorPhase === 'outline' ||
+      errorPhase === 'step-fill');
 
   const canRetryFromStep =
     v2Status === 'error' &&
@@ -433,6 +459,12 @@ export function useGenerationProgress({
     failedStepIndex >= 0;
 
   async function handleRetry() {
+    setV2Status('connecting');
+    setErrorMessage(null);
+    setErrorPhase(null);
+    setFailedStepIndex(null);
+    setErrorLabel(null);
+
     // Poll for the draft to be ready before retrying, avoiding race condition
     const maxAttempts = 15;
     const pollInterval = 500;
@@ -458,6 +490,12 @@ export function useGenerationProgress({
   }
 
   async function handleRetryFromStep(stepIndex: number) {
+    setV2Status('connecting');
+    setErrorMessage(null);
+    setErrorPhase(null);
+    setFailedStepIndex(null);
+    setErrorLabel(null);
+
     // Fetch current draft to check if steps were persisted
     let draft: Awaited<ReturnType<typeof fetchDraft>> | null = null;
     try {
@@ -508,8 +546,9 @@ export function useGenerationProgress({
         }
       }
 
-      // Regeneration complete — trigger polling for final state
-      setV2Status('stream-complete');
+      // Per-step regeneration does not create a generation job; finish by
+      // reloading the draft instead of polling the previous failed job.
+      onCompleteRef.current();
     } catch (err) {
       setErrorMessage(err instanceof Error ? err.message : '从失败步骤重试失败');
       setV2Status('error');
@@ -517,12 +556,37 @@ export function useGenerationProgress({
   }
 
   async function handleCancel() {
+    if (v2Status === 'cancelling') return;
+
     isCancelledRef.current = true;
-    // Signal the server to stop at the next step boundary.
-    // Fire-and-forget — even if the API call fails, the client-side
-    // abort below still disconnects the SSE stream.
-    cancelDraftGeneration(draftId).catch(() => {});
-    controllerRef.current?.abort();
+    setV2Status('cancelling');
+    setErrorMessage(null);
+    setErrorPhase(null);
+    setFailedStepIndex(null);
+    setErrorLabel(null);
+
+    try {
+      // Signal the server to stop at the next step boundary. The polling effect
+      // keeps running until the persisted job reaches a terminal state.
+      await cancelDraftGeneration(draftId);
+      controllerRef.current?.abort();
+    } catch (err) {
+      if (err instanceof DraftClientError && err.code === 'NOT_RUNNING') {
+        // The job reached a terminal state before the cancel request arrived.
+        // Switch to the normal terminal-state polling path instead of showing
+        // a false cancel failure.
+        controllerRef.current?.abort();
+        setErrorMessage(null);
+        setErrorPhase(null);
+        setFailedStepIndex(null);
+        setErrorLabel(null);
+        setV2Status('stream-complete');
+        return;
+      }
+
+      setErrorMessage(err instanceof Error ? err.message : '取消生成失败');
+      setV2Status('error');
+    }
   }
 
   const isGenerating =
@@ -531,7 +595,8 @@ export function useGenerationProgress({
     v2Status === 'outline-received' ||
     v2Status === 'filling-step' ||
     v2Status === 'validating' ||
-    v2Status === 'reconnecting';
+    v2Status === 'reconnecting' ||
+    v2Status === 'cancelling';
 
   return {
     draftId,

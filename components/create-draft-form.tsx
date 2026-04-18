@@ -59,7 +59,7 @@ export function CreateDraftForm() {
       <div className="flex items-center gap-3">
         <button
           type="button"
-          className="inline-flex items-center gap-2 rounded-md border border-slate-200 bg-slate-50 px-3 py-1.5 text-xs font-medium text-slate-600 transition-colors hover:bg-slate-100"
+          className="inline-flex items-center gap-2 rounded-md border border-border bg-primary/10 px-3 py-1.5 text-xs font-medium text-primary transition-colors hover:bg-primary/20"
           onClick={() => {
             const tmpl = FIRST_EXPERIENCE_TEMPLATE;
             const src = tmpl.sourceItems[0];
@@ -192,9 +192,9 @@ export function CreateDraftForm() {
               </div>
             </div>
 
-            <div className="space-y-2">
+            <div className="min-w-0 space-y-2">
               <Label className="text-sm font-medium text-muted-foreground">代码</Label>
-              <div className="overflow-hidden rounded-md border border-input bg-background">
+              <div className="min-w-0 overflow-hidden rounded-md">
                 <CodeMirrorEditor
                   key={activeItem?.id}
                   value={activeItem?.content || ''}

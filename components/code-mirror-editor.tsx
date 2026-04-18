@@ -120,7 +120,7 @@ export function CodeMirrorEditor({
   return (
     <div
       ref={containerRef}
-      className="overflow-hidden bg-slate-950"
+      className="codemirror-wrapper"
     />
   );
 }

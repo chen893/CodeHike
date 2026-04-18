@@ -154,7 +154,7 @@ TutorialDraft (DSL JSON)
 2. 对每个 step：
    - 应用 patches（find/replace，按数组顺序）
    - 计算 focus/mark 的行号（通过统计换行符）
-   - 注入行变更注解（新增 `+`，修改 `~`）
+   - 注入行变更注解（新增 `+`，修改 `~`），遇到 JSDoc / `/* ... */` 块注释时将行级注解放到块注释外并用相对行号定位，避免内部注解漏进源码
    - CodeHike `highlight()` 语法高亮
 3. 输出带 `highlighted` 代码的 steps 数组
 
@@ -343,6 +343,7 @@ DraftGenerationJob {
   totalSteps: number?
   retryCount: number
   modelId: string?
+  cancelRequested: boolean
 
   errorCode: string?
   errorMessage: string?
@@ -360,6 +361,9 @@ DraftGenerationJob {
 - `draft_generation_jobs` 额外有部分唯一索引，约束同一 draft 同时最多只有一个 `queued/running` job
 - `updateDraftActiveGenerationJobId()` 是受控写入口，只允许把指针设置为同 draft 且 `queued/running` 的 job；非空指针写入会在事务内 `FOR UPDATE` 锁定目标 job 行，避免和终态迁移竞态
 - `updateDraftGenerationJob()` 将 job 更新为 `succeeded/failed/cancelled/abandoned` 时，会在同一事务内清空仍指向该 job 的 `drafts.activeGenerationJobId`
+- `/api/drafts/[id]/generation-status` 读取状态前会执行 stale job recovery；过期 `queued/running` job 会被标记为 `abandoned/JOB_STALE`，并同步清理 draft 的 active 指针，避免重连页面永久卡在“生成中”
+- `cancelRequested` 是取消信号的持久化位；前端收到 active job 的该字段后展示“正在取消”，继续轮询直到 job 进入终态
+- 全量 `POST /api/drafts/[id]/generate` 启动新 job 时会清空旧的 `tutorialDraft / generationOutline / generationQuality / validation`，确保重新生成大纲不会继续展示或预览旧步骤；随后 `writePartialTutorial()` 只写入新 job 已完成的步骤。
 
 ### 6.3 SourceItem
 
@@ -428,7 +432,7 @@ DraftSnapshot {
 | PATCH | `/api/drafts/[id]` | 更新 teachingBrief、meta、intro |
 | DELETE | `/api/drafts/[id]` | 删除草稿（生成中不可删、已发布不可删） |
 | POST | `/api/drafts/[id]/generate` | SSE 流式生成（30-60秒，`maxDuration = 300`） |
-| GET | `/api/drafts/[id]/generation-status` | 轮询生成状态（支持 `?lightweight=true` 省略大字段） |
+| GET | `/api/drafts/[id]/generation-status` | 轮询生成状态（支持 `?lightweight=true` 省略大字段；读取前回收 stale job，并返回 `cancelRequested`） |
 | POST | `/api/drafts/[id]/cancel` | 取消正在进行的生成 |
 | GET | `/api/drafts/[id]/payload` | 构建预览 payload |
 | POST | `/api/drafts/[id]/publish` | 发布（检查 syncState=fresh + validation valid） |
@@ -684,7 +688,7 @@ DraftSnapshot {
 | `components/draft-meta-editor.tsx` | meta 信息编辑器 |
 | `components/step-editor.tsx` | 单步编辑器（文案 + patches + focus + marks + 交互式行选择 + 代码预览 + 结构变更检测） |
 | `components/step-list.tsx` | 步骤列表（含删除/重排） |
-| `components/generation-progress.tsx` | 生成进度展示 |
+| `components/generation-progress.tsx` | 生成进度展示（支持重连、取消、terminal job 后重新发起生成） |
 | `components/drafts-page.tsx` | 草稿列表页视图 |
 | `components/tutorial-scrolly-demo.jsx` | 渲染器兼容导出（re-export `components/tutorial/tutorial-scrolly-demo.jsx`） |
 
@@ -726,7 +730,7 @@ DraftSnapshot {
 - `components/drafts/use-draft-workspace-controller.ts` — 编辑工作区状态管理
 - `components/drafts/draft-workspace-utils.ts` — 工作区工具函数
 - `components/drafts/use-drafts-page-controller.ts` — 草稿列表页状态管理
-- `components/drafts/draft-workspace-content.tsx` — 工作区主内容视图
+- `components/drafts/draft-workspace-content.tsx` — 工作区主内容视图（含 failed partial draft 的重新生成入口）
 - `components/drafts/draft-workspace-sidebar.tsx` — 工作区侧边栏
 - `components/drafts/chapter-row.tsx` — 章节行（侧边栏中的章节标题）
 - `components/drafts/chapter-step-row.tsx` — 章节内步骤行
@@ -740,7 +744,7 @@ GitHub 导入（v3.9 新增）：
 
 教程相关：
 - `components/tutorial/tutorial-client.ts` — 教程 API 调用封装
-- `components/tutorial/use-generation-progress.ts` — SSE 解析 + 状态机
+- `components/tutorial/use-generation-progress.ts` — SSE 解析 + 状态机（active job 重连、terminal job 重试、新生成启动）
 - `components/tutorial/generation-progress-types.ts` — 生成进度类型定义
 - `components/tutorial/generation-progress-utils.ts` — 生成进度工具函数
 - `components/tutorial/generation-progress-view.tsx` — 生成进度视图组件
@@ -911,6 +915,8 @@ GitHub 导入（v3.9 新增）：
   - 中部：步骤编辑器（完整编辑能力，见下方）
   - 底部：生成/重新生成按钮
 - 生成进度面板：实时 SSE 进度（阶段 → 步骤进度 → 验证），`max-height + overflow-y-auto + overscroll-contain` 防止撑爆布局
+- 失败恢复：已有 partial draft 但 `generationState=failed` 时，主编辑区顶部展示恢复条；“重新生成目录”会以新生成模式打开进度面板，terminal job 不再阻断 `/generate`，active job 仍走重连
+- 全量重新生成目录/大纲会先清空旧教程内容；生成中实时预览只展示新 job 逐步写入的 partial draft，不沿用旧步骤
 
 #### 步骤编辑器详细规格
 
@@ -1065,7 +1071,7 @@ GitHub 导入（v3.9 新增）：
 2. **步骤编辑级联验证：** 修改某步骤的 patch 后，后续所有步骤的 patch 可能失效。解决方案：保存时先调用 `validateTutorialDraftThroughStep` 校验到当前步骤，通过后再同步调用 `validateTutorialDraft` 对整份草稿做全量校验并更新 `validationValid`/`validationErrors`
 3. **重排 API 安全：** 只接受 `stepIds` 顺序数组，服务端从 DB 取权威 step 对象重排，不信任客户端提交的完整 step 对象
 4. **草稿列表性能：** 使用 `listDraftSummaries()` 在 SQL 层提取摘要，不返回大 JSONB
-5. **生成失败恢复：** 区分 outline 失败 vs step 失败，提供"重新生成大纲"和"从失败步骤重试"
+5. **生成失败恢复：** 区分 outline 失败 vs step 失败，提供"重新生成大纲"和"从失败步骤重试"；partial draft 失败时必须在工作区主内容区提供恢复入口，不能只依赖侧边状态 badge
 6. **AI 输出 meta 遗漏：** `normalizeTutorialMeta()` 在 AI 生成后从 baseCode 推导缺失的 lang/fileName
 7. **Patch 文件名大小写：** `applyContentPatches` 支持大小写不敏感回退
 8. **生成轮询上限：** `MAX_POLL_ATTEMPTS = 30`（约 3 分钟超时），防止 DB 卡住时无限轮询

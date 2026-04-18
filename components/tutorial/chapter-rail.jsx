@@ -41,17 +41,17 @@ function StepDot({ step, index, selectedIndex, onSelect, onHover, isHovered }) {
             ? "h-2 w-2 rounded-full bg-[#2563eb] ring-4 ring-[#2563eb]/20"
             : state === "completed"
               ? `h-[3px] rounded-[1.5px] bg-[#2563eb]/40 ${isHovered ? "w-4" : "w-2.5"}`
-              : `h-[3px] rounded-[1.5px] bg-slate-300 ${isHovered ? "w-4" : "w-2.5"}`
+              : `h-[3px] rounded-[1.5px] bg-muted-foreground/30 ${isHovered ? "w-4" : "w-2.5"}`
         }`}
       />
 
       {isHovered && (
-        <div className="absolute right-[calc(100%+10px)] top-1/2 flex w-[220px] -translate-y-1/2 flex-col gap-1 rounded-lg border border-slate-200 bg-white px-3 py-2 text-left shadow-lg">
-          <div className="block text-[13px] font-semibold leading-[1.35] text-slate-900">
+        <div className="absolute right-[calc(100%+10px)] top-1/2 flex w-[220px] -translate-y-1/2 flex-col gap-1 rounded-lg border border-border bg-card px-3 py-2 text-left shadow-lg">
+          <div className="block text-[13px] font-semibold leading-[1.35] text-foreground">
             {step.title}
           </div>
           {changeHint && (
-            <span className="block text-[11px] text-slate-400">
+            <span className="block text-[11px] text-muted-foreground">
               {changeHint}
             </span>
           )}
@@ -144,13 +144,13 @@ export function ChapterRail({
           <div key={chapterGroup.id} className="flex flex-col items-end gap-0.5">
             {/* Chapter header dot / label */}
             <button
-              className="flex cursor-pointer items-center gap-1.5 rounded-md px-1.5 py-0.5 text-right transition-colors hover:bg-slate-200/60"
+              className="flex cursor-pointer items-center gap-1.5 rounded-md px-1.5 py-0.5 text-right transition-colors hover:bg-accent/50"
               onClick={() => handleChapterClick(chapterGroup)}
               title={chapterGroup.title}
             >
               <span
                 className={`text-[10px] font-semibold leading-tight ${
-                  isExpanded ? "text-[#2563eb]" : "text-slate-400"
+                  isExpanded ? "text-[#2563eb]" : "text-muted-foreground"
                 }`}
                 style={{ maxWidth: 100, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}
               >
@@ -158,7 +158,7 @@ export function ChapterRail({
               </span>
               <div
                 className={`h-1.5 w-1.5 rounded-full ${
-                  isExpanded ? "bg-[#2563eb]" : "bg-slate-300"
+                  isExpanded ? "bg-[#2563eb]" : "bg-muted-foreground/30"
                 }`}
               />
             </button>

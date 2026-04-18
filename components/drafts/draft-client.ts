@@ -283,6 +283,7 @@ export interface GenerationJobStatus {
   currentStepIndex: number | null;
   totalSteps: number | null;
   modelId: string | null;
+  cancelRequested: boolean;
   errorCode: string | null;
   errorMessage: string | null;
   recoverability: Recoverability;

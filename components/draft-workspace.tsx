@@ -64,16 +64,16 @@ export function DraftWorkspace({
   );
 
   return (
-    <div className="relative min-h-screen overflow-hidden bg-slate-50 text-slate-900 lg:grid lg:grid-cols-[20rem_minmax(0,1fr)]">
+    <div className="relative min-h-screen overflow-x-hidden bg-muted text-foreground lg:grid lg:grid-cols-[20rem_minmax(0,1fr)]">
       <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_top_left,_rgba(15,23,42,0.03),_transparent_28%),linear-gradient(180deg,_rgba(248,250,252,1),_rgba(241,245,249,1))]" />
 
-      <aside className="sticky top-0 hidden h-screen overflow-y-auto border-r border-slate-200 bg-white lg:flex lg:flex-col">
+      <aside className="sticky top-0 hidden h-screen overflow-y-auto border-r border-border bg-card lg:flex lg:flex-col">
         {sidebarContent}
       </aside>
 
       <button
         type="button"
-        className="fixed left-4 top-4 z-40 inline-flex h-11 w-11 items-center justify-center rounded-full border border-slate-200 bg-white/90 text-slate-700 shadow-lg shadow-slate-900/5 backdrop-blur transition hover:-translate-y-0.5 hover:bg-white lg:hidden"
+        className="fixed left-4 top-4 z-40 inline-flex h-11 w-11 items-center justify-center rounded-full border border-border bg-card/90 text-foreground shadow-lg shadow-foreground/5 backdrop-blur transition hover:-translate-y-0.5 hover:bg-card lg:hidden"
         onClick={() => setDrawerOpen(true)}
         aria-label="Open menu"
         aria-expanded={drawerOpen}
@@ -89,7 +89,7 @@ export function DraftWorkspace({
         aria-hidden="true"
       >
         <div
-          className={`absolute left-0 top-0 h-full w-[min(86vw,20rem)] border-r border-slate-200 bg-white shadow-2xl transition-transform duration-300 ease-out ${
+          className={`absolute left-0 top-0 h-full w-[min(86vw,20rem)] border-r border-border bg-card shadow-2xl transition-transform duration-300 ease-out ${
             drawerOpen ? 'translate-x-0' : '-translate-x-full'
           }`}
           onClick={(event) => event.stopPropagation()}
@@ -110,6 +110,7 @@ export function DraftWorkspace({
           generationRunNonce={controller.generationRunNonce}
           generationContext={controller.generationContext}
           generationModelId={controller.generationModelId}
+          startNewGeneration={controller.startNewGeneration}
           repairingStartIndex={controller.repairingStartIndex}
           firstInvalidStep={controller.firstInvalidStep}
           onGenerationComplete={controller.completeGeneration}
@@ -118,7 +119,7 @@ export function DraftWorkspace({
           onSaveStep={controller.saveStep}
           onRegenerateStep={controller.regenerateStep}
           onRetryGeneration={controller.retryGeneration}
-          onRetryFromStep={controller.retryFromFailedStep}
+          onExitGenerationProgress={controller.exitGenerationProgress}
         />
       </main>
     </div>

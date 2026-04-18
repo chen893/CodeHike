@@ -489,6 +489,12 @@ function injectAnnotations(code, focusRange, markLines) {
 }
 ```
 
+实现约束：
+
+- 注解只允许作为 CodeHike 高亮输入存在，不能写回 `tutorialDraft.baseCode`、`steps[].patches` 或编辑器源码预览。
+- `highlight()` 返回后，assembler 会把 payload 中的 `value` 归一为清理后的 `highlighted.code`；渲染、复制、导出和源码真相都不能暴露带注解的中间输入。
+- 对 TypeScript / JavaScript 等含 `/* ... */` / JSDoc 的语言，行级注解不能插入块注释内部；需要把注解提前放到块注释开始前，并用相对行号指向真实代码行，否则 `// !change-indicator(...)` 会被当成普通注释显示。
+
 > 注：具体注入格式取决于 codehike 版本。此处的 `!focus`/`!mark` 是示意，实际可能需要用 codehike 的 annotation API 直接构建注解对象，而非注入注释。
 
 ---
@@ -739,9 +745,11 @@ function countOccurrences(text, search) {
 ### 9.3 运行时生成状态不属于 Tutorial DSL
 
 - `TutorialData` / `TutorialDraft` 只描述教程内容本身，不承载运行时生成任务状态。
-- 生成过程中的 `status / phase / heartbeat / retry / errorCode / modelId` 持久化在 `draft_generation_jobs` 表；`drafts.activeGenerationJobId` 只负责指向当前 active job。
+- 生成过程中的 `status / phase / heartbeat / retry / errorCode / modelId / cancelRequested` 持久化在 `draft_generation_jobs` 表；`drafts.activeGenerationJobId` 只负责指向当前 active job。
 - `modelId` 使用 provider 前缀区分模型来源（如 `deepseek/deepseek-chat`、`minimax/MiniMax-M2.7`），仅影响生成时 provider 选择和 token 预算，不进入 DSL 语义；当前默认值为 `minimax/MiniMax-M2.7`。
 - 生成服务在开始时创建唯一 job；大纲、步骤填充、校验和持久化阶段只通过 job 记录推进运行态，进程内 cancel token 仅作为当前请求内的协作优化。
+- 生成状态查询会先回收超过 lease 的 active job，并把它们标记为 `abandoned/JOB_STALE`；取消请求先写入 `cancelRequested`，前端继续轮询到终态。
+- 全量重新生成大纲时，服务端会先清空旧的 `tutorialDraft / generationOutline / generationQuality / validation`，避免旧步骤或旧预览继续混入新生成过程；随后 partial step 会从新 outline 开始重新写入。
 - 这意味着“教程内容格式”和“生成恢复协议”是解耦的：即使后续增加重连、取消、stale recovery，也不需要修改 DSL 结构。
 
 ### 9.4 失败占位内容不是合法教程内容
@@ -1003,7 +1011,7 @@ patch 的 `file` 字段决定操作目标：
       - 否则 → primaryFile
    d. 对每个文件:
       - 如未变化且非 activeFile 且无 focus/marks → 复用上步高亮（性能优化）
-      - 否则 → 计算行变化、注入注解、CodeHike highlight()
+      - 否则 → 计算行变化、避开块注释注入注解、CodeHike highlight()
    e. step.highlighted = highlightedFiles[primaryFile]  // 向后兼容
       step.highlightedFiles = { ... }                    // 全文件高亮
       step.activeFile = activeFile

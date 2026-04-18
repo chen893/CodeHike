@@ -41,16 +41,16 @@ export function UsernameSetup({ onComplete }: UsernameSetupProps) {
   }
 
   return (
-    <div className="rounded-xl border border-cyan-200 bg-cyan-50/50 p-6 space-y-4">
+    <div className="rounded-xl border border-primary/20 bg-primary/5 p-6 space-y-4">
       <div className="space-y-1">
-        <h3 className="text-sm font-semibold text-slate-900">设置用户名</h3>
-        <p className="text-xs text-slate-500">
+        <h3 className="text-sm font-semibold text-foreground">设置用户名</h3>
+        <p className="text-xs text-muted-foreground">
           设置一个唯一的用户名，其他用户可以通过 /u/{'{'}用户名{'}'} 访问你的主页。
         </p>
       </div>
       <div className="flex gap-2">
         <div className="relative flex-1">
-          <span className="absolute left-3 top-1/2 -translate-y-1/2 text-sm text-slate-400">
+          <span className="absolute left-3 top-1/2 -translate-y-1/2 text-sm text-muted-foreground">
             @
           </span>
           <input
@@ -61,14 +61,14 @@ export function UsernameSetup({ onComplete }: UsernameSetupProps) {
               setError(null);
             }}
             placeholder="your-username"
-            className="w-full rounded-md border border-slate-200 bg-white pl-8 pr-3 py-1.5 text-sm text-slate-900 focus:border-cyan-500 focus:outline-none focus:ring-1 focus:ring-cyan-500"
+            className="w-full rounded-md border border-input bg-card pl-8 pr-3 py-1.5 text-sm text-foreground focus:border-ring focus:outline-none focus:ring-1 focus:ring-ring"
           />
         </div>
         <Button
           onClick={handleSubmit}
           disabled={checking || !username}
           size="sm"
-          className="bg-cyan-400 text-slate-950 hover:bg-cyan-300"
+          className="bg-primary text-primary-foreground hover:bg-primary/90"
         >
           {checking ? '...' : '确认'}
         </Button>

@@ -5,21 +5,21 @@ import type {
 } from './generation-progress-types';
 
 export const shellClass =
-  'relative overflow-hidden rounded-xl border border-slate-200 bg-white shadow-md';
+  'relative overflow-hidden rounded-xl bg-card shadow-md';
 export const heroClass =
-  'rounded-lg border border-slate-200 bg-slate-50 p-6 text-slate-900 shadow-sm';
+  'rounded-lg bg-muted/30 p-6 text-foreground';
 export const cardClass =
-  'rounded-lg border border-slate-200 bg-white p-5 shadow-sm';
+  'rounded-lg bg-card p-5 shadow-sm';
 export const softCardClass =
-  'rounded-lg border border-slate-100 bg-slate-50/50 p-4';
-export const mutedText = 'text-xs leading-5 text-slate-500';
-export const titleClass = 'text-lg font-bold tracking-tight text-slate-900';
+  'rounded-lg bg-muted/20 p-4';
+export const mutedText = 'text-xs leading-5 text-muted-foreground';
+export const titleClass = 'text-lg font-bold tracking-tight text-foreground';
 export const sectionLabel =
-  'inline-flex w-fit items-center rounded-md border border-slate-200 bg-white px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider text-slate-400';
+  'inline-flex w-fit items-center rounded-md bg-muted/60 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider text-muted-foreground';
 export const primaryButton =
-  'inline-flex items-center justify-center rounded-md bg-slate-900 px-4 py-2 text-sm font-medium text-slate-50 transition-colors hover:bg-slate-900/90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-slate-400 focus-visible:ring-offset-2';
+  'inline-flex items-center justify-center rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground transition-colors hover:bg-primary/90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2';
 export const secondaryButton =
-  'inline-flex items-center justify-center rounded-md border border-slate-200 bg-white px-4 py-2 text-sm font-medium text-slate-700 transition-colors hover:bg-slate-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-slate-400 focus-visible:ring-offset-2';
+  'inline-flex items-center justify-center rounded-md border border-border bg-card px-4 py-2 text-sm font-medium text-foreground transition-colors hover:bg-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2';
 export const progressListClass =
   'mt-4 max-h-[min(24rem,48vh)] overflow-y-auto overscroll-contain pr-1 [scrollbar-gutter:stable] sm:max-h-[min(28rem,52vh)]';
 
@@ -47,7 +47,7 @@ export function getV2Headline(status: V2Status, currentStepIndex: number, totalS
 
   if (status === 'filling-step') {
     return {
-      title: `生成第 ${currentStepIndex + 1} / ${totalSteps} 步`,
+      title: '正在生成',
       detail: '正在编写讲解和代码变化。',
     };
   }
@@ -73,6 +73,13 @@ export function getV2Headline(status: V2Status, currentStepIndex: number, totalS
     };
   }
 
+  if (status === 'cancelling') {
+    return {
+      title: '正在取消',
+      detail: '取消信号已发送，正在等待服务端确认任务结束。',
+    };
+  }
+
   return {
     title: '生成失败',
     detail: '生成中断，请检查错误信息后重试。',
@@ -80,7 +87,7 @@ export function getV2Headline(status: V2Status, currentStepIndex: number, totalS
 }
 
 export function isIndeterminate(status: V2Status): boolean {
-  return status === 'connecting' || status === 'generating-outline';
+  return status === 'connecting' || status === 'generating-outline' || status === 'cancelling';
 }
 
 export function getProgressValue(
@@ -94,6 +101,11 @@ export function getProgressValue(
   if (status === 'outline-received') return 20;
   if (status === 'validating' || status === 'stream-complete') return 96;
   if (status === 'reconnecting') return 50;
+  if (status === 'cancelling') {
+    return totalSteps > 0
+      ? Math.min(96, Math.max(14, (completedSteps.length / totalSteps) * 100))
+      : 14;
+  }
   if (status === 'error') {
     return totalSteps > 0 ? Math.min(96, (completedSteps.length / totalSteps) * 100) : 14;
   }

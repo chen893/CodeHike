@@ -62,7 +62,7 @@ export default async function UserProfilePage({
                 className="h-20 w-20 rounded-full border-2 border-white/20 object-cover"
               />
             ) : (
-              <div className="flex h-20 w-20 items-center justify-center rounded-full border-2 border-white/20 bg-cyan-500/20 text-2xl font-bold text-cyan-300">
+              <div className="flex h-20 w-20 items-center justify-center rounded-full border-2 border-white/20 bg-primary/20 text-2xl font-bold text-primary">
                 {(profile.name || profile.username).charAt(0).toUpperCase()}
               </div>
             )}
@@ -70,7 +70,7 @@ export default async function UserProfilePage({
               <h1 className="text-2xl font-bold">
                 {profile.name || profile.username}
               </h1>
-              <p className="text-sm text-cyan-300">@{profile.username}</p>
+              <p className="text-sm text-primary">@{profile.username}</p>
               {profile.bio && (
                 <p className="max-w-lg text-sm leading-relaxed text-slate-300">
                   {profile.bio}
@@ -87,48 +87,48 @@ export default async function UserProfilePage({
 
         {/* Tutorial grid */}
         {tutorials.length === 0 ? (
-          <div className="rounded-xl border border-dashed border-slate-300 p-12 text-center">
-            <p className="text-sm text-slate-400">暂无已发布的教程。</p>
+          <div className="rounded-xl border border-dashed border-border p-12 text-center">
+            <p className="text-sm text-muted-foreground">暂无已发布的教程。</p>
           </div>
         ) : (
           <section className="space-y-6">
-            <h2 className="text-xl font-bold text-slate-900">已发布教程</h2>
+            <h2 className="text-xl font-bold text-foreground">已发布教程</h2>
             <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-3">
               {tutorials.map((t) => {
                 const draft = t.tutorialDraftSnapshot;
                 return (
                   <Card
                     key={t.id}
-                    className="group flex flex-col border-slate-200/60 bg-white shadow-sm transition-all hover:-translate-y-1 hover:shadow-xl"
+                    className="group flex flex-col border-border/60 bg-card shadow-sm transition-all hover:-translate-y-1 hover:shadow-xl"
                   >
                     <CardHeader className="flex-1 p-5 pb-4">
-                      <Badge variant="secondary" className="mb-3 w-fit bg-slate-100 text-slate-600">
+                      <Badge variant="secondary" className="mb-3 w-fit">
                         /{t.slug}
                       </Badge>
-                      <CardTitle className="mb-2 text-base font-bold text-slate-900 group-hover:text-cyan-600 transition-colors">
+                      <CardTitle className="mb-2 text-base font-bold text-foreground group-hover:text-primary transition-colors">
                         {draft.meta.title}
                       </CardTitle>
                       {draft.meta.description && (
-                        <CardDescription className="line-clamp-3 text-sm leading-relaxed text-slate-500">
+                        <CardDescription className="line-clamp-3 text-sm leading-relaxed text-muted-foreground">
                           {draft.meta.description}
                         </CardDescription>
                       )}
                     </CardHeader>
-                    <CardContent className="space-y-3 border-t border-slate-50 p-5 pt-4">
+                    <CardContent className="space-y-3 border-t border-border/30 p-5 pt-4">
                       <div className="flex flex-wrap gap-1.5">
                         {draft.meta.lang && (
-                          <Badge variant="outline" className="text-[11px] border-slate-200 text-slate-500">
+                          <Badge variant="outline" className="text-[11px] border-border text-muted-foreground">
                             {draft.meta.lang}
                           </Badge>
                         )}
-                        <Badge variant="outline" className="text-[11px] border-slate-200 text-slate-500">
+                        <Badge variant="outline" className="text-[11px] border-border text-muted-foreground">
                           {draft.steps.length} 步
                         </Badge>
-                        <Badge variant="outline" className="text-[11px] border-slate-200 text-slate-500">
+                        <Badge variant="outline" className="text-[11px] border-border text-muted-foreground">
                           约 {estimateReadingTime(draft.steps.length)} 分钟
                         </Badge>
                       </div>
-                      <Button asChild className="w-full bg-slate-900 text-white hover:bg-slate-800">
+                      <Button asChild className="w-full bg-primary text-primary-foreground hover:bg-primary/90">
                         <Link href={`/${t.slug}`}>阅读全文</Link>
                       </Button>
                     </CardContent>
