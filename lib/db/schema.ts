@@ -54,6 +54,9 @@ export const generationJobErrorCodeEnum = pgEnum('generation_job_error_code', [
   'PUBLISH_SLUG_CONFLICT',
 ]);
 
+// v3.11: Tag classification dimension
+export const tagTypeTypeEnum = pgEnum('tag_type_type', ['technology', 'category', 'level']);
+
 // NextAuth tables
 
 export const users = pgTable('users', {
@@ -255,6 +258,8 @@ export const tutorialTags = pgTable('tutorial_tags', {
   id: uuid('id').primaryKey().defaultRandom(),
   name: varchar('name', { length: 64 }).notNull().unique(),
   slug: varchar('slug', { length: 64 }).notNull().unique(),
+  // v3.11: Tag classification dimension (nullable for backward compat -- D-04)
+  tagType: tagTypeTypeEnum('tag_type'),
   createdAt: timestamp('created_at', { withTimezone: true })
     .defaultNow()
     .notNull(),

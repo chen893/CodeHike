@@ -1,6 +1,6 @@
 {
-  "id": "59820959-b1f5-4b84-a264-9c51852401fa",
-  "prevId": "33edd697-b985-4c95-886c-f75de2175e8f",
+  "id": "6d666636-c14c-44e9-926f-3d78c2d7d4fa",
+  "prevId": "59820959-b1f5-4b84-a264-9c51852401fa",
   "version": "7",
   "dialect": "postgresql",
   "tables": {
@@ -862,6 +862,13 @@
           "primaryKey": false,
           "notNull": true
         },
+        "tag_type": {
+          "name": "tag_type",
+          "type": "tag_type_type",
+          "typeSchema": "public",
+          "primaryKey": false,
+          "notNull": false
+        },
         "created_at": {
           "name": "created_at",
           "type": "timestamp with time zone",
@@ -1060,6 +1067,15 @@
         "empty",
         "fresh",
         "stale"
+      ]
+    },
+    "public.tag_type_type": {
+      "name": "tag_type_type",
+      "schema": "public",
+      "values": [
+        "technology",
+        "category",
+        "level"
       ]
     }
   },

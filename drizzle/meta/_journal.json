@@ -8,6 +8,20 @@
       "when": 1776367205875,
       "tag": "0000_goofy_lorna_dane",
       "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "7",
+      "when": 1776460800000,
+      "tag": "0003_cynical_daredevil",
+      "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1776539948312,
+      "tag": "0002_fixed_butterfly",
+      "breakpoints": true
     }
   ]
 }

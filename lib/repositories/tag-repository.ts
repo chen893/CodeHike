@@ -1,8 +1,8 @@
 import { eq, desc, and, inArray, sql } from 'drizzle-orm';
 import { unstable_cache } from 'next/cache';
 import { db } from '../db';
-import { tutorialTags, tutorialTagRelations, publishedTutorials } from '../db/schema';
-import type { TutorialTag } from '../types/api';
+import { tutorialTags, tutorialTagRelations, publishedTutorials, tagTypeTypeEnum } from '../db/schema';
+import type { TutorialTag, TagTypeType } from '../types/api';
 import { pinyin } from 'pinyin-pro';
 
 type TutorialTagRow = typeof tutorialTags.$inferSelect;
@@ -12,6 +12,7 @@ function toTutorialTag(row: TutorialTagRow): TutorialTag {
     id: row.id,
     name: row.name,
     slug: row.slug,
+    tagType: row.tagType ?? null,
     createdAt: row.createdAt,
   };
 }
@@ -108,24 +109,35 @@ export async function getTagBySlug(slug: string): Promise<TutorialTag | null> {
   return row ? toTutorialTag(row) : null;
 }
 
+/** Get all tags of a specific tagType classification. */
+export async function getTagsByType(tagType: TagTypeType): Promise<TutorialTag[]> {
+  const rows = await db
+    .select()
+    .from(tutorialTags)
+    .where(eq(tutorialTags.tagType, tagType));
+  return rows.map(toTutorialTag);
+}
+
 export async function listAllTags(): Promise<(TutorialTag & { tutorialCount: number })[]> {
   const rows = await db
     .select({
       id: tutorialTags.id,
       name: tutorialTags.name,
       slug: tutorialTags.slug,
+      tagType: tutorialTags.tagType,
       createdAt: tutorialTags.createdAt,
       tutorialCount: sql<number>`count(${tutorialTagRelations.tutorialId})::int`,
     })
     .from(tutorialTags)
     .leftJoin(tutorialTagRelations, eq(tutorialTags.id, tutorialTagRelations.tagId))
-    .groupBy(tutorialTags.id, tutorialTags.name, tutorialTags.slug, tutorialTags.createdAt)
+    .groupBy(tutorialTags.id, tutorialTags.name, tutorialTags.slug, tutorialTags.tagType, tutorialTags.createdAt)
     .orderBy(desc(sql`count(${tutorialTagRelations.tutorialId})`));
 
   return rows.map((row) => ({
     id: row.id,
     name: row.name,
     slug: row.slug,
+    tagType: row.tagType ?? null,
     createdAt: row.createdAt,
     tutorialCount: row.tutorialCount,
   }));

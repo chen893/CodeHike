@@ -63,10 +63,14 @@ export interface ApiErrorResponse {
 
 // v3.7: Discovery, Tags, and Creator Identity types
 
+// v3.11: Tag classification dimension (D-01/D-04)
+export type TagTypeType = 'technology' | 'category' | 'level';
+
 export interface TutorialTag {
   id: string;
   name: string;
   slug: string;
+  tagType?: TagTypeType | null; // nullable -- D-04: NULL for unclassified tags
   createdAt: Date;
 }
 
