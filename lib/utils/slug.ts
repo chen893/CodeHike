@@ -13,6 +13,7 @@ const RESERVED_SLUGS = new Set([
   'dashboard',
   'settings',
   'notifications',
+  'following',  // My Follows page route -- prevents slug collision
 ]);
 
 export function generateSlug(title: string): string {

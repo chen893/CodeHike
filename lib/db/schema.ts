@@ -310,6 +310,23 @@ export const tagRelations = pgTable('tag_relations', {
   uniqueIndex('tag_relations_unique_pair').on(table.fromTagId, table.toTagId),
 ]);
 
+// v3.12: User tag follows (D-16)
+export const userTagFollows = pgTable(
+  'user_tag_follows',
+  {
+    userId: text('user_id')
+      .notNull()
+      .references(() => users.id, { onDelete: 'cascade' }),
+    tagId: uuid('tag_id')
+      .notNull()
+      .references(() => tutorialTags.id, { onDelete: 'cascade' }),
+    createdAt: timestamp('created_at', { withTimezone: true }).defaultNow(),
+  },
+  (table) => [
+    primaryKey({ columns: [table.userId, table.tagId] }),
+  ],
+);
+
 export const draftSnapshots = pgTable('draft_snapshots', {
   id: uuid('id').primaryKey().defaultRandom(),
   draftId: uuid('draft_id')
