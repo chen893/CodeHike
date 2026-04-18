@@ -22,6 +22,44 @@ import { eq, sql } from 'drizzle-orm';
 
 // ─── Hardcoded Vocabularies ────────────────────────────────────────────
 
+const TECHNOLOGY_VOCABULARY: Record<string, string> = {
+  // Languages
+  'JavaScript': 'javascript',
+  'TypeScript': 'typescript',
+  'Python': 'python',
+  'Rust': 'rust',
+  'Go': 'go',
+  'Java': 'java',
+  'C++': 'cpp',
+  'SQL': 'sql',
+  // Frontend
+  'React': 'react',
+  'Next.js': 'nextjs',
+  'Vue': 'vue',
+  'Svelte': 'svelte',
+  'CSS': 'css',
+  // Backend
+  'Node.js': 'nodejs',
+  'Express': 'express',
+  'FastAPI': 'fastapi',
+  // Database
+  'PostgreSQL': 'postgresql',
+  'MongoDB': 'mongodb',
+  'Redis': 'redis',
+  // AI/LLM
+  'Claude': 'claude',
+  'OpenAI': 'openai',
+  'LangChain': 'langchain',
+  'AI Agent': 'ai-agent',
+  'RAG': 'rag',
+  // DevOps & Tools
+  'Docker': 'docker',
+  'Git': 'git',
+  // API
+  'REST API': 'rest-api',
+  'GraphQL': 'graphql',
+};
+
 const CATEGORY_VOCABULARY = [
   '前端开发',
   '后端开发',
@@ -36,9 +74,6 @@ const CATEGORY_VOCABULARY = [
 ];
 
 const LEVEL_VOCABULARY = ['入门', '进阶', '实战'];
-
-// Minimum tutorial count for a tag to be classified as technology
-const HIGH_FREQUENCY_THRESHOLD = 3;
 
 // ─── Helpers ───────────────────────────────────────────────────────────
 
@@ -121,41 +156,35 @@ async function main() {
     console.log(`  [level] "${name}"`);
   }
 
-  // 3. Classify high-frequency tags as technology
-  console.log('\nClassifying high-frequency tags as technology...');
-  const highFreqTags = await db
-    .select({
-      id: tutorialTags.id,
-      name: tutorialTags.name,
-      tagType: tutorialTags.tagType,
-    })
-    .from(tutorialTags);
+  // 3. Seed technology vocabulary (curated list with explicit slugs)
+  console.log('\nSeeding technology vocabulary...');
+  for (const [name, slug] of Object.entries(TECHNOLOGY_VOCABULARY)) {
+    const [existing] = await db
+      .select({ id: tutorialTags.id, tagType: tutorialTags.tagType })
+      .from(tutorialTags)
+      .where(eq(tutorialTags.slug, slug));
 
-  for (const tag of highFreqTags) {
-    // Skip already classified
-    if (tag.tagType) {
-      continue;
-    }
-
-    // Count tutorials for this tag
-    const [countRow] = await db
-      .select({ cnt: sql<number>`count(*)::int` })
-      .from(sql`tutorial_tag_relations`)
-      .where(sql`tag_id = ${tag.id}`);
-
-    const tutorialCount = countRow?.cnt ?? 0;
-    if (tutorialCount >= HIGH_FREQUENCY_THRESHOLD) {
-      await setTagType(tag.id, 'technology');
+    if (existing) {
+      if (existing.tagType) {
+        stats.skipped++;
+        console.log(`  [skip] "${name}" already has tagType: ${existing.tagType}`);
+        continue;
+      }
+      await setTagType(existing.id, 'technology');
       stats.technology++;
-      console.log(`  [technology] "${tag.name}" (${tutorialCount} tutorials)`);
+      console.log(`  [technology] "${name}" (existing)`);
+    } else {
+      await db.insert(tutorialTags).values({ name, slug, tagType: 'technology' });
+      stats.technology++;
+      console.log(`  [technology] "${name}" (created)`);
     }
   }
 
   // 4. Report
   console.log('\n=== Summary ===');
-  console.log(`Category tags seeded: ${stats.category}`);
-  console.log(`Level tags seeded:    ${stats.level}`);
-  console.log(`Technology tags classified: ${stats.technology}`);
+  console.log(`Technology tags seeded: ${stats.technology}`);
+  console.log(`Category tags seeded:  ${stats.category}`);
+  console.log(`Level tags seeded:     ${stats.level}`);
   console.log(`Skipped (already typed): ${stats.skipped}`);
 }
 
