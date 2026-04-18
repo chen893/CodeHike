@@ -1,6 +1,6 @@
 {
-  "id": "59820959-b1f5-4b84-a264-9c51852401fa",
-  "prevId": "33edd697-b985-4c95-886c-f75de2175e8f",
+  "id": "7c600d5e-384c-4223-a91b-3c0361dd353a",
+  "prevId": "59820959-b1f5-4b84-a264-9c51852401fa",
   "version": "7",
   "dialect": "postgresql",
   "tables": {
@@ -787,6 +787,59 @@
       "checkConstraints": {},
       "isRLSEnabled": false
     },
+    "public.tag_candidates": {
+      "name": "tag_candidates",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "uuid",
+          "primaryKey": true,
+          "notNull": true,
+          "default": "gen_random_uuid()"
+        },
+        "name": {
+          "name": "name",
+          "type": "varchar(64)",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "suggested_by": {
+          "name": "suggested_by",
+          "type": "varchar(32)",
+          "primaryKey": false,
+          "notNull": false,
+          "default": "'ai'"
+        },
+        "tutorial_id": {
+          "name": "tutorial_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "status": {
+          "name": "status",
+          "type": "varchar(16)",
+          "primaryKey": false,
+          "notNull": false,
+          "default": "'pending'"
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {},
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
     "public.tutorial_tag_relations": {
       "name": "tutorial_tag_relations",
       "schema": "",
@@ -861,6 +914,13 @@
           "type": "varchar(64)",
           "primaryKey": false,
           "notNull": true
+        },
+        "tag_type": {
+          "name": "tag_type",
+          "type": "tag_type_type",
+          "typeSchema": "public",
+          "primaryKey": false,
+          "notNull": false
         },
         "created_at": {
           "name": "created_at",
@@ -1060,6 +1120,15 @@
         "empty",
         "fresh",
         "stale"
+      ]
+    },
+    "public.tag_type_type": {
+      "name": "tag_type_type",
+      "schema": "public",
+      "values": [
+        "technology",
+        "category",
+        "level"
       ]
     }
   },

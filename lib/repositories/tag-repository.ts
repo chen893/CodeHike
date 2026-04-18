@@ -194,6 +194,39 @@ export async function getTutorialsForTag(tagSlug: string): Promise<string[]> {
   return rows.map((r) => r.tutorialId);
 }
 
+/** Get all approved vocabulary tags grouped by tagType (D-09). */
+export async function getVocabularyGroupedByType(): Promise<Record<string, TutorialTag[]>> {
+  const rows = await db
+    .select()
+    .from(tutorialTags)
+    .where(sql`${tutorialTags.tagType} IS NOT NULL`);
+
+  const grouped: Record<string, TutorialTag[]> = {
+    technology: [],
+    category: [],
+    level: [],
+  };
+  for (const row of rows) {
+    const tag = toTutorialTag(row);
+    if (tag.tagType && tag.tagType in grouped) {
+      grouped[tag.tagType].push(tag);
+    }
+  }
+  return grouped;
+}
+
+/** Check if a tag name exists in the approved vocabulary (has a tagType) (D-09). */
+export async function isVocabularyTag(tagName: string): Promise<boolean> {
+  const [row] = await db
+    .select({ id: tutorialTags.id })
+    .from(tutorialTags)
+    .where(and(
+      eq(tutorialTags.name, tagName),
+      sql`${tutorialTags.tagType} IS NOT NULL`,
+    ));
+  return !!row;
+}
+
 /** Delete tags that have no associated tutorials. Returns count of deleted orphans. */
 export async function deleteOrphanTags(): Promise<number> {
   const orphans = await db

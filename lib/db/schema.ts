@@ -282,6 +282,18 @@ export const tutorialTagRelations = pgTable(
   ],
 );
 
+// v3.11: Tag candidate queue for unknown tags (D-08)
+export const tagCandidates = pgTable('tag_candidates', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  name: varchar('name', { length: 64 }).notNull(),
+  suggestedBy: varchar('suggested_by', { length: 32 }).default('ai'),
+  tutorialId: uuid('tutorial_id'),
+  status: varchar('status', { length: 16 }).default('pending'),
+  createdAt: timestamp('created_at', { withTimezone: true })
+    .defaultNow()
+    .notNull(),
+});
+
 export const draftSnapshots = pgTable('draft_snapshots', {
   id: uuid('id').primaryKey().defaultRandom(),
   draftId: uuid('draft_id')
