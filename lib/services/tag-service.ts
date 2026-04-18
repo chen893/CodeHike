@@ -5,6 +5,7 @@
 
 import { generateTags } from '../ai/tag-generator';
 import * as tagRepo from '../repositories/tag-repository';
+import { trackTutorialTagged } from '../monitoring/analytics';
 import type { TutorialTag } from '../types/api';
 
 /**
@@ -26,6 +27,9 @@ export async function generateAndAssignTags(
   // Associate all tags with the tutorial
   const tagIds = tags.map((t) => t.id);
   await tagRepo.setTagsForTutorial(tutorialId, tagIds);
+
+  // Fire-and-forget analytics
+  trackTutorialTagged(tutorialId, tags.map((t) => t.name));
 
   return tags;
 }
@@ -61,6 +65,9 @@ export async function setTutorialTagsByName(
   // Associate all tags with the tutorial
   const tagIds = tags.map((t) => t.id);
   await tagRepo.setTagsForTutorial(tutorialId, tagIds);
+
+  // Fire-and-forget analytics
+  trackTutorialTagged(tutorialId, tags.map((t) => t.name));
 
   return tags;
 }

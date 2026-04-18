@@ -9,8 +9,8 @@ export async function getExploreData(options: {
   lang?: string;
   search?: string;
 }): Promise<{ tutorials: ExploreTutorial[]; total: number; tags: TutorialTag[] }> {
-  // Always load tags for sidebar
-  const tagsPromise = tagRepo.listAllTags();
+  // Always load tags for sidebar (cached)
+  const tagsPromise = tagRepo.listAllTagsCached();
 
   let tutorials: ExploreTutorial[];
   let total: number;
@@ -44,5 +44,5 @@ export async function getExploreData(options: {
 export async function getTagsPageData(): Promise<
   (TutorialTag & { tutorialCount: number })[]
 > {
-  return tagRepo.listAllTags();
+  return tagRepo.listAllTagsCached();
 }

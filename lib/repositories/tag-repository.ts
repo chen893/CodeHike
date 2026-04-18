@@ -1,4 +1,5 @@
 import { eq, desc, and, inArray, sql } from 'drizzle-orm';
+import { unstable_cache } from 'next/cache';
 import { db } from '../db';
 import { tutorialTags, tutorialTagRelations, publishedTutorials } from '../db/schema';
 import type { TutorialTag } from '../types/api';
@@ -130,6 +131,13 @@ export async function listAllTags(): Promise<(TutorialTag & { tutorialCount: num
   }));
 }
 
+/** Cached version of listAllTags with 5-minute revalidation. */
+export const listAllTagsCached = unstable_cache(
+  async () => listAllTags(),
+  ['tutorial-tags-all'],
+  { revalidate: 300 },
+);
+
 export async function setTagsForTutorial(
   tutorialId: string,
   tagIds: string[],
@@ -171,4 +179,20 @@ export async function getTutorialsForTag(tagSlug: string): Promise<string[]> {
     .innerJoin(tutorialTags, eq(tutorialTagRelations.tagId, tutorialTags.id))
     .where(eq(tutorialTags.slug, tagSlug));
   return rows.map((r) => r.tutorialId);
+}
+
+/** Delete tags that have no associated tutorials. Returns count of deleted orphans. */
+export async function deleteOrphanTags(): Promise<number> {
+  const orphans = await db
+    .select({ id: tutorialTags.id })
+    .from(tutorialTags)
+    .leftJoin(tutorialTagRelations, eq(tutorialTags.id, tutorialTagRelations.tagId))
+    .where(sql`${tutorialTagRelations.tagId} IS NULL`);
+
+  if (orphans.length === 0) return 0;
+
+  await db.delete(tutorialTags).where(
+    inArray(tutorialTags.id, orphans.map((o) => o.id)),
+  );
+  return orphans.length;
 }

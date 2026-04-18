@@ -10,7 +10,7 @@ import {
 import { getExploreData } from '@/lib/services/explore-service';
 import { generateOgMetadata } from '@/lib/utils/seo';
 import { getCurrentUser } from '@/auth';
-import { trackExploreViewed } from '@/lib/monitoring/analytics';
+import { trackExploreViewed, trackTagViewed } from '@/lib/monitoring/analytics';
 import { ExploreClient } from '@/components/explore/explore-client';
 
 export const metadata = {
@@ -51,6 +51,12 @@ export default async function ExplorePage({
   });
 
   const activeTag = tag ? tags.find((t) => t.slug === tag) : null;
+
+  // Fire-and-forget tag view tracking
+  if (activeTag) {
+    trackTagViewed(activeTag.slug, 'explore', user?.id);
+  }
+
   const pageSize = 20;
   const totalPages = Math.ceil(total / pageSize);
 
@@ -131,12 +137,13 @@ export default async function ExplorePage({
                     {tutorial.tags.length > 0 && (
                       <div className="flex flex-wrap gap-1">
                         {tutorial.tags.slice(0, 3).map((t) => (
-                          <span
+                          <Link
                             key={t.id}
-                            className="inline-block rounded-full bg-primary/10 px-2 py-0.5 text-[10px] font-medium text-primary"
+                            href={`/explore?tag=${t.slug}`}
+                            className="inline-block rounded-full bg-primary/10 px-2 py-0.5 text-[10px] font-medium text-primary hover:bg-primary/20 transition-colors"
                           >
                             {t.name}
-                          </span>
+                          </Link>
                         ))}
                         {tutorial.tags.length > 3 && (
                           <span className="self-center text-[10px] text-muted-foreground">

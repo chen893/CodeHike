@@ -110,3 +110,30 @@ export function trackProfileViewed(
     payload: { username },
   });
 }
+
+/** Track a tag being viewed/clicked. */
+export function trackTagViewed(
+  tagSlug: string,
+  source: 'explore' | 'tutorial_detail' | 'tag_page',
+  userId?: string,
+): Promise<void> {
+  return trackEvent({
+    eventType: 'tag_viewed',
+    slug: tagSlug,
+    userId,
+    payload: { source },
+  });
+}
+
+/** Track tags being assigned to a tutorial. */
+export function trackTutorialTagged(
+  tutorialId: string,
+  tagNames: string[],
+  userId?: string,
+): Promise<void> {
+  return trackEvent({
+    eventType: 'tutorial_tagged',
+    userId,
+    payload: { tutorialId, tagNames },
+  });
+}
