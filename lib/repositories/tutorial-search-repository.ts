@@ -86,7 +86,56 @@ async function attachTags(tutorialIds: string[]): Promise<Map<string, TutorialTa
 export async function searchPublishedTutorials(
   query: string,
   limit: number = 20,
+  options?: { tagSlug?: string; lang?: string },
 ): Promise<ExploreTutorial[]> {
+  // When tag filter is needed, use raw SQL with dynamic JOINs
+  if (options?.tagSlug) {
+    const rawRows = await db.execute(sql`
+      SELECT
+        pt.id,
+        pt.slug,
+        pt.tutorial_draft_snapshot,
+        pt.published_at as "publishedAt",
+        coalesce(vc.cnt, 0)::int as "viewCount",
+        u.name as "authorName",
+        u.username as "authorUsername",
+        u.image as "authorImage"
+      FROM published_tutorials pt
+      INNER JOIN drafts d ON d.id = pt.draft_record_id
+      LEFT JOIN users u ON u.id = d.user_id
+      LEFT JOIN (SELECT slug, count(*) as cnt FROM events WHERE event_type = 'tutorial_viewed' GROUP BY slug) vc ON vc.slug = pt.slug
+      INNER JOIN tutorial_tag_relations ttr_filter ON ttr_filter.tutorial_id = pt.id
+      INNER JOIN tutorial_tags tt_filter ON tt_filter.id = ttr_filter.tag_id AND tt_filter.slug = ${options.tagSlug}
+      WHERE to_tsvector('simple', coalesce(pt.tutorial_draft_snapshot->'meta'->>'title','') || ' ' || coalesce(pt.slug,'')) @@ plainto_tsquery('simple', ${query})
+      ${options.lang ? sql`AND pt.tutorial_draft_snapshot->'meta'->>'lang' = ${options.lang}` : sql``}
+      ORDER BY coalesce(vc.cnt, 0) DESC
+      LIMIT ${limit}
+    `);
+
+    const rows = rawRows.rows as any[];
+    const tutorialIds = rows.map((r: any) => r.id);
+    const tagMap = await attachTags(tutorialIds);
+
+    return rows.map((row: any) =>
+      toExploreTutorial({
+        id: row.id,
+        slug: row.slug,
+        tutorialDraftSnapshot: row.tutorial_draft_snapshot ?? row.tutorialDraftSnapshot,
+        publishedAt: row.publishedAt ?? row.published_at,
+        viewCount: row.viewCount,
+        authorName: row.authorName,
+        authorUsername: row.authorUsername,
+        authorImage: row.authorImage,
+        tags: tagMap.get(row.id) || [],
+      }),
+    );
+  }
+
+  // No tag filter: use standard Drizzle query with optional lang condition
+  const langWhere = options?.lang
+    ? sql` AND "published_tutorials"."tutorial_draft_snapshot"->'meta'->>'lang' = ${options.lang}`
+    : sql``;
+
   const rows = await db
     .select({
       id: publishedTutorials.id,
@@ -106,7 +155,7 @@ export async function searchPublishedTutorials(
       sql`vc.slug = ${publishedTutorials.slug}`,
     )
     .where(
-      sql`to_tsvector('simple', coalesce("published_tutorials"."tutorial_draft_snapshot"->'meta'->>'title','') || ' ' || coalesce("published_tutorials"."slug",'')) @@ plainto_tsquery('simple', ${query})`,
+      sql`to_tsvector('simple', coalesce("published_tutorials"."tutorial_draft_snapshot"->'meta'->>'title','') || ' ' || coalesce("published_tutorials"."slug",'')) @@ plainto_tsquery('simple', ${query})${langWhere}`,
     )
     .orderBy(desc(sql`coalesce(vc.cnt, 0)`))
     .limit(limit);

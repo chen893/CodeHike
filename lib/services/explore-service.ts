@@ -17,8 +17,13 @@ export async function getExploreData(options: {
 
   if (options.search && options.search.trim().length > 0) {
     const searchLimit = 50;
-    tutorials = await searchRepo.searchPublishedTutorials(options.search.trim(), searchLimit);
-    total = tutorials.length;
+    const result = await searchRepo.searchPublishedTutorials(
+      options.search.trim(),
+      searchLimit,
+      { tagSlug: options.tag, lang: options.lang },
+    );
+    tutorials = Array.isArray(result) ? result : (result as any).tutorials ?? result;
+    total = Array.isArray(result) ? result.length : (result as any).total ?? result.length;
   } else {
     const result = await searchRepo.listPublishedForExplore({
       page: options.page,

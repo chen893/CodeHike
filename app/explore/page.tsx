@@ -69,7 +69,6 @@ export default async function ExplorePage({
         <ExploreClient
           tags={JSON.parse(JSON.stringify(tags))}
           activeTag={activeTag?.slug ?? null}
-          activeLang={lang ?? null}
           sort={sort ?? 'newest'}
           searchQuery={search ?? ''}
         />

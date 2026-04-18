@@ -2,6 +2,7 @@ import { eq, desc, and, inArray, sql } from 'drizzle-orm';
 import { db } from '../db';
 import { tutorialTags, tutorialTagRelations, publishedTutorials } from '../db/schema';
 import type { TutorialTag } from '../types/api';
+import { pinyin } from 'pinyin-pro';
 
 type TutorialTagRow = typeof tutorialTags.$inferSelect;
 
@@ -15,17 +16,46 @@ function toTutorialTag(row: TutorialTagRow): TutorialTag {
 }
 
 function generateSlug(name: string): string {
-  return name
-    .toLowerCase()
-    .replace(/[^\w\s-]/g, '')
-    .replace(/\s+/g, '-')
+  const lower = name.toLowerCase().trim();
+  if (!lower) return 'tag';
+
+  // Split into alternating segments of CJK and non-CJK characters
+  const CJK_REGEX = /[\u4e00-\u9fff\u3400-\u4dbf]/;
+  const segments: { text: string; isCJK: boolean }[] = [];
+  let current = '';
+  let isCurrentCJK = CJK_REGEX.test(lower[0]);
+
+  for (const char of lower) {
+    const isCJK = CJK_REGEX.test(char);
+    if (isCJK === isCurrentCJK) {
+      current += char;
+    } else {
+      if (current) segments.push({ text: current, isCJK: isCurrentCJK });
+      current = char;
+      isCurrentCJK = isCJK;
+    }
+  }
+  if (current) segments.push({ text: current, isCJK: isCurrentCJK });
+
+  const parts = segments.map((seg) => {
+    if (seg.isCJK) {
+      return pinyin(seg.text, { toneType: 'none', type: 'array' }).join('-');
+    }
+    // Non-CJK: keep as-is, replace spaces with hyphens
+    return seg.text.replace(/\s+/g, '-');
+  });
+
+  const joined = parts
+    .join('-')
+    .replace(/[^a-z0-9-]/g, '')
     .replace(/-+/g, '-')
     .replace(/^-+|-+$/g, '')
     .slice(0, 64);
+  return joined || 'tag';
 }
 
 export async function createTag(name: string): Promise<TutorialTag> {
-  const slug = generateSlug(name) || 'tag';
+  const slug = generateSlug(name);
   const [row] = await db
     .insert(tutorialTags)
     .values({ name, slug })

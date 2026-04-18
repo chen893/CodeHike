@@ -4,16 +4,11 @@ import { useRouter, useSearchParams } from 'next/navigation';
 import { useState, useCallback, useRef, useEffect, Suspense } from 'react';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
-import type { TutorialTag } from '@/lib/types/api';
-
-interface TagWithCount extends TutorialTag {
-  tutorialCount: number;
-}
+import type { TagWithCount } from '@/components/tutorial/tags-client';
 
 interface ExploreClientProps {
   tags: TagWithCount[];
   activeTag: string | null;
-  activeLang: string | null;
   sort: string;
   searchQuery: string;
 }
@@ -85,7 +80,8 @@ function ExploreClientInner({
     };
   }, []);
 
-  const topTags = tags.slice(0, 12);
+  const [showAllTags, setShowAllTags] = useState(false);
+  const displayedTags = showAllTags ? tags : tags.slice(0, 12);
 
   return (
     <div className="space-y-4">
@@ -109,28 +105,38 @@ function ExploreClientInner({
       </div>
 
       {/* Tag chips */}
-      {topTags.length > 0 && (
-        <div className="flex flex-wrap gap-1.5">
-          {topTags.filter(t => t.tutorialCount > 0 || activeTag === t.slug).map((tag) => (
+      {displayedTags.length > 0 && (
+        <div className="space-y-2">
+          <div className="flex flex-wrap gap-1.5">
+            {displayedTags.filter(t => t.tutorialCount > 0 || activeTag === t.slug).map((tag) => (
+              <button
+                key={tag.id}
+                onClick={() => toggleTag(tag.slug)}
+                className={`inline-flex items-center gap-1.5 rounded-full border px-3 py-1 text-xs font-medium transition-colors ${
+                  activeTag === tag.slug
+                    ? 'border-primary/40 bg-primary/10 text-primary'
+                    : 'border-border bg-card text-muted-foreground hover:bg-slate-50'
+                }`}
+              >
+                {tag.name}
+                <span className={`rounded-full px-1.5 text-[10px] ${
+                  activeTag === tag.slug
+                    ? 'bg-primary/20 text-primary'
+                    : 'bg-secondary text-muted-foreground'
+                }`}>
+                  {tag.tutorialCount}
+                </span>
+              </button>
+            ))}
+          </div>
+          {tags.length > 12 && (
             <button
-              key={tag.id}
-              onClick={() => toggleTag(tag.slug)}
-              className={`inline-flex items-center gap-1.5 rounded-full border px-3 py-1 text-xs font-medium transition-colors ${
-                activeTag === tag.slug
-                  ? 'border-primary/40 bg-primary/10 text-primary'
-                  : 'border-border bg-card text-muted-foreground hover:bg-slate-50'
-              }`}
+              onClick={() => setShowAllTags(!showAllTags)}
+              className="text-xs text-muted-foreground hover:text-primary transition-colors"
             >
-              {tag.name}
-              <span className={`rounded-full px-1.5 text-[10px] ${
-                activeTag === tag.slug
-                  ? 'bg-primary/20 text-primary'
-                  : 'bg-secondary text-muted-foreground'
-              }`}>
-                {tag.tutorialCount}
-              </span>
+              {showAllTags ? '收起' : `查看全部 ${tags.length} 个标签`}
             </button>
-          ))}
+          )}
         </div>
       )}
     </div>
