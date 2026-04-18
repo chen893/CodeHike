@@ -176,6 +176,7 @@ export async function getTagsForTutorial(tutorialId: string): Promise<TutorialTa
       id: tutorialTags.id,
       name: tutorialTags.name,
       slug: tutorialTags.slug,
+      tagType: tutorialTags.tagType,
       createdAt: tutorialTags.createdAt,
     })
     .from(tutorialTagRelations)
