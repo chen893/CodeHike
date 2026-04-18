@@ -2,7 +2,7 @@
 
 ## Current Position
 - **Phase:** tag-system-evolution
-- **Current Plan:** 05
+- **Current Plan:** 06
 - **Status:** in-progress
 
 ## Progress
@@ -10,6 +10,7 @@
 - [x] Plan 02: Schema Migration + tagType Enum + Backfill + Type Updates (COMPLETE)
 - [x] Plan 03: Vocabulary Seeding + AI Hard Constraint + Candidate Queue (COMPLETE)
 - [x] Plan 04: Explore Tab UI + Multi-Dimension Filtering (COMPLETE)
+- [x] Plan 05: Tag Detail Page + Tag Relations Table (COMPLETE)
 
 ## Decisions
 - Fixed malformed drizzle 0003_snapshot.json to enable migration generation
@@ -21,8 +22,11 @@
 - IN() condition intersection for multi-dimension tag filtering in list queries
 - Backward-compat ?tag=xxx maps to technology dimension without tagType DB constraint
 - Tutorial card tag links use ?technology= instead of ?tag= for forward compatibility
+- Follow button ships as client component; API endpoint follows in Plan 06 (phased design)
+- Related tags link to /tags/[slug] detail pages for deeper tag exploration
+- Migration chain renumbered (0000-0004) to fix collision between duplicate 0003 entries
 
 ## Last Session
-- **Timestamp:** 2026-04-18T19:32:41Z
-- **Stopped At:** Completed tag-system-evolution-04-PLAN.md
-- **Resume File:** tag-system-evolution-05-PLAN.md
+- **Timestamp:** 2026-04-18T19:40:19Z
+- **Stopped At:** Completed tag-system-evolution-05-PLAN.md
+- **Resume File:** tag-system-evolution-06-PLAN.md
