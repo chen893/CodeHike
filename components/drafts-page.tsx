@@ -42,7 +42,7 @@ function getDraftDescription(draft: ClientDraftSummary) {
   }
 
   return (
-    draft.baseDescription || '还没有生成内容。'
+    draft.baseDescription || '暂未生成内容。'
   );
 }
 
@@ -86,7 +86,6 @@ export function DraftsPage({ drafts: initialDrafts }: DraftsPageProps) {
 
       <DraftSection
         title="草稿中"
-        description="未发布的草稿，可以继续编辑。"
         drafts={groups.drafts}
         deletingId={deletingId}
         onDelete={handleDelete}
@@ -94,7 +93,6 @@ export function DraftsPage({ drafts: initialDrafts }: DraftsPageProps) {
 
       <DraftSection
         title="已发布"
-        description="已经发布、可以阅读的教程。"
         drafts={groups.published}
         deletingId={deletingId}
         onDelete={handleDelete}
@@ -105,32 +103,27 @@ export function DraftsPage({ drafts: initialDrafts }: DraftsPageProps) {
 
 function DraftSection({
   title,
-  description,
   drafts,
   deletingId,
   onDelete,
 }: {
   title: string;
-  description: string;
   drafts: ClientDraftSummary[];
   deletingId: string | null;
   onDelete: (draft: ClientDraftSummary) => Promise<void>;
 }) {
   return (
     <section className="space-y-4">
-      <div className="flex items-end justify-between gap-4">
-        <div className="space-y-1">
-          <h2 className="text-lg font-semibold text-foreground">{title}</h2>
-          <p className="text-sm text-muted-foreground">{description}</p>
-        </div>
-        <span className="inline-flex h-8 min-w-8 items-center justify-center rounded-full bg-secondary px-3 text-sm font-medium text-secondary-foreground">
+      <div className="flex items-center gap-3">
+        <h2 className="text-lg font-semibold text-foreground">{title}</h2>
+        <span className="inline-flex h-6 min-w-6 items-center justify-center rounded-full bg-secondary px-2 text-xs font-medium text-secondary-foreground">
           {drafts.length}
         </span>
       </div>
 
       {drafts.length === 0 ? (
         <div className="rounded-2xl border border-dashed border-border bg-white px-5 py-8 text-center text-sm text-muted-foreground">
-          <p>还没有内容</p>
+          <p>暂无内容</p>
         </div>
       ) : (
         <div className="grid gap-4">
@@ -166,58 +159,55 @@ function DraftCard({
     <Card className="border-border shadow-sm transition hover:-translate-y-0.5 hover:shadow-md">
       <CardHeader className="gap-3 pb-3">
         <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
-          <div className="space-y-3">
+          <div className="space-y-1.5">
             <div className="flex flex-wrap items-center gap-3">
-              <CardTitle className="text-lg">{getDraftTitle(draft)}</CardTitle>
+              <CardTitle className="text-lg font-semibold">{getDraftTitle(draft)}</CardTitle>
               <Badge variant={status.variant}>
                 {status.label}
               </Badge>
             </div>
 
-            <p className="text-sm text-muted-foreground">
-              {formatUpdatedAt(draft.updatedAt)} · {stepCount} 步
-              {draft.publishedSlug ? ` · /${draft.publishedSlug}` : ''}
+            <p className="text-xs text-muted-foreground/80">
+              {formatUpdatedAt(draft.updatedAt)} • {stepCount} 步
+              {draft.publishedSlug ? ` • /${draft.publishedSlug}` : ''}
             </p>
 
-            <CardDescription className="max-w-3xl text-sm leading-6 text-muted-foreground">
+            <CardDescription className="line-clamp-2 max-w-3xl text-sm leading-6 text-muted-foreground">
               {getDraftDescription(draft)}
             </CardDescription>
           </div>
 
-          <div className="flex flex-wrap items-center gap-2">
-            <div className="flex flex-wrap gap-2">
-              <Button asChild variant="secondary">
-                <Link href={`/drafts/${draft.id}`}>
-                  {draft.generationState === 'running' ? '查看生成进度' : '编辑'}
-                </Link>
+          <div className="flex items-center gap-2 lg:shrink-0">
+            <Button asChild size="sm" variant="secondary">
+              <Link href={`/drafts/${draft.id}`}>
+                {draft.generationState === 'running' ? '查看进度' : '编辑'}
+              </Link>
+            </Button>
+
+            {draft.hasTutorialDraft && draft.generationState !== 'running' ? (
+              <Button asChild size="sm" variant="secondary">
+                <Link href={`/drafts/${draft.id}/preview`}>预览</Link>
               </Button>
+            ) : null}
 
-              {draft.hasTutorialDraft && draft.generationState !== 'running' ? (
-                <Button asChild variant="secondary">
-                  <Link href={`/drafts/${draft.id}/preview`}>预览</Link>
-                </Button>
-              ) : null}
+            {draft.publishedSlug ? (
+              <Button asChild size="sm">
+                <Link href={`/${draft.publishedSlug}`}>阅读</Link>
+              </Button>
+            ) : null}
 
-              {draft.publishedSlug ? (
-                <Button asChild>
-                  <Link href={`/${draft.publishedSlug}`}>阅读已发布</Link>
-                </Button>
-              ) : null}
-            </div>
-
-            {canDelete ? (
+            {canDelete && (
               <Button
                 type="button"
-                variant="destructive"
-                className="ml-auto"
-                onClick={() => {
-                  void onDelete(draft);
-                }}
+                variant="ghost"
+                size="sm"
+                className="text-destructive hover:bg-destructive/10 hover:text-destructive"
+                onClick={() => void onDelete(draft)}
                 disabled={deleting}
               >
                 {deleting ? '删除中...' : '删除'}
               </Button>
-            ) : null}
+            )}
           </div>
         </div>
       </CardHeader>

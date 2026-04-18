@@ -111,18 +111,24 @@ function ExploreClientInner({
       {/* Tag chips */}
       {topTags.length > 0 && (
         <div className="flex flex-wrap gap-1.5">
-          {topTags.map((tag) => (
+          {topTags.filter(t => t.tutorialCount > 0 || activeTag === t.slug).map((tag) => (
             <button
               key={tag.id}
               onClick={() => toggleTag(tag.slug)}
-              className={`inline-flex items-center gap-1 rounded-full border px-3 py-1 text-xs font-medium transition-colors ${
+              className={`inline-flex items-center gap-1.5 rounded-full border px-3 py-1 text-xs font-medium transition-colors ${
                 activeTag === tag.slug
                   ? 'border-primary/40 bg-primary/10 text-primary'
                   : 'border-border bg-card text-muted-foreground hover:bg-slate-50'
               }`}
             >
               {tag.name}
-              <span className="text-slate-400">{tag.tutorialCount}</span>
+              <span className={`rounded-full px-1.5 text-[10px] ${
+                activeTag === tag.slug
+                  ? 'bg-primary/20 text-primary'
+                  : 'bg-secondary text-muted-foreground'
+              }`}>
+                {tag.tutorialCount}
+              </span>
             </button>
           ))}
         </div>

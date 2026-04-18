@@ -4,16 +4,11 @@ import { useState } from 'react';
 import { createPortal } from 'react-dom';
 import Link from 'next/link';
 import { Badge } from '@/components/ui/badge';
+import { Button } from '@/components/ui/button';
 import { ChapteredStepList } from '@/components/drafts/chaptered-step-list';
 import type { Chapter } from '@/lib/schemas/chapter';
 import type { ClientDraftRecord } from '@/lib/types/client';
 import type { DraftStatusInfo } from '@/lib/draft-status';
-
-const buttonBase =
-  'inline-flex h-10 items-center justify-center rounded-md px-4 py-2 text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:pointer-events-none disabled:opacity-50';
-const primaryButton = `${buttonBase} bg-primary text-primary-foreground shadow-sm hover:bg-primary/90`;
-const secondaryButton = `${buttonBase} border border-border bg-card text-foreground shadow-sm hover:bg-accent`;
-const dangerButton = `${buttonBase} border border-border bg-card text-destructive shadow-sm hover:bg-destructive/10 hover:text-destructive`;
 
 interface DraftWorkspaceSidebarProps {
   draft: ClientDraftRecord;
@@ -87,7 +82,7 @@ export function DraftWorkspaceSidebar({
   onAppendStepToChapter,
 }: DraftWorkspaceSidebarProps) {
   return (
-    <div className="flex h-full flex-col p-5">
+    <div className="flex min-h-0 flex-1 flex-col p-5">
       {/* Fixed header — never scrolls */}
       <div className="shrink-0 space-y-3 pb-4">
         <Link
@@ -105,10 +100,7 @@ export function DraftWorkspaceSidebar({
             <h1 className="text-xl font-bold tracking-tight text-foreground">
               {draft.tutorialDraft?.meta.title || '新草稿'}
             </h1>
-            <p className="text-xs leading-5 text-muted-foreground">
-              编辑步骤、预览效果、一键发布。
-            </p>
-            <Badge variant={status.variant}>{status.label}</Badge>
+<Badge variant={status.variant} className="w-fit">{status.label}</Badge>
           </div>
         </div>
       </div>
@@ -133,52 +125,63 @@ export function DraftWorkspaceSidebar({
           />
         ) : (
           <div className="rounded-lg border border-dashed border-border/50 px-4 py-8 text-center text-xs text-muted-foreground">
-            生成后步骤会显示在这里。
+            步骤将在生成后显示。
           </div>
         )}
       </div>
 
       {/* Fixed bottom buttons */}
-      <div className="shrink-0 grid gap-3 pt-4">
-        <button className={secondaryButton} onClick={() => void onAppendStep()} disabled={saving || !hasDraft}>
-          追加步骤
-        </button>
+      <div className="shrink-0 space-y-3 pt-4">
+        {/* Primary actions */}
         {hasDraft && (
-          <button className={primaryButton} onClick={onOpenPreview}>
+          <Button variant="default" className="w-full" onClick={onOpenPreview}>
             预览
-          </button>
+          </Button>
         )}
         {hasDraft && (
-          <button className={primaryButton} onClick={() => void onPublish()} disabled={canPublish}>
+          <Button variant="default" className="w-full" onClick={() => void onPublish()} disabled={canPublish}>
             发布
-          </button>
+          </Button>
         )}
         {draft.publishedSlug && (
-          <button className={secondaryButton} onClick={onOpenPublished}>
-            阅读已发布
-          </button>
+          <Button variant="secondary" className="w-full" onClick={onOpenPublished}>
+            查看发布页
+          </Button>
         )}
-        {draft.status === 'published' && (
-          <button
-            className={dangerButton}
-            onClick={() => void onUnpublish()}
-            disabled={saving}
-          >
-            取消发布
-          </button>
-        )}
-        <button className={secondaryButton} onClick={onToggleEditingMeta}>
-          {editingMeta ? '关闭元信息' : '编辑元信息'}
-        </button>
-        {draft.status !== 'published' && (
-          <button
-            className={dangerButton}
-            onClick={() => void onDeleteDraft()}
-            disabled={canDeleteDraft}
-          >
-            删除草稿
-          </button>
-        )}
+
+        {/* Secondary actions */}
+        <div className="flex gap-2">
+          <Button variant="outline" size="sm" className="flex-1" onClick={() => void onAppendStep()} disabled={saving || !hasDraft}>
+            添加步骤
+          </Button>
+          <Button variant="outline" size="sm" className="flex-1" onClick={onToggleEditingMeta}>
+            {editingMeta ? '关闭简介' : '编辑简介'}
+          </Button>
+        </div>
+
+        {/* Destructive */}
+        <div className="border-t border-border/40 pt-3">
+          {draft.status === 'published' && (
+            <button
+              type="button"
+              className="w-full py-1.5 text-xs text-destructive/60 transition-colors hover:text-destructive"
+              onClick={() => void onUnpublish()}
+              disabled={saving}
+            >
+              取消发布
+            </button>
+          )}
+          {draft.status !== 'published' && (
+            <button
+              type="button"
+              className="w-full py-1.5 text-xs text-destructive/60 transition-colors hover:text-destructive"
+              onClick={() => void onDeleteDraft()}
+              disabled={canDeleteDraft}
+            >
+              删除草稿
+            </button>
+          )}
+        </div>
       </div>
 
       {publishDialogOpen && (
@@ -213,7 +216,7 @@ function PublishDialog({
       <div className="w-full max-w-md rounded-xl border border-border bg-card p-6 shadow-2xl">
         <h3 className="text-lg font-semibold text-foreground">发布教程</h3>
         <p className="mt-2 text-sm text-muted-foreground">
-          输入自定义 URL slug，或留空自动生成。
+          设置发布链接，留空则自动生成。
         </p>
         <input
           type="text"
@@ -230,20 +233,20 @@ function PublishDialog({
           }}
         />
         <div className="mt-5 flex justify-end gap-3">
-          <button
-            className={secondaryButton}
+          <Button
+            variant="secondary"
             onClick={onCancel}
             disabled={saving}
           >
             取消
-          </button>
-          <button
-            className={primaryButton}
+          </Button>
+          <Button
+            variant="default"
             onClick={() => void onConfirm(slug)}
             disabled={saving}
           >
-            {saving ? '发布中...' : '确认发布'}
-          </button>
+            {saving ? '发布中...' : '发布'}
+          </Button>
         </div>
       </div>
     </div>

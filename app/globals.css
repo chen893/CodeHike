@@ -86,18 +86,18 @@
   --sidebar-foreground: oklch(0.98 0.01 210);
   --sidebar-border: oklch(0.3 0.02 210);
 
-  /* Status Tokens */
-  --status-draft: oklch(0.94 0.04 85);
-  --status-draft-foreground: oklch(0.45 0.1 85);
-  
-  --status-done: oklch(0.93 0.05 155);
-  --status-done-foreground: oklch(0.35 0.12 160);
-  
-  --status-failed: oklch(0.94 0.05 25);
-  --status-failed-foreground: oklch(0.45 0.15 25);
-  
-  --status-generating: oklch(0.93 0.05 210);
-  --status-generating-foreground: oklch(0.4 0.15 210);
+  /* Status Tokens — draft/amber, done/green, failed/rose, generating/blue */
+  --status-draft: oklch(0.95 0.08 70);
+  --status-draft-foreground: oklch(0.50 0.18 45);
+
+  --status-done: oklch(0.96 0.08 150);
+  --status-done-foreground: oklch(0.38 0.16 155);
+
+  --status-failed: oklch(0.95 0.08 20);
+  --status-failed-foreground: oklch(0.45 0.20 20);
+
+  --status-generating: oklch(0.94 0.08 250);
+  --status-generating-foreground: oklch(0.40 0.16 250);
 }
 
 .dark {
@@ -134,17 +134,17 @@
   --sidebar-border: oklch(0.18 0.02 210);
 
   /* Status Tokens (Dark Mode) */
-  --status-draft: oklch(0.25 0.05 85);
-  --status-draft-foreground: oklch(0.85 0.1 85);
-  
-  --status-done: oklch(0.25 0.05 155);
-  --status-done-foreground: oklch(0.8 0.15 160);
-  
-  --status-failed: oklch(0.25 0.05 25);
-  --status-failed-foreground: oklch(0.85 0.15 25);
-  
-  --status-generating: oklch(0.25 0.05 210);
-  --status-generating-foreground: oklch(0.8 0.15 210);
+  --status-draft: oklch(0.25 0.06 70);
+  --status-draft-foreground: oklch(0.85 0.12 60);
+
+  --status-done: oklch(0.25 0.06 150);
+  --status-done-foreground: oklch(0.82 0.16 155);
+
+  --status-failed: oklch(0.25 0.06 20);
+  --status-failed-foreground: oklch(0.85 0.18 20);
+
+  --status-generating: oklch(0.25 0.06 250);
+  --status-generating-foreground: oklch(0.82 0.16 250);
 }
 
 @layer base {

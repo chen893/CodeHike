@@ -1,7 +1,7 @@
 import type { DraftRecord, DraftSummary } from './types/api';
 import type { ClientDraftRecord, ClientDraftSummary } from './types/client';
 
-export type StatusVariant = 'draft' | 'generating' | 'done' | 'failed';
+export type StatusVariant = 'draft' | 'generating' | 'done' | 'failed' | 'default';
 
 export interface DraftStatusInfo {
   label: string;
@@ -23,7 +23,7 @@ export function getDraftStatusInfo(draft: DraftStatusSource): DraftStatusInfo {
   if (draft.status === 'published') {
     return {
       label: '已发布',
-      variant: 'done',
+      variant: 'default',
       detail: draft.publishedSlug ? `slug: ${draft.publishedSlug}` : null,
     };
   }
@@ -48,7 +48,7 @@ export function getDraftStatusInfo(draft: DraftStatusSource): DraftStatusInfo {
     return {
       label: '已过期',
       variant: 'failed',
-      detail: '输入已变更，需要重新生成',
+      detail: '源内容已修改，需重新生成',
     };
   }
 

@@ -1,12 +1,12 @@
 'use client';
 
+import { AlertCircle, AlertTriangle } from 'lucide-react';
 import { DraftMetaEditor } from '@/components/draft-meta-editor';
 import { GenerationProgress, type GenerationContext } from '@/components/generation-progress';
 import { StepEditor } from '@/components/step-editor';
+import { Button } from '@/components/ui/button';
 import type { ClientDraftRecord } from '@/lib/types/client';
 
-const secondaryButton =
-  'inline-flex h-10 items-center justify-center rounded-md border border-border bg-card px-4 py-2 text-sm font-medium text-foreground shadow-sm transition-colors hover:bg-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:pointer-events-none disabled:opacity-50';
 const sectionCard =
   'rounded-xl border border-border bg-card p-6 shadow-sm';
 
@@ -65,38 +65,36 @@ export function DraftWorkspaceContent({
   return (
     <div className="mx-auto flex w-full max-w-5xl flex-col gap-5 p-5 sm:p-6 lg:p-8">
       {showGenerationProgress && (
-        <div className={sectionCard}>
-          <GenerationProgress
-            key={`${draft.id}:${generationRunNonce}`}
-            draftId={draft.id}
-            onComplete={() => void onGenerationComplete()}
-            onExit={onExitGenerationProgress}
-            context={generationContext}
-            modelId={generationModelId}
-            startNewGeneration={startNewGeneration}
-          />
-        </div>
+        <GenerationProgress
+          key={`${draft.id}:${generationRunNonce}`}
+          draftId={draft.id}
+          onComplete={() => void onGenerationComplete()}
+          onExit={onExitGenerationProgress}
+          context={generationContext}
+          modelId={generationModelId}
+          startNewGeneration={startNewGeneration}
+        />
       )}
 
       {!showGenerationProgress && hasDraft && draft.generationState === 'failed' && (
         <div className="rounded-3xl border border-rose-200 bg-rose-50/90 p-5 text-rose-950 shadow-[0_18px_40px_-24px_rgba(225,29,72,0.35)]">
           <div className="flex flex-wrap items-start justify-between gap-4">
             <div className="max-w-3xl space-y-2">
-              <p className="text-sm font-semibold uppercase tracking-[0.2em] text-rose-700">
+              <p className="flex items-center gap-2 text-base font-semibold text-rose-900">
+                <AlertCircle className="h-5 w-5 text-rose-600" />
                 生成失败
               </p>
               <p className="text-sm leading-6 text-rose-900">
-                {draft.generationErrorMessage || '上一次生成没有完成，可以重新设计大纲并生成完整教程。'}
+                {draft.generationErrorMessage || '生成未完成，可以调整大纲后重新生成。'}
               </p>
             </div>
-            <button
-              type="button"
-              className={secondaryButton}
+            <Button
+              variant="secondary"
               onClick={onRetryGeneration}
               disabled={saving}
             >
               重新生成目录
-            </button>
+            </Button>
           </div>
         </div>
       )}
@@ -105,7 +103,8 @@ export function DraftWorkspaceContent({
         <div className="rounded-3xl border border-amber-200 bg-amber-50/90 p-5 text-amber-950 shadow-[0_18px_40px_-24px_rgba(180,83,9,0.35)]">
           <div className="flex flex-wrap items-start justify-between gap-4">
             <div className="space-y-3">
-              <p className="text-sm font-semibold uppercase tracking-[0.2em] text-amber-700">
+              <p className="flex items-center gap-2 text-base font-semibold text-amber-900">
+                <AlertTriangle className="h-5 w-5 text-amber-600" />
                 当前草稿需要修复
               </p>
               <ul className="space-y-2 text-sm leading-6 text-amber-900/90">
@@ -117,16 +116,15 @@ export function DraftWorkspaceContent({
               </ul>
             </div>
             {firstInvalidStep && (
-              <button
-                type="button"
-                className={secondaryButton}
+              <Button
+                variant="secondary"
                 onClick={() => void onRegenerateFailedTail()}
                 disabled={saving}
               >
                 {repairingStartIndex === firstInvalidStep.stepIndex
                   ? `正在从第 ${firstInvalidStep.stepIndex + 1} 步修复...`
                   : `从第 ${firstInvalidStep.stepIndex + 1} 步重新生成后续步骤`}
-              </button>
+              </Button>
             )}
           </div>
         </div>
@@ -172,17 +170,16 @@ export function DraftWorkspaceContent({
             <p className="text-base leading-7 text-foreground">
               {draft.generationState === 'failed'
                 ? `生成失败: ${draft.generationErrorMessage}`
-                : '创建后会自动开始生成。'}
+                : '教程将自动开始生成。'}
             </p>
             {draft.generationState === 'failed' && (
-              <button
-                type="button"
-                className={secondaryButton}
+              <Button
+                variant="secondary"
                 onClick={onRetryGeneration}
                 disabled={saving}
               >
                 重新生成目录
-              </button>
+              </Button>
             )}
           </div>
         </div>

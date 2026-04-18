@@ -64,41 +64,45 @@ export function DraftWorkspace({
   );
 
   return (
-    <div className="relative min-h-screen overflow-x-hidden bg-muted text-foreground lg:grid lg:grid-cols-[20rem_minmax(0,1fr)]">
+    <div className={`relative min-h-screen bg-muted text-foreground lg:grid ${controller.showGenerationProgress ? '' : 'lg:grid-cols-[20rem_minmax(0,1fr)]'}`}>
       <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_top_left,_rgba(15,23,42,0.03),_transparent_28%),linear-gradient(180deg,_rgba(248,250,252,1),_rgba(241,245,249,1))]" />
 
-      <aside className="sticky top-0 hidden h-screen overflow-y-auto border-r border-border bg-card lg:flex lg:flex-col">
-        {sidebarContent}
-      </aside>
+      {!controller.showGenerationProgress && (
+        <>
+          <aside className="fixed left-0 top-0 z-30 hidden h-screen w-[20rem] overflow-hidden border-r border-border bg-card lg:flex lg:flex-col">
+            {sidebarContent}
+          </aside>
 
-      <button
-        type="button"
-        className="fixed left-4 top-4 z-40 inline-flex h-11 w-11 items-center justify-center rounded-full border border-border bg-card/90 text-foreground shadow-lg shadow-foreground/5 backdrop-blur transition hover:-translate-y-0.5 hover:bg-card lg:hidden"
-        onClick={() => setDrawerOpen(true)}
-        aria-label="Open menu"
-        aria-expanded={drawerOpen}
-      >
-        <span className="text-xl leading-none">☰</span>
-      </button>
+          <button
+            type="button"
+            className="fixed left-4 top-4 z-40 inline-flex h-11 w-11 items-center justify-center rounded-full border border-border bg-card/90 text-foreground shadow-lg shadow-foreground/5 backdrop-blur transition hover:-translate-y-0.5 hover:bg-card lg:hidden"
+            onClick={() => setDrawerOpen(true)}
+            aria-label="Open menu"
+            aria-expanded={drawerOpen}
+          >
+            <span className="text-xl leading-none">☰</span>
+          </button>
 
-      <div
-        className={`fixed inset-0 z-40 bg-slate-950/20 backdrop-blur-sm transition-opacity duration-300 lg:hidden ${
-          drawerOpen ? 'pointer-events-auto opacity-100' : 'pointer-events-none opacity-0'
-        }`}
-        onClick={() => setDrawerOpen(false)}
-        aria-hidden="true"
-      >
-        <div
-          className={`absolute left-0 top-0 h-full w-[min(86vw,20rem)] border-r border-border bg-card shadow-2xl transition-transform duration-300 ease-out ${
-            drawerOpen ? 'translate-x-0' : '-translate-x-full'
-          }`}
-          onClick={(event) => event.stopPropagation()}
-        >
-          {sidebarContent}
-        </div>
-      </div>
+          <div
+            className={`fixed inset-0 z-40 bg-slate-950/20 backdrop-blur-sm transition-opacity duration-300 lg:hidden ${
+              drawerOpen ? 'pointer-events-auto opacity-100' : 'pointer-events-none opacity-0'
+            }`}
+            onClick={() => setDrawerOpen(false)}
+            aria-hidden="true"
+          >
+            <div
+              className={`absolute left-0 top-0 h-full w-[min(86vw,20rem)] border-r border-border bg-card shadow-2xl transition-transform duration-300 ease-out ${
+                drawerOpen ? 'translate-x-0' : '-translate-x-full'
+              }`}
+              onClick={(event) => event.stopPropagation()}
+            >
+              {sidebarContent}
+            </div>
+          </div>
+        </>
+      )}
 
-      <main className="relative min-h-screen lg:col-start-2">
+      <main className={`relative min-h-screen${controller.showGenerationProgress ? '' : ' lg:col-start-2'}`}>
         <DraftWorkspaceContent
           draft={controller.draft}
           hasDraft={controller.hasDraft}

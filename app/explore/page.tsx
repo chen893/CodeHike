@@ -4,9 +4,7 @@ import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import {
   Card,
-  CardContent,
   CardDescription,
-  CardHeader,
   CardTitle,
 } from '@/components/ui/card';
 import { getExploreData } from '@/lib/services/explore-service';
@@ -60,17 +58,9 @@ export default async function ExplorePage({
     <AppShell activePath="/explore" user={user}>
       <div className="container-app space-y-8 py-10">
         {/* Header */}
-        <div className="space-y-3">
-          <div className="flex items-center gap-3">
-            <div className="h-px w-8 bg-primary" />
-            <p className="text-[10px] font-bold uppercase tracking-[0.2em] text-primary">
-              探索
-            </p>
-          </div>
-          <h1 className="text-3xl font-bold tracking-tight text-foreground sm:text-4xl">
-            探索教程
-          </h1>
-          <p className="max-w-2xl text-base leading-relaxed text-muted-foreground">
+        <div className="space-y-2">
+          <h1 className="text-2xl font-bold text-foreground">探索教程</h1>
+          <p className="text-sm text-muted-foreground">
             浏览所有已发布的交互式编程教程，按标签或关键词搜索。
           </p>
         </div>
@@ -116,7 +106,7 @@ export default async function ExplorePage({
         {/* Tutorial grid */}
         {tutorials.length === 0 ? (
           <div className="rounded-xl border border-dashed border-border p-12 text-center">
-            <p className="text-sm text-slate-400">
+            <p className="text-sm text-muted-foreground">
               {search ? '没有找到匹配的教程。试试其他关键词？' : '暂无已发布的教程。'}
             </p>
             {!search && (
@@ -128,78 +118,54 @@ export default async function ExplorePage({
         ) : (
           <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-3">
             {tutorials.map((tutorial) => (
-              <Card
-                key={tutorial.id}
-                className="group flex flex-col border-border/60 bg-white shadow-sm transition-all hover:-translate-y-1 hover:shadow-xl"
-              >
-                <CardHeader className="flex-1 p-5 pb-4">
-                  <div className="mb-3 flex items-center justify-between">
-                    <Badge variant="secondary" className="bg-slate-100 text-slate-600">
-                      /{tutorial.slug}
-                    </Badge>
-                  </div>
-                  <CardTitle className="mb-2 text-base font-bold text-foreground group-hover:text-primary transition-colors">
-                    {tutorial.title}
-                  </CardTitle>
-                  {tutorial.description && (
-                    <CardDescription className="line-clamp-3 text-sm leading-relaxed text-muted-foreground">
-                      {tutorial.description}
-                    </CardDescription>
-                  )}
-                </CardHeader>
-                <CardContent className="space-y-3 border-t border-border/30 p-5 pt-4">
-                  {/* Tags */}
-                  {tutorial.tags.length > 0 && (
-                    <div className="flex flex-wrap gap-1">
-                      {tutorial.tags.slice(0, 4).map((t) => (
-                        <Link key={t.id} href={`/explore?tag=${t.slug}`}>
-                          <Badge variant="outline" className="text-[10px] border-primary/30 text-primary hover:bg-primary/10">
+              <Link key={tutorial.id} href={`/${tutorial.slug}`} className="group block">
+                <Card className="flex h-full flex-col rounded-lg border-border/60 bg-card p-5 transition-all hover:border-primary/30 hover:-translate-y-1 hover:shadow-lg">
+                  <div className="flex-1 space-y-3">
+                    <CardTitle className="text-base font-bold text-foreground transition-colors group-hover:text-primary line-clamp-2">
+                      {tutorial.title}
+                    </CardTitle>
+                    {tutorial.description && (
+                      <CardDescription className="line-clamp-2 text-sm leading-relaxed text-muted-foreground">
+                        {tutorial.description}
+                      </CardDescription>
+                    )}
+                    {tutorial.tags.length > 0 && (
+                      <div className="flex flex-wrap gap-1">
+                        {tutorial.tags.slice(0, 3).map((t) => (
+                          <span
+                            key={t.id}
+                            className="inline-block rounded-full bg-primary/10 px-2 py-0.5 text-[10px] font-medium text-primary"
+                          >
                             {t.name}
-                          </Badge>
-                        </Link>
-                      ))}
-                    </div>
-                  )}
-                  {/* Meta badges */}
-                  <div className="flex flex-wrap gap-1.5">
-                    {tutorial.lang && (
-                      <Badge variant="outline" className="text-[11px] border-border text-muted-foreground">
-                        {tutorial.lang}
-                      </Badge>
-                    )}
-                    <Badge variant="outline" className="text-[11px] border-border text-muted-foreground">
-                      {tutorial.stepCount} 步
-                    </Badge>
-                    <Badge variant="outline" className="text-[11px] border-border text-muted-foreground">
-                      约 {tutorial.readingTime} 分钟
-                    </Badge>
-                    {tutorial.viewCount > 0 && (
-                      <Badge variant="outline" className="text-[11px] border-border text-muted-foreground">
-                        {tutorial.viewCount} 次浏览
-                      </Badge>
-                    )}
-                  </div>
-                  {/* Author + CTA */}
-                  <div className="flex items-center justify-between pt-1">
-                    {tutorial.authorUsername ? (
-                      <Link
-                        href={`/u/${tutorial.authorUsername}`}
-                        className="flex items-center gap-2 text-xs text-muted-foreground hover:text-primary transition-colors"
-                      >
-                        {tutorial.authorImage && (
-                          <img src={tutorial.authorImage} alt="" className="h-5 w-5 rounded-full" />
+                          </span>
+                        ))}
+                        {tutorial.tags.length > 3 && (
+                          <span className="self-center text-[10px] text-muted-foreground">
+                            +{tutorial.tags.length - 3}
+                          </span>
                         )}
-                        {tutorial.authorName || tutorial.authorUsername}
-                      </Link>
-                    ) : (
-                      <span />
+                      </div>
                     )}
-                    <Button asChild size="sm" className="bg-primary text-primary-foreground hover:bg-primary/90">
-                      <Link href={`/${tutorial.slug}`}>阅读</Link>
-                    </Button>
                   </div>
-                </CardContent>
-              </Card>
+                  <div className="mt-auto flex items-center justify-between border-t border-border/30 pt-3">
+                    <div className="flex items-center gap-2 text-xs text-muted-foreground">
+                      {tutorial.authorUsername && (
+                        <>
+                          {tutorial.authorImage && (
+                            <img src={tutorial.authorImage} alt="" className="h-4 w-4 rounded-full" />
+                          )}
+                          <span>{tutorial.authorName || tutorial.authorUsername}</span>
+                          <span className="text-border">·</span>
+                        </>
+                      )}
+                      {tutorial.lang && <span>{tutorial.lang}</span>}
+                      <span>{tutorial.stepCount} 步</span>
+                      <span>{tutorial.readingTime} 分钟</span>
+                    </div>
+                    <span className="text-sm text-muted-foreground transition-colors group-hover:text-primary">→</span>
+                  </div>
+                </Card>
+              </Link>
             ))}
           </div>
         )}

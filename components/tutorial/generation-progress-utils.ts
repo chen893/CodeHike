@@ -5,7 +5,7 @@ import type {
 } from './generation-progress-types';
 
 export const shellClass =
-  'relative overflow-hidden rounded-xl bg-card shadow-md';
+  'relative overflow-hidden';
 export const heroClass =
   'rounded-lg bg-muted/30 p-6 text-foreground';
 export const cardClass =

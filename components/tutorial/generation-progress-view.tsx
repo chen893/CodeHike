@@ -9,9 +9,7 @@ import type {
 } from './generation-progress-types';
 import { GenerationPreviewPanel } from './generation-preview-panel';
 import {
-  cardClass,
   getDisplaySteps,
-  getFocusStep,
   getV2Headline,
   heroClass,
   isIndeterminate,
@@ -19,7 +17,6 @@ import {
   progressListClass,
   secondaryButton,
   sectionLabel,
-  shellClass,
   titleClass,
 } from './generation-progress-utils';
 import type { V2Status } from './generation-progress-types';
@@ -129,7 +126,6 @@ function V2ProgressUI({
     status,
     stepTitles
   );
-  const focusStep = getFocusStep(outline, currentStepIndex, totalSteps);
   const completedCount =
     status === 'validating' || status === 'stream-complete'
       ? totalSteps
@@ -156,10 +152,11 @@ function V2ProgressUI({
   }, [previewOpen]);
 
   return (
-    <div className={shellClass}>
+    <div className="relative flex min-h-[80vh] flex-col items-center justify-center overflow-hidden">
+      <div className="mx-auto w-full max-w-5xl">
       {/* Tab bar */}
       {showPreviewTab && (
-        <div className="flex items-center justify-between gap-3 border-b border-slate-200 px-5 py-3 lg:px-6">
+        <div className="flex items-center justify-between gap-3 border-b border-slate-200 px-6 py-3">
           <div className="flex min-w-0 flex-col">
             <span className="text-sm font-semibold text-slate-900">生成进度</span>
             <span className="truncate text-xs text-slate-400">
@@ -181,7 +178,7 @@ function V2ProgressUI({
         </div>
       )}
 
-      <div className="grid gap-5 p-5 lg:grid-cols-[1fr_1fr] lg:p-6">
+      <div className="grid gap-6 p-6 lg:grid-cols-[1fr_1fr]">
         <section className={heroClass}>
           <div className="space-y-4">
             <div className="space-y-2">
@@ -215,18 +212,18 @@ function V2ProgressUI({
                 <div className="pt-1">
                   <button
                     type="button"
-                    className="text-xs font-medium text-muted-foreground transition-colors hover:text-rose-700 focus-visible:outline-none"
+                    className="inline-flex items-center gap-1.5 rounded-md border border-rose-200 bg-rose-50 px-3 py-1.5 text-xs font-medium text-rose-700 transition-colors hover:bg-rose-100 hover:text-rose-900 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-rose-400 focus-visible:ring-offset-2 disabled:opacity-50"
                     onClick={onCancel}
                     disabled={status === 'cancelling'}
                   >
-                    {status === 'cancelling' ? '正在取消...' : '取消生成'}
+                    {status === 'cancelling' ? '正在取消...' : '■ 取消生成'}
                   </button>
                 </div>
               )}
             </div>
           </div>
 
-          <div className="mt-5 flex flex-wrap items-center gap-2">
+          <div className="mt-6 flex flex-wrap items-center gap-x-4 gap-y-2">
             <ContextPill label="源文件" value={`${context.sourceCount} ${context.sourceLanguageSummary} 文件`} />
             <ContextPill label="读者" value={context.audienceLabel} />
             <ContextPill label="输出" value={context.outputLanguage} />
@@ -234,7 +231,7 @@ function V2ProgressUI({
           </div>
         </section>
 
-        <section className={cardClass}>
+        <section className="rounded-lg bg-muted/30 p-5">
           <div className="flex items-start justify-between gap-4">
             <div className="space-y-1">
               <p className={sectionLabel}>教学步骤</p>
@@ -278,15 +275,24 @@ function V2ProgressUI({
                       step.isCompleted
                         ? 'bg-emerald-500 text-white'
                         : step.isCurrent
-                          ? 'bg-primary text-primary-foreground'
+                          ? 'bg-primary text-primary-foreground animate-pulse'
                           : 'bg-slate-100 text-slate-400'
                     }`}
                   >
                     {step.isCompleted ? '✓' : step.index + 1}
                   </div>
                   <div className="min-w-0">
-                    <h4 className="text-sm font-medium text-slate-900">{step.title}</h4>
+                    <h4 className="flex items-center gap-1.5 text-sm font-medium text-slate-900">
+                      {step.title}
+                      {step.isCurrent && <Loader2 className="h-3 w-3 animate-spin text-primary" />}
+                    </h4>
                     <p className="mt-0.5 text-xs leading-5 text-slate-500">{step.meta}</p>
+                    {step.isCurrent && (
+                      <div className="mt-2 flex gap-2">
+                        <div className="h-1.5 w-16 animate-pulse rounded-full bg-primary/20" />
+                        <div className="h-1.5 w-24 animate-pulse rounded-full bg-primary/15" />
+                      </div>
+                    )}
                   </div>
                 </article>
               ))}
@@ -313,38 +319,30 @@ function V2ProgressUI({
                         isDone
                           ? 'bg-emerald-500 text-white'
                           : isActive
-                            ? 'bg-primary text-primary-foreground'
+                            ? 'bg-primary text-primary-foreground animate-pulse'
                             : 'bg-slate-100 text-slate-400'
                       }`}
                     >
                       {isDone ? '✓' : index + 1}
                     </div>
                     <div className="min-w-0">
-                      <h4 className={`text-sm font-medium ${isDone ? 'text-slate-500' : isActive ? 'text-slate-900' : 'text-slate-400'}`}>
+                      <h4 className={`flex items-center gap-1.5 text-sm font-medium ${isDone ? 'text-slate-500' : isActive ? 'text-slate-900' : 'text-slate-400'}`}>
                         {step.title}
+                        {isActive && <Loader2 className="h-3 w-3 animate-spin text-primary" />}
                       </h4>
                       <p className={`mt-0.5 text-xs leading-5 ${isDone ? 'text-slate-400' : isActive ? 'text-slate-600' : 'text-slate-400'}`}>
                         {isDone ? '已完成' : isActive ? '进行中...' : '等待中'}
                       </p>
+                      {isActive && (
+                        <div className="mt-2 flex gap-2">
+                          <div className="h-1.5 w-16 animate-pulse rounded-full bg-primary/20" />
+                          <div className="h-1.5 w-24 animate-pulse rounded-full bg-primary/15" />
+                        </div>
+                      )}
                     </div>
                   </div>
                 );
               })}
-            </div>
-          )}
-
-          {/* Outline focus preview */}
-          {focusStep && (
-            <div className="mt-4 rounded-xl bg-muted/20 px-4 py-3">
-              <span className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">
-                当前焦点
-              </span>
-              <h4 className="mt-1.5 text-sm font-medium text-foreground">{focusStep.title}</h4>
-              <p className="mt-0.5 text-xs leading-5 text-muted-foreground">{focusStep.teachingGoal}</p>
-              <div className="mt-2 flex flex-wrap gap-1.5 text-[11px] text-muted-foreground">
-                <span className="rounded-full bg-card px-2.5 py-0.5">{focusStep.conceptIntroduced}</span>
-                <span className="rounded-full bg-card px-2.5 py-0.5">±{focusStep.estimatedLocChange} LOC</span>
-              </div>
             </div>
           )}
 
@@ -390,6 +388,7 @@ function V2ProgressUI({
             </div>
           )}
         </section>
+      </div>
       </div>
 
       {previewOpen && (
@@ -442,9 +441,9 @@ function V2ProgressUI({
 
 function ContextPill({ label, value }: { label: string; value: string }) {
   return (
-    <span className="inline-flex items-center gap-1.5 rounded-full bg-muted/60 px-3 py-1 text-xs text-muted-foreground">
-      <span className="font-medium">{label}</span>
-      <span className="font-semibold text-foreground">{value}</span>
+    <span className="inline-flex items-center gap-1 text-xs">
+      <span className="text-slate-400">{label}</span>
+      <span className="font-medium text-slate-900">{value}</span>
     </span>
   );
 }

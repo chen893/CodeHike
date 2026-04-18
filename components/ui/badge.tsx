@@ -15,7 +15,7 @@ const badgeVariants = cva(
         draft: "border-transparent bg-status-draft text-status-draft-foreground",
         done: "border-transparent bg-status-done text-status-done-foreground",
         failed: "border-transparent bg-status-failed text-status-failed-foreground",
-        generating: "border-transparent bg-status-generating text-status-generating-foreground animate-pulse",
+        generating: "border-transparent bg-status-generating text-status-generating-foreground",
       },
     },
     defaultVariants: {

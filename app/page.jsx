@@ -1,12 +1,9 @@
 import Link from "next/link"
 import { AppShell } from "@/components/app-shell"
-import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import {
   Card,
-  CardContent,
   CardDescription,
-  CardHeader,
   CardTitle,
 } from "@/components/ui/card"
 import { getHomePageData } from "@/lib/services/tutorial-queries"
@@ -29,8 +26,8 @@ export default async function Page() {
 
   return (
     <AppShell activePath="/" user={user}>
-      <div className="container-app space-y-20 py-12">
-        <div className="relative overflow-hidden rounded-lg bg-slate-900 px-6 py-8 text-white shadow-2xl sm:px-12 sm:py-12">
+      <div className="container-app space-y-14 py-10">
+        <div className="relative overflow-hidden rounded-lg bg-slate-900 px-6 py-6 text-white shadow-lg sm:px-10 sm:py-8">
           <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_top_left,_rgba(56,189,248,0.25),_transparent_45%),linear-gradient(135deg,_#0f172a_0%,_#1e293b_100%)]" />
 
           <div className="relative z-10 flex flex-col items-start gap-8">
@@ -67,105 +64,91 @@ export default async function Page() {
         </div>
 
         {publishedTutorials.length > 0 && (
-          <section className="space-y-10">
+          <section className="space-y-8">
             <SectionHeading
-              eyebrow="已发布"
               title="已发布教程"
               description="可以直接阅读的交互式教程。"
             />
-            <div className="grid gap-8 md:grid-cols-2 lg:grid-cols-3">
+            <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-3">
               {publishedTutorials.map((pub) => (
-                <Card
-                  key={pub.id}
-                  className="group flex flex-col overflow-hidden rounded-lg border-border/60 bg-card shadow-sm transition-all hover:-translate-y-1.5 hover:shadow-xl"
-                >
-                  <CardHeader className="flex-1 p-6 pb-4">
-                    <div className="mb-4 flex items-center justify-between">
-                      <Badge variant="secondary" className="bg-secondary/80 text-muted-foreground font-medium">
+                <Link key={pub.id} href={`/${pub.slug}`} className="group block">
+                  <Card className="flex h-full flex-col rounded-lg border-border/60 bg-card p-6 transition-all hover:border-primary/30 hover:-translate-y-1 hover:shadow-lg">
+                    <div className="flex-1 space-y-3">
+                      <CardTitle className="text-lg font-bold text-foreground transition-colors group-hover:text-primary line-clamp-2">
+                        {pub.tutorialDraftSnapshot.meta.title}
+                      </CardTitle>
+                      <CardDescription className="line-clamp-2 text-sm leading-relaxed text-muted-foreground">
+                        {pub.tutorialDraftSnapshot.meta.description}
+                      </CardDescription>
+                      <p className="truncate text-xs text-muted-foreground/50">
                         /{pub.slug}
-                      </Badge>
-                      <Badge className="bg-primary/10 text-primary border-primary/20 font-semibold">已发布</Badge>
+                      </p>
                     </div>
-                    <CardTitle className="mb-3 text-lg font-bold text-foreground group-hover:text-primary transition-colors line-clamp-2">
-                      {pub.tutorialDraftSnapshot.meta.title}
-                    </CardTitle>
-                    <CardDescription className="line-clamp-3 text-[14px] leading-relaxed text-muted-foreground">
-                      {pub.tutorialDraftSnapshot.meta.description}
-                    </CardDescription>
-                  </CardHeader>
-                  <CardContent className="space-y-4 border-t border-border/30 p-6 pt-5">
-                    <div className="flex flex-wrap gap-2">
-                      {pub.lang && (
-                        <Badge variant="outline" className="text-xs border-border text-muted-foreground font-normal">
-                          {pub.lang}
-                        </Badge>
-                      )}
-                      <Badge variant="outline" className="text-xs border-border text-muted-foreground font-normal">
-                        {pub.stepCount} 步
-                      </Badge>
-                      <Badge variant="outline" className="text-xs border-border text-muted-foreground font-normal">
-                        约 {pub.readingTime} 分钟
-                      </Badge>
+                    <div className="mt-6 flex items-center justify-between border-t border-border/30 pt-4">
+                      <div className="flex items-center gap-2">
+                        {pub.lang && (
+                          <span className="rounded-full bg-secondary px-2.5 py-0.5 text-xs font-medium text-secondary-foreground">
+                            {pub.lang}
+                          </span>
+                        )}
+                        <span className="rounded-full bg-secondary px-2.5 py-0.5 text-xs font-medium text-secondary-foreground">
+                          {pub.stepCount} 步
+                        </span>
+                        <span className="rounded-full bg-secondary px-2.5 py-0.5 text-xs font-medium text-secondary-foreground">
+                          {pub.readingTime} 分钟
+                        </span>
+                      </div>
+                      <span className="text-sm text-muted-foreground transition-colors group-hover:text-primary">→</span>
                     </div>
-                    <Button asChild className="h-11 w-full bg-primary text-primary-foreground hover:bg-primary/90 transition-colors font-semibold">
-                      <Link href={`/${pub.slug}`}>阅读全文</Link>
-                    </Button>
-                  </CardContent>
-                </Card>
+                  </Card>
+                </Link>
               ))}
             </div>
           </section>
         )}
 
-        <section className="space-y-10">
+        <section className="space-y-8">
           <SectionHeading
-            eyebrow="示例"
             title="示例教程"
             description="内置的演示教程，用来验证渲染效果。"
           />
-          <div className="grid gap-8 md:grid-cols-2 lg:grid-cols-3">
+          <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-3">
             {tutorials.map((tutorial) => (
               <Card
                 key={tutorial.slug}
-                className="group flex flex-col overflow-hidden rounded-lg border-border/60 bg-card shadow-sm transition-all hover:-translate-y-1.5 hover:shadow-xl"
+                className="group flex h-full flex-col rounded-lg border-border/60 bg-card p-6 transition-all hover:-translate-y-1 hover:shadow-lg"
               >
-                <CardHeader className="flex-1 p-6 pb-4">
-                  <Badge variant="outline" className="mb-4 w-fit border-border text-muted-foreground font-medium">
-                    /{tutorial.slug}
-                  </Badge>
-                  <CardTitle className="mb-3 text-lg font-bold text-foreground group-hover:text-primary transition-colors line-clamp-2">
+                <div className="flex-1 space-y-3">
+                  <CardTitle className="text-lg font-bold text-foreground transition-colors group-hover:text-primary line-clamp-2">
                     {tutorial.title}
                   </CardTitle>
-                  <CardDescription className="line-clamp-3 text-[14px] leading-relaxed text-muted-foreground">
+                  <CardDescription className="line-clamp-2 text-sm leading-relaxed text-muted-foreground">
                     {tutorial.description}
                   </CardDescription>
-                </CardHeader>
-                <CardContent className="space-y-4 border-t border-border/30 p-6 pt-5">
-                  <div className="flex flex-wrap gap-2">
+                </div>
+                <div className="mt-6 space-y-4 border-t border-border/30 pt-4">
+                  <div className="flex items-center gap-2">
                     {tutorial.lang && (
-                      <Badge variant="outline" className="text-xs border-border text-muted-foreground font-normal">
+                      <span className="rounded-full bg-secondary px-2.5 py-0.5 text-xs font-medium text-secondary-foreground">
                         {tutorial.lang}
-                      </Badge>
+                      </span>
                     )}
-                    <Badge variant="outline" className="text-xs border-border text-muted-foreground font-normal">
+                    <span className="rounded-full bg-secondary px-2.5 py-0.5 text-xs font-medium text-secondary-foreground">
                       {tutorial.stepCount} 步
-                    </Badge>
-                    <Badge variant="outline" className="text-xs border-border text-muted-foreground font-normal">
-                      约 {tutorial.readingTime} 分钟
-                    </Badge>
+                    </span>
+                    <span className="rounded-full bg-secondary px-2.5 py-0.5 text-xs font-medium text-secondary-foreground">
+                      {tutorial.readingTime} 分钟
+                    </span>
                   </div>
                   <div className="flex gap-3">
-                    <Button asChild variant="secondary" className="h-11 flex-1 font-semibold">
+                    <Button asChild variant="secondary" size="sm" className="flex-1 font-medium">
                       <Link href={`/${tutorial.slug}`}>静态</Link>
                     </Button>
-                    <Button asChild variant="secondary" className="h-11 flex-1 font-semibold">
+                    <Button asChild variant="secondary" size="sm" className="flex-1 font-medium">
                       <Link href={`/${tutorial.slug}/request`}>远程</Link>
                     </Button>
                   </div>
-                  <Button asChild variant="outline" className="h-11 w-full border-border text-muted-foreground hover:bg-accent font-medium">
-                    <Link href={`/api/tutorials/${tutorial.slug}`}>查看原始数据</Link>
-                  </Button>
-                </CardContent>
+                </div>
               </Card>
             ))}
           </div>
@@ -175,17 +158,13 @@ export default async function Page() {
   )
 }
 
-function SectionHeading({ eyebrow, title, description }) {
+function SectionHeading({ title, description }) {
   return (
-    <div className="space-y-4">
-      <div className="flex items-center gap-3">
-        <div className="h-px w-10 bg-primary" />
-        <p className="text-xs font-bold uppercase text-primary">
-          {eyebrow}
-        </p>
-      </div>
-      <h2 className="text-3xl font-bold text-foreground sm:text-4xl">{title}</h2>
-      <p className="max-w-3xl text-base leading-relaxed text-muted-foreground">{description}</p>
+    <div className="space-y-2">
+      <h2 className="text-2xl font-bold text-foreground">{title}</h2>
+      {description && (
+        <p className="text-sm text-muted-foreground">{description}</p>
+      )}
     </div>
   )
 }
