@@ -6,7 +6,7 @@ import { getCurrentUser } from "@/auth";
 export default async function NewPage() {
   const user = await getCurrentUser();
   if (!user?.id) {
-    redirect("/api/auth/signin");
+    redirect(`/auth/signin?callbackUrl=${encodeURIComponent("/new")}`);
   }
 
   return (

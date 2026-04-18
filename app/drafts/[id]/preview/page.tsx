@@ -10,12 +10,11 @@ export default async function DraftPreviewPage({
   params: Promise<{ id: string }>;
 }) {
   const user = await getCurrentUser();
+  const { id } = await params;
   if (!user?.id) {
-    redirect('/api/auth/signin');
+    redirect(`/auth/signin?callbackUrl=${encodeURIComponent(`/drafts/${id}/preview`)}`);
   }
   const userId = user.id;
-
-  const { id } = await params;
   const preview = await getDraftPreviewPageData(id, userId);
 
   if (!preview) notFound();

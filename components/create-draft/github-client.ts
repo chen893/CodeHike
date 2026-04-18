@@ -1,6 +1,7 @@
 'use client';
 
 import { withBasePath } from '@/lib/base-path';
+import { createUuid } from '@/lib/utils/uuid';
 import type { SourceItemDraft } from '../drafts/create-draft-form-utils';
 import {
   MAX_FILES_PER_REQUEST,
@@ -438,7 +439,7 @@ function detectLanguage(fileName: string): string {
 /** Convert GitHub file results to SourceItemDraft[] */
 export function fileResultsToSourceItems(files: GitHubFileResult[]): SourceItemDraft[] {
   return files.map((file) => ({
-    id: crypto.randomUUID(),
+    id: createUuid(),
     label: file.path,
     language: detectLanguage(file.name),
     content: file.content,

@@ -9,12 +9,13 @@ export default async function DraftRemotePreviewPage({
   params: Promise<{ id: string }>;
 }) {
   const user = await getCurrentUser();
+  const { id } = await params;
   if (!user?.id) {
-    redirect('/api/auth/signin');
+    redirect(
+      `/auth/signin?callbackUrl=${encodeURIComponent(`/drafts/${id}/preview/request`)}`
+    );
   }
   const userId = user.id;
-
-  const { id } = await params;
   const preview = await getDraftRemotePreviewPageData(id, userId);
 
   if (!preview) notFound();

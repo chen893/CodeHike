@@ -4,10 +4,11 @@ import { DrizzleAdapter } from '@auth/drizzle-adapter'
 import { and, eq } from 'drizzle-orm'
 import { db } from '@/lib/db'
 import { users, accounts, verificationTokens } from '@/lib/db/schema'
+import { withBasePath } from '@/lib/base-path'
 
 const linuxdoAuthorizationEndpoint =
   process.env.LINUXDO_AUTHORIZATION_ENDPOINT ||
-  'https://connect.linuxdo.org/oauth2/authorize'
+  'https://connect.linux.do/oauth2/authorize'
 const linuxdoTokenEndpoint =
   process.env.LINUXDO_TOKEN_ENDPOINT ||
   'https://connect.linuxdo.org/oauth2/token'
@@ -91,6 +92,7 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
       id: 'linuxdo',
       name: 'Linux.do',
       type: 'oauth',
+      issuer: 'https://connect.linux.do/',
       authorization: linuxdoAuthorizationEndpoint,
       token: linuxdoTokenEndpoint,
       userinfo: linuxdoUserinfoEndpoint,
@@ -110,7 +112,7 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
     strategy: 'jwt',
   },
   pages: {
-    signIn: '/auth/signin',
+    signIn: withBasePath('/auth/signin'),
   },
   callbacks: {
     async jwt({ token, user, account, trigger }) {

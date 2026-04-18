@@ -13,7 +13,8 @@ export default async function DraftPage({
 }) {
   const user = await getCurrentUser();
   if (!user?.id) {
-    redirect('/api/auth/signin');
+    const { id } = await params;
+    redirect(`/auth/signin?callbackUrl=${encodeURIComponent(`/drafts/${id}`)}`);
   }
   const userId = user.id;
 

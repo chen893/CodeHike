@@ -1,9 +1,21 @@
 'use client'
 
+import { Suspense } from 'react'
 import { signIn } from 'next-auth/react'
 import Link from 'next/link'
+import { useSearchParams } from 'next/navigation'
+import { basePath, withBasePath } from '@/lib/base-path'
 
-export default function SignInPage() {
+function SignInPageContent() {
+  const searchParams = useSearchParams()
+  const rawCallbackUrl = searchParams.get('callbackUrl')
+  const callbackUrl =
+    rawCallbackUrl && /^https?:\/\//.test(rawCallbackUrl)
+      ? rawCallbackUrl
+      : rawCallbackUrl && basePath && rawCallbackUrl.startsWith(`${basePath}/`)
+        ? rawCallbackUrl
+        : withBasePath(rawCallbackUrl || '/')
+
   return (
     <div className="relative flex min-h-screen flex-col items-center justify-center bg-background px-4 py-12">
       <div className="pointer-events-none fixed inset-0 bg-[radial-gradient(circle_at_top,_var(--primary)/0.06,_transparent_40%)]" />
@@ -39,7 +51,7 @@ export default function SignInPage() {
         <div className="rounded-lg border border-border bg-card p-8 shadow-sm">
           <div className="space-y-6">
             <button
-              onClick={() => signIn('github', { callbackUrl: '/' })}
+              onClick={() => signIn('github', { callbackUrl })}
               className="group relative flex w-full items-center justify-center gap-3 rounded-lg bg-primary px-4 py-3 text-sm font-semibold text-primary-foreground transition-all hover:bg-primary/90 active:scale-[0.98]"
               style={{ minHeight: '44px' }}
             >
@@ -65,7 +77,7 @@ export default function SignInPage() {
             </div>
 
             <button
-              onClick={() => signIn('linuxdo', { callbackUrl: '/' })}
+              onClick={() => signIn('linuxdo', { callbackUrl })}
               className="group relative flex w-full items-center justify-center gap-3 rounded-lg bg-secondary px-4 py-3 text-sm font-semibold text-secondary-foreground transition-all hover:bg-secondary/80 active:scale-[0.98]"
               style={{ minHeight: '44px' }}
             >
@@ -76,7 +88,7 @@ export default function SignInPage() {
             </button>
 
             <p className="text-center text-xs leading-relaxed text-muted-foreground">
-              认证完成后会回到首页，你也可以从侧边栏继续进入草稿箱。
+              认证完成后会回到你刚才的页面，未指定时默认回到首页。
             </p>
           </div>
         </div>
@@ -104,5 +116,13 @@ export default function SignInPage() {
         </div>
       </div>
     </div>
+  )
+}
+
+export default function SignInPage() {
+  return (
+    <Suspense fallback={null}>
+      <SignInPageContent />
+    </Suspense>
   )
 }

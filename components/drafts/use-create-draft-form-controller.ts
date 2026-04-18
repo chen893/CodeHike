@@ -4,6 +4,7 @@ import { useRef, useState, type FormEvent } from 'react';
 import { useRouter } from 'next/navigation';
 import type { SourceItem, TeachingBrief } from '@/lib/schemas/index';
 import { AVAILABLE_MODELS } from '@/lib/schemas/model-config';
+import { createUuid } from '@/lib/utils/uuid';
 import { createDraftRequest } from './draft-client';
 import {
   createSourceItemDraft,
@@ -75,7 +76,7 @@ export function useCreateDraftFormController() {
     try {
       setGenerating(true);
       const idempotencyKey =
-        submissionIdempotencyKeyRef.current ?? crypto.randomUUID();
+        submissionIdempotencyKeyRef.current ?? createUuid();
       submissionIdempotencyKeyRef.current = idempotencyKey;
 
       const payload: SourceItem[] = normalizedItems.map((item, index) => ({

@@ -1,4 +1,6 @@
 import NextAuth from 'next-auth'
+import { withBasePath } from '@/lib/base-path'
+import { buildRelativeCallbackUrl } from '@/lib/auth/callback-url'
 
 // Lightweight auth for middleware — no DB adapter (Edge Runtime compatible)
 // Just verifies the JWT session cookie; user/account creation happens in the full auth.ts
@@ -39,7 +41,9 @@ export default auth((req) => {
       )
     }
     // Page routes should redirect to login
-    return Response.redirect(new URL('/auth/signin', req.url))
+    const signInUrl = new URL(withBasePath('/auth/signin'), req.url)
+    signInUrl.searchParams.set('callbackUrl', buildRelativeCallbackUrl(req.nextUrl))
+    return Response.redirect(signInUrl)
   }
 })
 

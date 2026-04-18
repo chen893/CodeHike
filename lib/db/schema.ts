@@ -16,6 +16,7 @@ import {
 } from 'drizzle-orm/pg-core';
 import { sql } from 'drizzle-orm';
 import type { AdapterAccountType } from '@auth/core/adapters';
+import { createUuid } from '@/lib/utils/uuid';
 
 export const draftStatusEnum = pgEnum('draft_status', ['draft', 'published']);
 export const syncStateEnum = pgEnum('sync_state', ['empty', 'fresh', 'stale']);
@@ -58,7 +59,7 @@ export const generationJobErrorCodeEnum = pgEnum('generation_job_error_code', [
 export const users = pgTable('users', {
   id: text('id')
     .primaryKey()
-    .$defaultFn(() => crypto.randomUUID()),
+    .$defaultFn(() => createUuid()),
   name: text('name'),
   email: text('email').unique(),
   emailVerified: timestamp('emailVerified', { mode: 'date' }),
