@@ -15,8 +15,9 @@ export const metadata = {
 };
 
 export default async function TagsPage() {
-  const tags = await getTagsPageData();
+  const allTags = await getTagsPageData();
   const user = await getCurrentUser();
+  const tags = allTags.filter((t) => t.tutorialCount > 0);
   const totalTutorials = tags.reduce((sum, item) => sum + item.tutorialCount, 0);
   const sorted = [...tags].sort((a, b) => b.tutorialCount - a.tutorialCount);
   const maxCount = sorted.length > 0 ? Math.max(sorted[0].tutorialCount, 1) : 1;

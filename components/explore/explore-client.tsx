@@ -112,8 +112,9 @@ function ExploreClientInner({
     };
   }, []);
 
+  const visibleTags = tags.filter((item) => item.tutorialCount > 0);
   const filteredTags =
-    activeTab === 'all' ? tags : tags.filter((item) => item.tagType === activeTab);
+    activeTab === 'all' ? visibleTags : visibleTags.filter((item) => item.tagType === activeTab);
 
   const isActiveTag = useCallback(
     (tag: TagWithCount) => {
@@ -165,8 +166,8 @@ function ExploreClientInner({
           {TABS.map((tab) => {
             const count =
               tab.key === 'all'
-                ? tags.length
-                : tags.filter((item) => item.tagType === tab.key).length;
+                ? visibleTags.length
+                : visibleTags.filter((item) => item.tagType === tab.key).length;
 
             return (
               <button
@@ -194,9 +195,7 @@ function ExploreClientInner({
       {displayedTags.length > 0 && (
         <div className="space-y-2">
           <div className="flex flex-wrap gap-2">
-            {displayedTags
-              .filter((item) => item.tutorialCount > 0 || isActiveTag(item))
-              .map((tag) => {
+            {displayedTags.map((tag) => {
                 const dimension = getDimension(tag);
                 const active = isActiveTag(tag);
 

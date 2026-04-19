@@ -30,7 +30,7 @@ export async function getExploreData(options: {
 
   if (options.search && options.search.trim().length > 0) {
     const searchLimit = 50;
-    const result = await searchRepo.searchPublishedTutorials(
+    const tutorialsResult = await searchRepo.searchPublishedTutorials(
       options.search.trim(),
       searchLimit,
       {
@@ -39,8 +39,8 @@ export async function getExploreData(options: {
         tagFilters: tagFilters.length > 0 ? tagFilters : undefined,
       },
     );
-    tutorials = Array.isArray(result) ? result : (result as any).tutorials ?? result;
-    total = Array.isArray(result) ? result.length : (result as any).total ?? result.length;
+    tutorials = tutorialsResult;
+    total = tutorialsResult.length;
   } else {
     const result = await searchRepo.listPublishedForExplore({
       page: options.page,
