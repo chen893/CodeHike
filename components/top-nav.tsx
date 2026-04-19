@@ -9,6 +9,7 @@ import {
   Files,
   Sparkles,
   Menu,
+  Heart,
 } from 'lucide-react';
 import { LoginButton } from '@/components/auth/login-button';
 import { UserMenu } from '@/components/auth/user-menu';
@@ -121,6 +122,21 @@ export function TopNav({ user, activePath, variant = 'light' }: TopNavProps) {
 
           {/* Desktop right actions */}
           <div className="hidden items-center gap-3 lg:flex">
+            {user && (
+              <Link
+                href="/following"
+                className={`relative flex h-8 w-8 items-center justify-center rounded-md transition-colors ${
+                  activePath === '/following'
+                    ? variant === 'light' ? 'bg-cyan-50 text-cyan-600' : 'bg-cyan-400/[0.08] text-cyan-300'
+                    : variant === 'light'
+                      ? 'text-slate-400 hover:bg-slate-100 hover:text-slate-600'
+                      : 'text-slate-500 hover:bg-white/[0.04] hover:text-slate-300'
+                }`}
+                aria-label="我的关注"
+              >
+                <Heart size={16} />
+              </Link>
+            )}
             <Link
               href="/new"
               className={`inline-flex items-center gap-1.5 rounded-md px-3 py-1.5 font-mono text-[11px] font-semibold text-white whitespace-nowrap transition-all active:scale-[0.97] ${variant === 'light' ? 'bg-cyan-600 hover:bg-cyan-500' : 'bg-gradient-to-r from-emerald-500 to-cyan-500 shadow-[0_0_16px_rgba(16,185,129,0.15)] hover:brightness-110'}`}
@@ -227,6 +243,24 @@ export function TopNav({ user, activePath, variant = 'light' }: TopNavProps) {
             <div className={`mt-4 mb-2 px-2 font-mono text-[9px] font-semibold uppercase tracking-widest ${variant === 'light' ? 'text-slate-400' : 'text-slate-600'}`}>
               actions
             </div>
+            {user && (
+              <Link
+                href="/following"
+                onClick={() => setMobileOpen(false)}
+                className={`group relative flex items-center gap-3 rounded-md px-3 py-2.5 text-[13px] font-medium transition-all duration-150 ${
+                  activePath === '/following'
+                    ? variant === 'light'
+                      ? 'bg-cyan-50 text-cyan-600'
+                      : 'bg-cyan-400/[0.08] text-cyan-300'
+                    : variant === 'light'
+                      ? 'text-slate-600 hover:bg-slate-50 hover:text-slate-900'
+                      : 'text-slate-400 hover:bg-slate-800/60 hover:text-slate-200'
+                }`}
+              >
+                <Heart size={15} className={activePath === '/following' ? (variant === 'light' ? 'text-cyan-500' : 'text-cyan-400') : (variant === 'light' ? 'text-slate-400 group-hover:text-slate-600' : 'text-slate-600 group-hover:text-slate-400')} />
+                <span>我的关注</span>
+              </Link>
+            )}
             <Link
               href="/new"
               onClick={() => setMobileOpen(false)}
