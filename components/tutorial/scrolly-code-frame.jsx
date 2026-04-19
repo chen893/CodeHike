@@ -212,6 +212,15 @@ export function CodeFrame({ title, code, fileName, highlightedFiles, activeFile:
   const activeCode = highlightedFiles
     ? highlightedFiles[activeFile] || code
     : code
+  const scrollRef = useCallback((node) => {
+    if (!node) return
+    requestAnimationFrame(() => {
+      const focused = node.querySelector('[data-focus="true"]')
+      if (focused) {
+        focused.scrollIntoView({ block: "center", behavior: "smooth" })
+      }
+    })
+  }, [activeCode])
 
   const handleSelectFile = (name) => {
     setSelectedFile(name)
@@ -240,7 +249,7 @@ export function CodeFrame({ title, code, fileName, highlightedFiles, activeFile:
           <CopyButton code={activeCode} />
         </div>
       </div>
-      <div className="code-content overflow-x-auto overflow-y-auto text-[13px] leading-[1.55]">
+      <div ref={scrollRef} className="code-content overflow-x-auto overflow-y-auto text-[13px] leading-[1.55]">
         <Pre code={activeCode} handlers={[focus, mark, changeIndicator, tokenTransitions]} />
       </div>
     </div>
@@ -257,6 +266,16 @@ export function MobileCodeFrame({ step, fileName, index, total }) {
   const activeCode = highlightedFiles
     ? highlightedFiles[activeFile] || step.highlighted
     : step.highlighted
+
+  const mobileScrollRef = useCallback((node) => {
+    if (!node) return
+    requestAnimationFrame(() => {
+      const focused = node.querySelector('[data-focus="true"]')
+      if (focused) {
+        focused.scrollIntoView({ block: "center", behavior: "smooth" })
+      }
+    })
+  }, [activeCode])
 
   const handleSelectFile = (name) => {
     setSelectedFile(name)
@@ -290,7 +309,7 @@ export function MobileCodeFrame({ step, fileName, index, total }) {
           <CopyButton code={activeCode} />
         </div>
       </div>
-      <div className="code-content max-h-[40vh] overflow-auto px-5 py-4 text-[13px] leading-[1.55]">
+      <div ref={mobileScrollRef} className="code-content max-h-[40vh] overflow-auto px-5 py-4 text-[13px] leading-[1.55]">
         <Pre code={activeCode} handlers={[focus, mark, changeIndicator]} />
       </div>
     </div>

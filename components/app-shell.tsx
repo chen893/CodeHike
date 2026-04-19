@@ -8,6 +8,7 @@ import {
   Compass,
   Tag,
   Sparkles,
+  Heart,
 } from 'lucide-react';
 import { LoginButton } from '@/components/auth/login-button';
 import { UserMenu } from '@/components/auth/user-menu';
@@ -30,6 +31,7 @@ const navItems = [
   { href: '/', label: '首页', icon: BookOpen, hint: '~/' },
   { href: '/explore', label: '探索', icon: Compass, hint: '/explore' },
   { href: '/tags', label: '标签', icon: Tag, hint: '/tags' },
+  { href: '/following', label: '我的关注', icon: Heart, hint: '/following' },
   { href: '/drafts', label: '草稿箱', icon: Files, hint: '/drafts' },
 ] as const;
 
