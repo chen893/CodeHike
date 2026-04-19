@@ -43,7 +43,7 @@ export default async function TagsPage() {
         ) : (
           <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
             {tags.map((tag) => (
-              <Link key={tag.id} href={`/explore?tag=${tag.slug}`}>
+              <Link key={tag.id} href={`/tags/${tag.slug}`}>
                 <Card className="group border-border/60 bg-white shadow-sm transition-all hover:-translate-y-0.5 hover:shadow-lg">
                   <CardContent className="flex items-center justify-between p-5">
                     <div className="space-y-1">
