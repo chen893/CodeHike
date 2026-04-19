@@ -26,9 +26,9 @@ function buildStepFillSystemPromptCore(
   "patches": [
     { "find": "精确的旧代码", "replace": "精确的新代码"${isMultiFile ? ', "file": "目标文件名"' : ''} }
   ],
-  "focus": { "find": "要高亮的代码区域"${isMultiFile ? ', "file": "目标文件名"' : ''} },
+  "focus": { "start": 12, "end": 16${isMultiFile ? ', "file": "目标文件名"' : ''} },
   "marks": [
-    { "find": "要标记的行", "color": "#颜色值"${isMultiFile ? ', "file": "目标文件名"' : ''} }
+    { "start": 12, "end": 12, "color": "#颜色值"${isMultiFile ? ', "file": "目标文件名"' : ''} }
   ]
 }
 
@@ -60,8 +60,8 @@ paragraphs 必须遵循"问题 → 解决 → 收束"三段结构：
 - patches 的总代码变化必须控制在 {STEP_LOC_MIN}-{STEP_LOC_MAX} 行（find 和 replace 的行数差）
 - 这是硬性约束，不是建议。如果本步需要超过 {STEP_LOC_MAX} 行变化，只实现最核心的部分
 - 不要一次性添加完整函数——先添加核心逻辑，错误处理和边界检查留给后续步骤
-- focus.find 指向本次变化的核心区域
-- marks 标记关键的新增或修改行`;
+- focus.start / focus.end 使用补丁应用后的代码行号（1-based），精确覆盖本次变化的核心区域
+- marks[].start / marks[].end 也使用补丁应用后的代码行号（1-based），标记关键的新增或修改行`;
 }
 
 // ---------------------------------------------------------------------------
@@ -144,8 +144,9 @@ ${
 2. 再展示代码变化（{STEP_LOC_MIN}-{STEP_LOC_MAX} 行）
 3. 最后用 1 段话解释"这段代码解决了什么问题"（收束）
 4. patch 的 find 必须从上面的"当前代码"中逐字复制
-5. focus 指向本次变化的核心区域
-6. 步骤 id 使用：${outlineStep.id}${isMultiFile ? '\n7. patches/focus/marks 必须指定 "file" 字段来指明操作哪个文件' : ''}`;
+5. focus.start / focus.end 必须使用当前步骤应用 patch 后的 1-based 行号，精确覆盖本次变化的核心区域
+6. marks.start / marks.end 也必须使用当前步骤应用 patch 后的 1-based 行号
+7. 步骤 id 使用：${outlineStep.id}${isMultiFile ? '\n8. patches/focus/marks 必须指定 "file" 字段来指明操作哪个文件' : ''}`;
 
   return { systemPrompt, userPrompt };
 }
@@ -285,9 +286,10 @@ ${
 2. 再展示代码变化（{STEP_LOC_MIN}-{STEP_LOC_MAX} 行）
 3. 最后用 1 段话解释"这段代码解决了什么问题"（收束）
 4. patch 的 find 必须从当前代码中逐字复制（已注入或通过 readCurrentFile 读取）
-5. focus 指向本次变化的核心区域
-6. 如果提供了 targetFiles，至少有一条 patch 必须落在这些文件上
-7. 步骤 id 使用：${outlineStep.id}${isMultiFile ? '\n8. patches/focus/marks 必须指定 "file" 字段来指明操作哪个文件' : ''}`;
+5. focus.start / focus.end 必须使用当前步骤应用 patch 后的 1-based 行号，精确覆盖本次变化的核心区域
+6. marks.start / marks.end 也必须使用当前步骤应用 patch 后的 1-based 行号
+7. 如果提供了 targetFiles，至少有一条 patch 必须落在这些文件上
+8. 步骤 id 使用：${outlineStep.id}${isMultiFile ? '\n9. patches/focus/marks 必须指定 "file" 字段来指明操作哪个文件' : ''}`;
 
   return { systemPrompt, userPrompt };
 }

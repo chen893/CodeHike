@@ -41,11 +41,23 @@ function normalizePatches(items: PatchDraft[], isMultiFile: boolean): ContentPat
     });
 }
 
+function hasValidMarkRange(
+  item: MarkDraft
+): item is MarkDraft & { start: number; end: number } {
+  return (
+    Number.isInteger(item.start) &&
+    Number.isInteger(item.end) &&
+    item.start !== null &&
+    item.end !== null &&
+    item.end >= item.start
+  );
+}
+
 function normalizeMarks(items: MarkDraft[], isMultiFile: boolean): ContentMark[] {
   return items
-    .filter((item) => item.find.trim())
-    .map(({ find, color, file }) => {
-      const mark: ContentMark = { find, color: color || '#2563eb' };
+    .filter(hasValidMarkRange)
+    .map(({ start, end, color, file }) => {
+      const mark: ContentMark = { start, end, color: color || '#2563eb' };
       if (isMultiFile && file) mark.file = file;
       return mark;
     });
@@ -60,10 +72,25 @@ function toPatchDrafts(items?: ContentPatch[]): PatchDraft[] {
   }));
 }
 
+function toFocusRange(focus: TutorialStep['focus'] | null | undefined): FocusRange | null {
+  if (
+    focus &&
+    Number.isInteger(focus.start) &&
+    Number.isInteger(focus.end) &&
+    focus.start >= 1 &&
+    focus.end >= focus.start
+  ) {
+    return { startLine: focus.start, endLine: focus.end };
+  }
+
+  return null;
+}
+
 function toMarkDrafts(items?: ContentMark[]): MarkDraft[] {
   return (items ?? []).map((item) => ({
     localId: createUuid(),
-    find: item.find,
+    start: typeof item.start === 'number' ? item.start : null,
+    end: typeof item.end === 'number' ? item.end : null,
     color: item.color,
     file: item.file,
   }));
@@ -71,12 +98,13 @@ function toMarkDrafts(items?: ContentMark[]): MarkDraft[] {
 
 function getStructureSignature(step: {
   patches?: ContentPatch[];
-  focus?: { find: string; file?: string } | null;
+  focus?: { start: number; end: number; file?: string } | null;
   marks?: ContentMark[];
 }) {
   return JSON.stringify({
     patches: step.patches ?? [],
-    focus: step.focus?.find ?? null,
+    focusStart: step.focus?.start ?? null,
+    focusEnd: step.focus?.end ?? null,
     focusFile: step.focus?.file ?? null,
     marks: step.marks ?? [],
   });
@@ -87,8 +115,43 @@ function extractFindFromLines(code: string, startLine: number, endLine: number):
   return lines.slice(startLine - 1, endLine).join('\n');
 }
 
+function expandMarkLines(items: MarkDraft[], currentFile?: string | null): Set<number> {
+  const lines = new Set<number>();
+
+  for (const mark of items) {
+    if (currentFile && mark.file && mark.file !== currentFile) {
+      continue;
+    }
+    if (!hasValidMarkRange(mark)) {
+      continue;
+    }
+    for (let line = mark.start; line <= mark.end; line++) {
+      lines.add(line);
+    }
+  }
+
+  return lines;
+}
+
+function filterMarksForFile(items: MarkDraft[], currentFile?: string | null): MarkDraft[] {
+  return items.filter((mark) => {
+    if (!currentFile) return !mark.file;
+    return (mark.file || currentFile) === currentFile;
+  });
+}
+
+function getFocusTargetFile(
+  isMultiFile: boolean,
+  previewFile: string,
+  focusFile: string,
+  primaryFile: string,
+): string | null {
+  if (!isMultiFile) return null;
+  return focusFile || previewFile || primaryFile;
+}
+
 const INPUT_CLASS =
-  'flex h-10 w-full rounded-md border border-border bg-card px-3 py-2 text-sm ring-offset-white file:border-0 file:bg-transparent file:text-sm file:font-medium placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50';
+  'flex h-10 w-full rounded-md border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 placeholder:text-slate-400 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-slate-400/30 focus-visible:ring-offset-0 disabled:cursor-not-allowed disabled:opacity-50';
 
 export function StepEditor({
   tutorialDraft,
@@ -104,19 +167,32 @@ export function StepEditor({
   const [paragraphs, setParagraphs] = useState(step.paragraphs.join('\n\n'));
   const [regenMode, setRegenMode] = useState<'prose' | 'step'>('prose');
   const [patches, setPatches] = useState<PatchDraft[]>(() => toPatchDrafts(step.patches));
-  const [focusFind, setFocusFind] = useState(step.focus?.find ?? '');
+  const [focusRange, setFocusRange] = useState<FocusRange | null>(() => toFocusRange(step.focus));
   const [focusFile, setFocusFile] = useState(step.focus?.file ?? '');
   const [marks, setMarks] = useState<MarkDraft[]>(() => toMarkDrafts(step.marks));
   const diffViewRef = useRef<HTMLDivElement>(null);
 
   const [selectionMode, setSelectionMode] = useState<SelectionMode>('off');
-  const [focusRange, setFocusRange] = useState<FocusRange | null>(null);
-  const [markedLines, setMarkedLines] = useState<Set<number>>(new Set());
   const [focusAnchorLine, setFocusAnchorLine] = useState<number | null>(null);
+
+  // ─── Multi-file context ────────────────────────────────────────
+  const baseCodeMeta = useMemo(
+    () => normalizeBaseCode(tutorialDraft.baseCode, tutorialDraft.meta),
+    [tutorialDraft.baseCode, tutorialDraft.meta]
+  );
+  const isMultiFile = Object.keys(baseCodeMeta.files).length > 1;
+  const primaryFile = baseCodeMeta.primaryFile;
+  const fileNames = useMemo(
+    () => Object.keys(baseCodeMeta.files),
+    [baseCodeMeta.files]
+  );
+  const [previewFile, setPreviewFile] = useState(baseCodeMeta.primaryFile);
+  const language = isMultiFile ? previewFile.split('.').pop() || 'javascript' : tutorialDraft.meta.lang;
 
   const handleLineClick = useCallback(
     (lineNumber: number, event: React.MouseEvent) => {
       if (selectionMode === 'focus') {
+        const targetFile = getFocusTargetFile(isMultiFile, previewFile, focusFile, primaryFile);
         if (event.shiftKey && focusAnchorLine !== null) {
           const start = Math.min(focusAnchorLine, lineNumber);
           const end = Math.max(focusAnchorLine, lineNumber);
@@ -125,39 +201,43 @@ export function StepEditor({
           setFocusAnchorLine(lineNumber);
           setFocusRange({ startLine: lineNumber, endLine: lineNumber });
         }
+        if (targetFile) {
+          setFocusFile(targetFile);
+        }
       } else if (selectionMode === 'mark') {
-        setMarkedLines((prev) => {
-          const next = new Set(prev);
-          if (next.has(lineNumber)) {
-            next.delete(lineNumber);
-          } else {
-            next.add(lineNumber);
+        setMarks((current) => {
+          const targetFile = isMultiFile && previewFile ? previewFile : undefined;
+          const existing = current.find((mark) =>
+            mark.start === lineNumber &&
+            mark.end === lineNumber &&
+            (mark.file || undefined) === targetFile
+          );
+
+          if (existing) {
+            return current.filter((mark) => mark.localId !== existing.localId);
           }
-          return next;
+
+          return [
+            ...current,
+            {
+              localId: createUuid(),
+              start: lineNumber,
+              end: lineNumber,
+              color: '#2563eb',
+              ...(targetFile ? { file: targetFile } : {}),
+            },
+          ];
         });
       }
     },
-    [selectionMode, focusAnchorLine]
+    [selectionMode, focusAnchorLine, isMultiFile, previewFile, focusFile, primaryFile]
   );
 
   useEffect(() => {
-    setFocusRange(null);
-    setFocusAnchorLine(null);
-    setMarkedLines(new Set());
-  }, [patches]);
-
-  // ─── Multi-file context ────────────────────────────────────────
-  const baseCodeMeta = useMemo(
-    () => normalizeBaseCode(tutorialDraft.baseCode, tutorialDraft.meta),
-    [tutorialDraft.baseCode, tutorialDraft.meta]
-  );
-  const isMultiFile = Object.keys(baseCodeMeta.files).length > 1;
-  const fileNames = useMemo(
-    () => Object.keys(baseCodeMeta.files),
-    [baseCodeMeta.files]
-  );
-  const [previewFile, setPreviewFile] = useState(baseCodeMeta.primaryFile);
-  const language = isMultiFile ? previewFile.split('.').pop() || 'javascript' : tutorialDraft.meta.lang;
+    if (!focusRange) {
+      setFocusAnchorLine(null);
+    }
+  }, [focusRange]);
 
   useEffect(() => {
     setEyebrow(step.eyebrow ?? '');
@@ -165,7 +245,7 @@ export function StepEditor({
     setLead(step.lead ?? '');
     setParagraphs(step.paragraphs.join('\n\n'));
     setPatches(toPatchDrafts(step.patches));
-    setFocusFind(step.focus?.find ?? '');
+    setFocusRange(toFocusRange(step.focus));
     setFocusFile(step.focus?.file ?? '');
     setMarks(toMarkDrafts(step.marks));
   }, [step]);
@@ -179,8 +259,12 @@ export function StepEditor({
   const codePreview = useMemo(() => {
     const np = normalizePatches(patches, isMultiFile);
     const nm = normalizeMarks(marks, isMultiFile);
-    const f = focusFind.trim()
-      ? { find: focusFind, ...(isMultiFile && focusFile ? { file: focusFile } : {}) }
+    const f = focusRange
+      ? {
+          start: focusRange.startLine,
+          end: focusRange.endLine,
+          ...(isMultiFile && focusFile ? { file: focusFile } : {}),
+        }
       : null;
 
     const codeStep: TutorialStep = {
@@ -218,7 +302,7 @@ export function StepEditor({
     }
 
     return { normalizedPatches: np, normalizedMarks: nm, focus: f, previousCode, currentCode, previewError, diffSummary };
-  }, [step, tutorialDraft, stepIndex, patches, marks, focusFind, focusFile, isMultiFile, previewFile]);
+  }, [step, tutorialDraft, stepIndex, patches, marks, focusRange, focusFile, isMultiFile, previewFile]);
 
   const { normalizedPatches, normalizedMarks, focus, previousCode, currentCode, previewError, diffSummary } = codePreview;
 
@@ -239,33 +323,6 @@ export function StepEditor({
 
   const patchValidationStates = usePatchValidation(previousCodeForValidation, normalizedPatches);
 
-  // ─── Sync line selection to state ──────────────────────────────
-  useEffect(() => {
-    if (focusRange && currentCode && selectionMode === 'focus') {
-      const text = extractFindFromLines(currentCode, focusRange.startLine, focusRange.endLine);
-      setFocusFind(text);
-      if (isMultiFile) setFocusFile(previewFile);
-    }
-  }, [focusRange, selectionMode, currentCode, previewFile, isMultiFile]);
-
-  useEffect(() => {
-    if (selectionMode === 'mark' && currentCode) {
-      setMarks((prev) => {
-        const newFromSelection = Array.from(markedLines).map((lineNum) => {
-          const text = extractFindFromLines(currentCode, lineNum, lineNum);
-          const existing = prev.find((m) => m.find === text);
-          return {
-            localId: existing?.localId ?? createUuid(),
-            find: text,
-            color: existing?.color ?? '#2563eb',
-            ...(isMultiFile && previewFile ? { file: previewFile } : {}),
-          };
-        });
-        return newFromSelection;
-      });
-    }
-  }, [markedLines, selectionMode, currentCode, previewFile, isMultiFile]);
-
   // ─── Structure change detection ────────────────────────────────
   const hasStructuralChanges = useMemo(() => {
     const original = getStructureSignature(step);
@@ -276,6 +333,18 @@ export function StepEditor({
   const saveDisabled = saving || !title.trim() || (hasStructuralChanges && !!previewError);
 
   const diffLines = useMemo(() => computeDiffLines(previousCode, currentCode), [previousCode, currentCode]);
+  const visibleFocusRange = useMemo(() => {
+    if (!focusRange) return null;
+    if (!isMultiFile) return focusRange;
+    const targetFile = getFocusTargetFile(isMultiFile, previewFile, focusFile, primaryFile);
+    return previewFile === targetFile ? focusRange : null;
+  }, [focusRange, isMultiFile, previewFile, focusFile, primaryFile]);
+  const activeFocusFile = useMemo(() => {
+    if (!focusRange) return null;
+    return getFocusTargetFile(isMultiFile, previewFile, focusFile, primaryFile);
+  }, [focusRange, isMultiFile, previewFile, focusFile, primaryFile]);
+  const visibleMarks = useMemo(() => filterMarksForFile(marks, isMultiFile ? previewFile : null), [marks, isMultiFile, previewFile]);
+  const markedLines = useMemo(() => expandMarkLines(visibleMarks), [visibleMarks]);
   const displayedDiffLines = useMemo(
     () => (selectionMode !== 'off' ? diffLines : formatUnifiedDiff(diffLines, 5)),
     [selectionMode, diffLines]
@@ -294,6 +363,7 @@ export function StepEditor({
 
   const handlePatchDelete = useCallback((localId: string) => {
     setPatches((current) => current.filter((item) => item.localId !== localId));
+    setFocusAnchorLine(null);
   }, []);
 
   const handleSetPatchFind = useCallback((text: string) => {
@@ -303,12 +373,13 @@ export function StepEditor({
       }
       return current.map((item, i) => (i === 0 ? { ...item, find: text } : item));
     });
+    setFocusAnchorLine(null);
   }, []);
 
   const handleFocusRangeClear = useCallback(() => {
     setFocusRange(null);
     setFocusAnchorLine(null);
-    setFocusFind('');
+    setFocusFile('');
   }, []);
 
   function handleSave() {
@@ -328,48 +399,52 @@ export function StepEditor({
 
   // ─── Render ────────────────────────────────────────────────────
   return (
-    <div className="space-y-8">
+    <div className="space-y-6">
       {/* Header */}
-      <div className="flex flex-col gap-4 border-b border-border/50 pb-6">
-        <div className="space-y-1">
-          <p className="text-[10px] font-bold uppercase tracking-[0.2em] text-muted-foreground">
-            Step {stepIndex + 1} Editor
-          </p>
-          <h3 className="text-2xl font-bold tracking-tight text-foreground">{step.title}</h3>
-          <p className="text-xs text-muted-foreground">编辑步骤的文案和代码变更。</p>
+      <div className="flex items-start justify-between gap-4 border-b border-slate-200 pb-5">
+        <div className="flex items-baseline gap-3">
+          <span className="text-xs font-mono font-semibold text-slate-400">STEP {stepIndex + 1}</span>
+          <h3 className="text-lg font-semibold text-slate-900">{step.title}</h3>
         </div>
-        {hasStructuralChanges ? (
-          <span className="inline-flex w-fit items-center rounded-md bg-amber-50 px-2 py-1 text-[10px] font-bold uppercase tracking-wider text-amber-700 border border-amber-200">
+        {hasStructuralChanges && (
+          <span className="shrink-0 rounded-full bg-amber-100 px-2.5 py-0.5 text-[10px] font-semibold text-amber-700">
             结构改动待保存
           </span>
-        ) : null}
+        )}
       </div>
 
       {/* Prose fields */}
-      <div className="grid gap-6 md:grid-cols-2">
+      <div className="grid gap-4 md:grid-cols-2">
         <label className="space-y-1.5">
-          <span className="text-sm font-medium text-foreground">Eyebrow</span>
+          <span className="text-xs font-medium text-slate-500">Eyebrow</span>
           <input className={INPUT_CLASS} value={eyebrow} onChange={(e) => setEyebrow(e.target.value)} placeholder="例如：准备工作" />
         </label>
         <label className="space-y-1.5">
-          <span className="text-sm font-medium text-foreground">标题</span>
+          <span className="text-xs font-medium text-slate-500">标题</span>
           <input className={INPUT_CLASS} value={title} onChange={(e) => setTitle(e.target.value)} />
         </label>
       </div>
       <label className="space-y-1.5">
-        <span className="text-sm font-medium text-foreground">导语 (Lead)</span>
-        <input className={`${INPUT_CLASS} italic text-muted-foreground`} value={lead} onChange={(e) => setLead(e.target.value)} placeholder="步骤的核心概括..." />
+        <span className="text-xs font-medium text-slate-500">导语 (Lead)</span>
+        <input className={`${INPUT_CLASS} italic text-slate-400`} value={lead} onChange={(e) => setLead(e.target.value)} placeholder="步骤的核心概括..." />
       </label>
 
       {/* Code + Patches grid */}
-      <div className="grid gap-6 xl:grid-cols-2">
+      <div className="grid gap-5 xl:grid-cols-2">
         <CodePreviewPanel
           selectionMode={selectionMode}
           onSelectionModeChange={setSelectionMode}
-          focusRange={focusRange}
+          focusRange={visibleFocusRange}
           onFocusRangeClear={handleFocusRangeClear}
+          focusFile={activeFocusFile}
+          hasHiddenFocus={Boolean(focusRange && !visibleFocusRange)}
           markedLines={markedLines}
-          onMarkedLinesClear={() => setMarkedLines(new Set())}
+          markCount={visibleMarks.length}
+          onMarkedLinesClear={() =>
+            setMarks((current) =>
+              current.filter((mark) => !visibleMarks.some((visible) => visible.localId === mark.localId))
+            )
+          }
           previousCode={previousCode}
           currentCode={currentCode}
           previewError={previewError}
@@ -383,27 +458,23 @@ export function StepEditor({
           onLineClick={handleLineClick}
           diffViewRef={diffViewRef}
           onSetPatchFind={handleSetPatchFind}
-          onSetFocus={setFocusFind}
         />
 
-        <section className="space-y-4 rounded-lg bg-muted/30 p-4">
-          <div className="flex items-start justify-between gap-3">
-            <div className="space-y-1">
-              <h4 className="text-xs font-bold uppercase tracking-wider text-foreground">Patches</h4>
-              <p className="text-[10px] text-muted-foreground">定义当前步骤的代码变更。</p>
-            </div>
+        <section className="space-y-3 rounded-lg bg-slate-50/80 p-4">
+          <div className="flex items-center justify-between gap-3">
+            <h4 className="text-xs font-semibold text-slate-700">Patches</h4>
             <button
               type="button"
-              className="inline-flex h-7 items-center justify-center rounded-md border border-border bg-card px-2.5 text-[10px] font-bold text-foreground transition-colors hover:bg-accent"
+              className="inline-flex h-6 items-center justify-center rounded border border-slate-200 bg-white px-2 text-[10px] font-medium text-slate-500 transition-colors hover:border-slate-300 hover:text-slate-700"
               onClick={() => setPatches((current) => [...current, { localId: createUuid(), find: '', replace: '' }])}
             >
-              + 添加 Patch
+              + 添加
             </button>
           </div>
 
           <div className="space-y-3">
             {patches.length === 0 ? (
-              <div className="rounded-lg border border-dashed border-border/50 bg-muted/20 px-4 py-6 text-center text-xs text-muted-foreground">
+              <div className="rounded-lg border border-dashed border-slate-200 px-4 py-5 text-center text-xs text-slate-400">
                 当前步骤没有 patch
               </div>
             ) : null}
@@ -428,10 +499,12 @@ export function StepEditor({
           />
 
           <FocusMarksPanel
-            focusFind={focusFind}
-            setFocusFind={setFocusFind}
+            focusRange={focusRange}
+            setFocusRange={setFocusRange}
             focusFile={focusFile}
             setFocusFile={setFocusFile}
+            previewFile={previewFile}
+            hasHiddenFocus={Boolean(focusRange && !visibleFocusRange)}
             marks={marks}
             setMarks={setMarks}
             isMultiFile={isMultiFile}
@@ -442,34 +515,34 @@ export function StepEditor({
 
       {/* Markdown paragraphs */}
       <label className="space-y-1.5">
-        <span className="text-sm font-medium text-foreground">讲解段落 (Markdown)</span>
+        <span className="text-xs font-medium text-slate-500">讲解段落 (Markdown)</span>
         <MarkdownEditor value={paragraphs} onChange={setParagraphs} placeholder="支持 Markdown 语法" />
       </label>
 
       {/* Action bar */}
-      <div className="flex flex-wrap items-center gap-3 border-t border-border/50 pt-6">
+      <div className="flex flex-wrap items-center gap-3 border-t border-slate-200 pt-5">
         <button
           type="button"
-          className="inline-flex h-10 items-center justify-center rounded-md bg-primary px-6 py-2 text-sm font-medium text-primary-foreground shadow-sm transition-colors hover:bg-primary/90 disabled:pointer-events-none disabled:opacity-50"
+          className="inline-flex h-9 items-center justify-center rounded-md bg-slate-900 px-5 text-sm font-medium text-white transition-colors hover:bg-slate-800 disabled:pointer-events-none disabled:opacity-50"
           onClick={handleSave}
           disabled={saveDisabled}
         >
           {saving ? '保存中...' : '保存步骤'}
         </button>
-        <div className="flex items-center rounded-md border border-border bg-card p-1">
+        <div className="flex items-center rounded-md border border-slate-200 bg-white p-0.5">
           <button
             type="button"
-            className="inline-flex h-8 items-center justify-center rounded px-3 text-xs font-medium text-foreground transition-colors hover:bg-accent disabled:pointer-events-none disabled:opacity-50"
+            className="inline-flex h-8 items-center justify-center rounded px-3 text-xs font-medium text-slate-600 transition-colors hover:bg-slate-100 disabled:pointer-events-none disabled:opacity-50"
             onClick={() => onRegenerate(step.id, regenMode)}
             disabled={saving}
           >
             {saving ? '正在处理...' : `重新生成${regenMode === 'prose' ? '文案' : '完整内容'}`}
           </button>
-          <div className="mx-1 h-4 w-px bg-border" />
+          <div className="mx-0.5 h-4 w-px bg-slate-200" />
           <select
             value={regenMode}
             onChange={(e) => setRegenMode(e.target.value as 'prose' | 'step')}
-            className="h-8 bg-transparent px-2 text-xs font-medium text-muted-foreground outline-none transition-colors hover:text-foreground"
+            className="h-8 bg-transparent px-2 text-xs font-medium text-slate-400 outline-none transition-colors hover:text-slate-600"
           >
             <option value="prose">仅文案</option>
             <option value="step">完整步骤</option>

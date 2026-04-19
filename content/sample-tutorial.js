@@ -35,11 +35,13 @@ export const sampleTutorial = {
         },
       ],
       focus: {
-        find: `  let count = 0`,
+        start: 2,
+        end: 2,
       },
       marks: [
         {
-          find: `  let count = 0`,
+          start: 2,
+          end: 2,
           color: "rgb(143 210 193)",
         },
       ],
@@ -61,11 +63,13 @@ export const sampleTutorial = {
         },
       ],
       focus: {
-        find: `  function getCount() {\n    return count\n  }`,
+        start: 4,
+        end: 6,
       },
       marks: [
         {
-          find: `    getCount,`,
+          start: 9,
+          end: 9,
           color: "rgb(127 185 200)",
         },
       ],
@@ -87,11 +91,13 @@ export const sampleTutorial = {
         },
       ],
       focus: {
-        find: `  function increment() {\n    count += 1\n    return count\n  }`,
+        start: 8,
+        end: 11,
       },
       marks: [
         {
-          find: `    count += 1`,
+          start: 9,
+          end: 9,
           color: "rgb(221 176 129)",
         },
       ],
@@ -113,11 +119,13 @@ export const sampleTutorial = {
         },
       ],
       focus: {
-        find: `  function reset() {\n    count = 0\n    return count\n  }`,
+        start: 13,
+        end: 16,
       },
       marks: [
         {
-          find: `    reset,`,
+          start: 21,
+          end: 21,
           color: "rgb(192 201 123)",
         },
       ],

@@ -94,7 +94,7 @@ export function ChapteredStepList({
   }, [chapters]);
 
   return (
-    <div className="space-y-2">
+    <div className="space-y-3">
       {sections.map((section, sectionIndex) => {
         const chapter = chapterById.get(section.id);
         if (!chapter) return null;
@@ -105,7 +105,7 @@ export function ChapteredStepList({
           .filter(Boolean) as TutorialStep[];
 
         return (
-          <div key={section.id} className="space-y-0.5">
+          <div key={section.id} className="space-y-1.5">
             <ChapterRow
               chapter={chapter}
               stepCount={section.stepCount}
@@ -123,7 +123,7 @@ export function ChapteredStepList({
             />
 
             {isExpanded && (
-              <div className="ml-2 space-y-0.5">
+              <div className="space-y-1 pl-3 pr-1">
                 {sectionSteps.map((step, stepIdx) => (
                   <ChapterStepRow
                     key={step.id}
@@ -143,7 +143,7 @@ export function ChapteredStepList({
                   />
                 ))}
                 {sectionSteps.length === 0 && (
-                  <div className="px-4 py-2 text-[10px] text-slate-400">
+                  <div className="rounded-md border border-dashed border-slate-700 px-4 py-3 text-[11px] text-slate-500">
                     暂无步骤
                   </div>
                 )}
@@ -156,7 +156,7 @@ export function ChapteredStepList({
       {/* Add chapter button */}
       <button
         type="button"
-        className="w-full rounded-lg border border-dashed border-slate-200 bg-transparent px-3 py-2 text-[10px] font-medium text-slate-400 transition-colors hover:border-slate-300 hover:bg-slate-50 hover:text-slate-600 disabled:pointer-events-none disabled:opacity-40"
+        className="w-full rounded-md border border-dashed border-slate-700 px-3 py-3 text-[11px] font-medium uppercase tracking-[0.16em] text-slate-500 transition-colors hover:border-slate-600 hover:bg-slate-800 hover:text-slate-300 disabled:pointer-events-none disabled:opacity-40"
         onClick={onAddChapter}
         disabled={saving}
       >

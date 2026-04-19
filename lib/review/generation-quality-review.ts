@@ -106,6 +106,26 @@ function getPatchFile(step: TutorialDraft['steps'][number], primaryFile: string 
     .filter((value): value is string => Boolean(value));
 }
 
+function hasValidFocus(step: TutorialDraft['steps'][number]) {
+  if (!step.focus) return false;
+  return (
+    Number.isInteger(step.focus.start) &&
+    Number.isInteger(step.focus.end) &&
+    step.focus.start >= 1 &&
+    step.focus.end >= step.focus.start
+  );
+}
+
+function hasValidMarks(step: TutorialDraft['steps'][number]) {
+  if (!step.marks?.length) return false;
+  return step.marks.every((mark) =>
+    Number.isInteger(mark.start) &&
+    Number.isInteger(mark.end) &&
+    mark.start >= 1 &&
+    mark.end >= mark.start
+  );
+}
+
 function buildPromptReview(issues: GenerationReviewIssue[]) {
   const grouped = new Map<string, string[]>();
   for (const issue of issues) {
@@ -249,8 +269,8 @@ export function reviewGeneratedTutorial({
   );
   const missingLeadSteps = draft.steps.filter((step) => !step.lead?.trim());
   const missingPatchSteps = draft.steps.filter((step) => !step.patches?.length);
-  const missingFocusSteps = draft.steps.filter((step) => !step.focus?.find?.trim());
-  const missingMarksSteps = draft.steps.filter((step) => !step.marks?.length);
+  const missingFocusSteps = draft.steps.filter((step) => !hasValidFocus(step));
+  const missingMarksSteps = draft.steps.filter((step) => !hasValidMarks(step));
 
   const sourceItemLabels = sourceItems.map((item) => item.label);
   const baseCoverage = sourceItemLabels.length > 0 ? baseFiles.length / sourceItemLabels.length : 1;

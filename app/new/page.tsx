@@ -1,6 +1,6 @@
 import { redirect } from "next/navigation";
 import { CreateDraftForm } from "@/components/create-draft-form";
-import { AppShell } from "@/components/app-shell";
+import { TopNav } from "@/components/top-nav";
 import { getCurrentUser } from "@/auth";
 
 export default async function NewPage() {
@@ -10,10 +10,11 @@ export default async function NewPage() {
   }
 
   return (
-    <AppShell activePath="/new" user={user}>
-      <div className="container-app flex min-h-screen flex-col py-10">
+    <>
+      <TopNav user={user} />
+      <div className="container-app flex min-h-screen flex-col pt-14">
         <CreateDraftForm />
       </div>
-    </AppShell>
+    </>
   );
 }

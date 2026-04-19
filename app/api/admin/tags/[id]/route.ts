@@ -55,14 +55,22 @@ export async function PUT(
     }
 
     if (data.tagType !== undefined) {
-      const validTypes = ['technology', 'category', 'level', null];
-      if (data.tagType !== null && !validTypes.includes(data.tagType)) {
+      const nextTagType = data.tagType;
+      if (
+        nextTagType !== null &&
+        nextTagType !== 'technology' &&
+        nextTagType !== 'category' &&
+        nextTagType !== 'level'
+      ) {
         return NextResponse.json(
           { message: 'tagType 必须是 technology/category/level 或 null', code: 'VALIDATION_ERROR' },
           { status: 400 },
         );
       }
-      const tag = await updateTagType(id, data.tagType as 'technology' | 'category' | 'level' | null);
+      const tag = await updateTagType(
+        id,
+        nextTagType as 'technology' | 'category' | 'level' | null,
+      );
       return NextResponse.json(tag);
     }
 

@@ -10,10 +10,9 @@ interface SelectionMenuPosition {
 interface CodeSelectionMenuProps {
   containerRef: React.RefObject<HTMLElement | null>
   onSetPatchFind: (text: string) => void
-  onSetFocus: (text: string) => void
 }
 
-export function CodeSelectionMenu({ containerRef, onSetPatchFind, onSetFocus }: CodeSelectionMenuProps) {
+export function CodeSelectionMenu({ containerRef, onSetPatchFind }: CodeSelectionMenuProps) {
   const [position, setPosition] = useState<SelectionMenuPosition | null>(null)
   const [selectedText, setSelectedText] = useState('')
   const menuRef = useRef<HTMLDivElement>(null)
@@ -95,14 +94,6 @@ export function CodeSelectionMenu({ containerRef, onSetPatchFind, onSetFocus }: 
         onClick={() => handleAction(onSetPatchFind)}
       >
         设为 Patch Find
-      </button>
-      <div className="h-4 w-px bg-slate-200" />
-      <button
-        type="button"
-        className="whitespace-nowrap rounded-md px-2 py-1 text-[10px] font-bold text-slate-700 hover:bg-slate-100 transition-colors"
-        onClick={() => handleAction(onSetFocus)}
-      >
-        设为 Focus
       </button>
     </div>
   )

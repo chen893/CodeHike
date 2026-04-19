@@ -6,6 +6,7 @@ import {
   listStaticTutorialParams,
 } from "@/lib/services/tutorial-queries"
 import { generateOgMetadata } from "@/lib/utils/seo"
+import { ReadingNav } from "@/components/reading-nav"
 
 export function generateStaticParams() {
   return listStaticTutorialParams()
@@ -42,16 +43,20 @@ export default async function TutorialPage({ params }) {
   }
 
   return (
-    <main className="min-h-screen">
-      <TutorialScrollyDemo
-        steps={tutorial.steps}
-        intro={tutorial.intro}
-        title={tutorial.title}
-        fileName={tutorial.fileName}
-        slug={slug}
-        chapters={tutorial.chapters}
-        stepChapterMeta={tutorial.stepChapterMeta}
-      />
-    </main>
+    <>
+      <ReadingNav slug={slug} title={tutorial.title} />
+      <main className="min-h-screen pt-12">
+        <TutorialScrollyDemo
+          steps={tutorial.steps}
+          intro={tutorial.intro}
+          title={tutorial.title}
+          fileName={tutorial.fileName}
+          slug={slug}
+          viewportTopOffset={48}
+          chapters={tutorial.chapters}
+          stepChapterMeta={tutorial.stepChapterMeta}
+        />
+      </main>
+    </>
   )
 }

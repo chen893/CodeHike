@@ -1,13 +1,15 @@
 'use client'
 
 import { createUuid } from '@/lib/utils/uuid'
-import type { MarkDraft } from './types'
+import type { FocusRange, MarkDraft } from './types'
 
 interface FocusMarksPanelProps {
-  focusFind: string
-  setFocusFind: (value: string) => void
+  focusRange: FocusRange | null
+  setFocusRange: (value: FocusRange | null) => void
   focusFile: string
   setFocusFile: (value: string) => void
+  previewFile: string
+  hasHiddenFocus: boolean
   marks: MarkDraft[]
   setMarks: React.Dispatch<React.SetStateAction<MarkDraft[]>>
   isMultiFile: boolean
@@ -34,10 +36,12 @@ function FileSelect({ value, onChange, fileNames }: {
 }
 
 export function FocusMarksPanel({
-  focusFind,
-  setFocusFind,
+  focusRange,
+  setFocusRange,
   focusFile,
   setFocusFile,
+  previewFile,
+  hasHiddenFocus,
   marks,
   setMarks,
   isMultiFile,
@@ -49,9 +53,9 @@ export function FocusMarksPanel({
         <svg className="h-4 w-4 text-muted-foreground transition-transform group-open:rotate-90" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M9 5l7 7-7 7" /></svg>
         <div className="flex items-center gap-3 flex-1 min-w-0">
           <h5 className="text-[10px] font-bold uppercase tracking-wider text-foreground">Focus / Marks</h5>
-          {focusFind.trim() ? (
+          {focusRange ? (
             <span className="inline-flex items-center gap-1 rounded bg-blue-100 px-1.5 py-0.5 text-[10px] text-blue-700 border border-blue-200 font-medium">
-              Focus: {focusFind.length > 30 ? focusFind.slice(0, 30) + '…' : focusFind.replace(/\n/g, '↵')}
+              Focus: L{focusRange.startLine}{focusRange.startLine !== focusRange.endLine ? `–L${focusRange.endLine}` : ''}
             </span>
           ) : null}
           {marks.length > 0 ? (
@@ -59,7 +63,7 @@ export function FocusMarksPanel({
               {marks.length} mark{marks.length > 1 ? 's' : ''}
             </span>
           ) : null}
-          {!focusFind.trim() && marks.length === 0 ? (
+          {!focusRange && marks.length === 0 ? (
             <span className="text-[10px] text-muted-foreground">未设置（高级编辑）</span>
           ) : null}
         </div>
@@ -77,19 +81,59 @@ export function FocusMarksPanel({
               <button
                 type="button"
                 className="text-[10px] font-bold text-muted-foreground hover:text-foreground transition-colors"
-                onClick={() => { setFocusFind(''); setFocusFile(''); }}
+                onClick={() => { setFocusRange(null); setFocusFile(''); }}
               >
                 清空
               </button>
             </div>
           </div>
-          <textarea
-            className="flex min-h-[60px] w-full rounded-md border border-border bg-muted/20 px-2 py-1.5 text-xs font-mono transition-colors focus:bg-card focus:outline-none focus:ring-1 focus:ring-ring"
-            value={focusFind}
-            onChange={(e) => setFocusFind(e.target.value)}
-            rows={3}
-            placeholder="要高亮的代码片段"
-          />
+          <div className="rounded-md border border-border bg-muted/20 px-3 py-2 text-xs text-muted-foreground">
+            {focusRange ? (
+              <div className="space-y-1">
+                {isMultiFile ? (
+                  <div className="flex flex-wrap items-center gap-2">
+                    <span className="rounded bg-white px-2 py-0.5 text-[10px] font-medium text-slate-500 border border-border">
+                      当前预览: {previewFile}
+                    </span>
+                    {focusFile ? (
+                      <span className="rounded bg-white px-2 py-0.5 text-[10px] font-medium text-slate-500 border border-border">
+                        绑定文件: {focusFile}
+                      </span>
+                    ) : null}
+                    {hasHiddenFocus ? (
+                      <span className="rounded bg-blue-50 px-2 py-0.5 text-[10px] font-semibold text-blue-700 border border-blue-200">
+                        Focus 未在此文件显示
+                      </span>
+                    ) : null}
+                  </div>
+                ) : null}
+                <span className="block font-mono text-foreground">
+                  start: {focusRange.startLine}, end: {focusRange.endLine}
+                </span>
+                <span className="block text-[10px]">
+                  {isMultiFile && focusFile
+                    ? `当前 Focus 绑定到 ${focusFile}。切换预览文件时，仅在对应文件里显示。`
+                    : '点击左侧代码行选择范围；Shift+点击可扩展到连续多行。'}
+                </span>
+              </div>
+            ) : (
+              <div className="space-y-1">
+                {isMultiFile ? (
+                  <div className="flex flex-wrap items-center gap-2">
+                    <span className="rounded bg-white px-2 py-0.5 text-[10px] font-medium text-slate-500 border border-border">
+                      当前预览: {previewFile}
+                    </span>
+                  </div>
+                ) : null}
+                <span>在左侧代码预览里按行选择 Focus 范围</span>
+                <span className="block text-[10px]">
+                  {isMultiFile
+                    ? '多文件模式下，新的 Focus 会自动绑定到当前预览文件。'
+                    : 'Shift+点击可快速扩展到连续多行。'}
+                </span>
+              </div>
+            )}
+          </div>
         </div>
 
         {/* Marks */}
@@ -102,7 +146,7 @@ export function FocusMarksPanel({
               onClick={() =>
                 setMarks((current) => [
                   ...current,
-                  { localId: createUuid(), find: '', color: '#2563eb' },
+                  { localId: createUuid(), start: null, end: null, color: '#2563eb' },
                 ])
               }
             >
@@ -153,21 +197,56 @@ export function FocusMarksPanel({
 
                 <div className="grid gap-3">
                   <label className="space-y-1">
-                    <span className="text-[10px] font-bold uppercase text-muted-foreground">find</span>
-                    <textarea
-                      className="flex min-h-[60px] w-full rounded-md border border-border bg-card px-2 py-1.5 text-xs font-mono transition-colors focus:outline-none focus:ring-1 focus:ring-ring"
-                      value={mark.find}
-                      onChange={(e) =>
-                        setMarks((current) =>
-                          current.map((item) =>
-                            item.localId === mark.localId
-                              ? { ...item, find: e.target.value }
-                              : item
+                    <span className="text-[10px] font-bold uppercase text-muted-foreground">范围</span>
+                    <div className="grid grid-cols-2 gap-2">
+                      <input
+                        className="flex h-8 w-full rounded-md border border-border bg-card px-2 py-1 text-xs font-mono focus:outline-none focus:ring-1 focus:ring-ring"
+                        type="number"
+                        min={1}
+                        value={mark.start ?? ''}
+                        onChange={(e) =>
+                          setMarks((current) =>
+                            current.map((item) =>
+                              item.localId === mark.localId
+                                ? {
+                                    ...item,
+                                    start: e.target.value === ''
+                                      ? null
+                                      : Math.max(1, Number(e.target.value) || 1),
+                                  }
+                                : item
+                            )
                           )
-                        )
-                      }
-                      rows={2}
-                    />
+                        }
+                        placeholder="start"
+                      />
+                      <input
+                        className="flex h-8 w-full rounded-md border border-border bg-card px-2 py-1 text-xs font-mono focus:outline-none focus:ring-1 focus:ring-ring"
+                        type="number"
+                        min={1}
+                        value={mark.end ?? ''}
+                        onChange={(e) =>
+                          setMarks((current) =>
+                            current.map((item) =>
+                              item.localId === mark.localId
+                                ? {
+                                    ...item,
+                                    end: e.target.value === ''
+                                      ? null
+                                      : Math.max(1, Number(e.target.value) || 1),
+                                  }
+                                : item
+                            )
+                          )
+                        }
+                        placeholder="end"
+                      />
+                    </div>
+                    <p className="text-[10px] text-muted-foreground">
+                      {mark.start !== null && mark.end !== null
+                        ? `L${mark.start}${mark.start !== mark.end ? `–L${mark.end}` : ''}`
+                        : '未设置范围'}
+                    </p>
                   </label>
 
                   <label className="space-y-1">

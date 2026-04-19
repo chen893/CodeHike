@@ -1,6 +1,6 @@
 import { notFound } from 'next/navigation';
 import Link from 'next/link';
-import { AppShell } from '@/components/app-shell';
+import { TopNav } from '@/components/top-nav';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import {
@@ -48,8 +48,9 @@ export default async function UserProfilePage({
   const tutorials = await getProfileTutorialData(username);
 
   return (
-    <AppShell activePath="" user={currentUser}>
-      <div className="mx-auto w-full max-w-5xl space-y-10 px-4 py-10 sm:px-6 lg:px-8">
+    <>
+      <TopNav user={currentUser} />
+      <div className="mx-auto w-full max-w-5xl space-y-10 px-4 pt-24 pb-10 sm:px-6 lg:px-8">
         {/* Profile header */}
         <div className="relative overflow-hidden rounded-2xl bg-slate-900 px-8 py-10 text-white shadow-xl">
           <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_top_left,_rgba(56,189,248,0.15),_transparent_40%)]" />
@@ -139,6 +140,6 @@ export default async function UserProfilePage({
           </section>
         )}
       </div>
-    </AppShell>
+    </>
   );
 }

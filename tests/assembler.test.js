@@ -159,3 +159,160 @@ test('buildTutorialSteps does not leak line annotations inside JSDoc comments', 
     )
   );
 });
+
+test('buildTutorialSteps uses explicit focus line ranges', async () => {
+  const steps = await buildTutorialSteps({
+    meta: {
+      title: 'Focus tutorial',
+      description: 'Test tutorial',
+      lang: 'typescript',
+      fileName: 'example.ts',
+    },
+    intro: { paragraphs: [] },
+    baseCode: {
+      'example.ts': 'const a = 1;\nconst b = 2;\nconst c = a + b;\n',
+    },
+    chapters: [
+      {
+        id: 'chapter-1',
+        title: 'Chapter 1',
+        description: 'Chapter 1',
+        stepIds: ['step-1'],
+      },
+    ],
+    steps: [
+      {
+        id: 'step-1',
+        chapterId: 'chapter-1',
+        title: 'Focus the calculation',
+        paragraphs: ['Focus the key range.'],
+        focus: { file: 'example.ts', start: 2, end: 3 },
+      },
+    ],
+  });
+
+  const highlighted = steps[0].highlightedFiles['example.ts'];
+  assert.ok(
+    highlighted.annotations.some(
+      (annotation) =>
+        annotation.name === 'focus' &&
+        annotation.fromLineNumber === 2 &&
+        annotation.toLineNumber === 3
+    )
+  );
+});
+
+test('buildTutorialSteps uses explicit mark line ranges', async () => {
+  const steps = await buildTutorialSteps({
+    meta: {
+      title: 'Mark tutorial',
+      description: 'Test tutorial',
+      lang: 'typescript',
+      fileName: 'example.ts',
+    },
+    intro: { paragraphs: [] },
+    baseCode: {
+      'example.ts': 'const a = 1;\nconst b = 2;\nconst c = a + b;\n',
+    },
+    chapters: [
+      {
+        id: 'chapter-1',
+        title: 'Chapter 1',
+        description: 'Chapter 1',
+        stepIds: ['step-1'],
+      },
+    ],
+    steps: [
+      {
+        id: 'step-1',
+        chapterId: 'chapter-1',
+        title: 'Mark the calculation',
+        paragraphs: ['Mark the key range.'],
+        marks: [{ file: 'example.ts', start: 2, end: 3, color: '#ff0' }],
+      },
+    ],
+  });
+
+  const highlighted = steps[0].highlightedFiles['example.ts'];
+  assert.ok(
+    highlighted.annotations.some(
+      (annotation) =>
+        annotation.name === 'mark' &&
+        annotation.query === '#ff0' &&
+        annotation.fromLineNumber === 2 &&
+        annotation.toLineNumber === 3
+    )
+  );
+});
+
+test('buildTutorialSteps rejects invalid explicit mark ranges', async () => {
+  await assert.rejects(
+    () =>
+      buildTutorialSteps({
+        meta: {
+          title: 'Broken mark tutorial',
+          description: 'Test tutorial',
+          lang: 'typescript',
+          fileName: 'example.ts',
+        },
+        intro: { paragraphs: [] },
+        baseCode: {
+          'example.ts': 'const a = 1;\nconst b = 2;\n',
+        },
+        chapters: [
+          {
+            id: 'chapter-1',
+            title: 'Chapter 1',
+            description: 'Chapter 1',
+            stepIds: ['step-1'],
+          },
+        ],
+        steps: [
+          {
+            id: 'step-1',
+            chapterId: 'chapter-1',
+            title: 'Broken mark',
+            paragraphs: ['Invalid mark range.'],
+            marks: [{ file: 'example.ts', start: 2, end: 5, color: '#ff0' }],
+          },
+        ],
+      }),
+    (err) => err.message.includes('Mark 行号超出范围')
+  );
+});
+
+test('buildTutorialSteps rejects invalid explicit focus ranges', async () => {
+  await assert.rejects(
+    () =>
+      buildTutorialSteps({
+        meta: {
+          title: 'Broken focus tutorial',
+          description: 'Test tutorial',
+          lang: 'typescript',
+          fileName: 'example.ts',
+        },
+        intro: { paragraphs: [] },
+        baseCode: {
+          'example.ts': 'const a = 1;\nconst b = 2;\n',
+        },
+        chapters: [
+          {
+            id: 'chapter-1',
+            title: 'Chapter 1',
+            description: 'Chapter 1',
+            stepIds: ['step-1'],
+          },
+        ],
+        steps: [
+          {
+            id: 'step-1',
+            chapterId: 'chapter-1',
+            title: 'Broken focus',
+            paragraphs: ['Invalid focus range.'],
+            focus: { file: 'example.ts', start: 3, end: 5 },
+          },
+        ],
+      }),
+    (err) => err.message.includes('Focus 行号超出范围')
+  );
+});

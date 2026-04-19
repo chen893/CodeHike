@@ -38,7 +38,10 @@ export interface PatchDraft extends ContentPatch {
   file?: string
 }
 
-export interface MarkDraft extends ContentMark {
+export interface MarkDraft {
   localId: string
+  start: number | null
+  end: number | null
+  color: string
   file?: string
 }

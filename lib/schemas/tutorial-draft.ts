@@ -1,21 +1,25 @@
 import { z } from 'zod';
 import { chapterSchema } from './chapter';
 
+const lineRangeSchema = z.object({
+  start: z.number().int().min(1),
+  end: z.number().int().min(1),
+  file: z.string().min(1).optional(),
+}).refine((value) => value.end >= value.start, {
+  path: ['end'],
+  message: 'Range end must be greater than or equal to start',
+});
+
 export const contentPatchSchema = z.object({
   find: z.string().min(1),
   replace: z.string(),
   file: z.string().min(1).optional(),
 });
 
-export const contentRangeSchema = z.object({
-  find: z.string().min(1),
-  file: z.string().min(1).optional(),
-});
+export const contentRangeSchema = lineRangeSchema;
 
-export const contentMarkSchema = z.object({
-  find: z.string().min(1),
+export const contentMarkSchema = lineRangeSchema.extend({
   color: z.string().min(1),
-  file: z.string().min(1).optional(),
 });
 
 export const tutorialStepSchema = z.object({

@@ -21,8 +21,18 @@ export function TutorialScrollyDemo({
   stepChapterMeta,
   previewMode = false,
   showCompletion = true,
+  viewportTopOffset = 0,
 }) {
   const [shareOpen, setShareOpen] = useState(false)
+  const stickyViewportStyle = previewMode
+    ? { top: 0, height: "100cqh" }
+    : viewportTopOffset > 0
+      ? { top: `${viewportTopOffset}px`, height: `calc(100vh - ${viewportTopOffset}px)` }
+      : { top: 0, height: "100vh" }
+  const shareButtonStyle = viewportTopOffset > 0
+    ? { top: `${viewportTopOffset + 16}px` }
+    : undefined
+  const stepScrollMargin = viewportTopOffset > 0 ? viewportTopOffset + 96 : undefined
   const railClassName = previewMode
     ? "fixed right-[max(1.5rem,calc((100vw-1560px)/2+1.5rem))] top-1/2 z-[60] hidden -translate-y-1/2 flex-col items-end gap-3 bg-transparent p-1 lg:flex"
     : undefined
@@ -36,7 +46,10 @@ export function TutorialScrollyDemo({
       rootMargin={previewMode ? "0px 0px -68% 0px" : "0% 0% -42% 0%"}
     >
       <aside className={`hidden min-w-0 border-r border-border bg-[#1e1e2e] lg:block ${previewMode ? 'min-h-[100cqh]' : 'min-h-screen'}`}>
-        <div className={`sticky top-0 flex items-start justify-center overflow-hidden ${previewMode ? 'h-[100cqh]' : 'h-screen'}`}>
+        <div
+          className="sticky flex items-start justify-center overflow-hidden"
+          style={stickyViewportStyle}
+        >
           <SelectedCodeFrame steps={steps} fileName={fileName} />
         </div>
       </aside>
@@ -76,8 +89,9 @@ export function TutorialScrollyDemo({
           <>
             <button
               onClick={() => setShareOpen(true)}
-              className="fixed right-4 top-4 z-40 flex h-11 w-11 items-center justify-center rounded-lg border border-border bg-card/90 text-muted-foreground shadow-sm backdrop-blur-sm transition-all hover:bg-card hover:text-foreground hover:shadow-md lg:right-8 lg:top-8"
+              className="fixed right-4 z-40 flex h-11 w-11 items-center justify-center rounded-lg border border-border bg-card/90 text-muted-foreground shadow-sm backdrop-blur-sm transition-all hover:bg-card hover:text-foreground hover:shadow-md lg:right-8"
               aria-label="分享教程"
+              style={shareButtonStyle}
             >
               <svg className="h-5 w-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                 <circle cx="18" cy="5" r="3" />
@@ -133,7 +147,8 @@ export function TutorialScrollyDemo({
                 <Selectable
                   index={index}
                   selectOn={["click", "scroll"]}
-                  className="article-step scroll-mt-24 transition-all sm:pl-2 lg:flex lg:min-h-[80vh] lg:items-start lg:pl-4 lg:pr-16"
+                  className="article-step transition-all sm:pl-2 lg:flex lg:min-h-[80vh] lg:items-start lg:pl-4 lg:pr-16"
+                  style={stepScrollMargin ? { scrollMarginTop: `${stepScrollMargin}px` } : undefined}
                   data-step-index={index}
                 >
                   <article className="w-full max-w-2xl py-10 pb-6 lg:py-14 lg:pb-20">

@@ -1,17 +1,16 @@
 import Link from 'next/link';
-import { AppShell } from '@/components/app-shell';
+import { TopNav } from '@/components/top-nav';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import {
-  Card,
   CardDescription,
   CardTitle,
 } from '@/components/ui/card';
-import { getExploreData } from '@/lib/services/explore-service';
-import { generateOgMetadata } from '@/lib/utils/seo';
+import { ExploreClient } from '@/components/explore/explore-client';
 import { getCurrentUser } from '@/auth';
 import { trackExploreViewed, trackTagViewed } from '@/lib/monitoring/analytics';
-import { ExploreClient } from '@/components/explore/explore-client';
+import { getExploreData } from '@/lib/services/explore-service';
+import { generateOgMetadata } from '@/lib/utils/seo';
 
 export const metadata = {
   ...generateOgMetadata({
@@ -48,7 +47,6 @@ export default async function ExplorePage({
     page,
   });
 
-  // Fire-and-forget tracking
   trackExploreViewed(user?.id, undefined, {
     ...(search ? { search } : {}),
     ...(technology ? { technology } : {}),
@@ -59,14 +57,11 @@ export default async function ExplorePage({
     ...(sort ? { sort } : {}),
   });
 
-  // Resolve active filter tags for display and tracking
-  const activeTechnology = technology ? tags.find((t) => t.slug === technology) : null;
-  const activeCategory = category ? tags.find((t) => t.slug === category) : null;
-  const activeLevel = level ? tags.find((t) => t.slug === level) : null;
-  // Backward compat: old ?tag= resolves as technology
-  const activeTag = (!technology && tag) ? tags.find((t) => t.slug === tag) : null;
+  const activeTechnology = technology ? tags.find((item) => item.slug === technology) : null;
+  const activeCategory = category ? tags.find((item) => item.slug === category) : null;
+  const activeLevel = level ? tags.find((item) => item.slug === level) : null;
+  const activeTag = !technology && tag ? tags.find((item) => item.slug === tag) : null;
 
-  // Fire-and-forget tag view tracking
   if (activeTechnology) trackTagViewed(activeTechnology.slug, 'explore', user?.id);
   if (activeCategory) trackTagViewed(activeCategory.slug, 'explore', user?.id);
   if (activeLevel) trackTagViewed(activeLevel.slug, 'explore', user?.id);
@@ -74,22 +69,51 @@ export default async function ExplorePage({
 
   const pageSize = 20;
   const totalPages = Math.ceil(total / pageSize);
-
-  // Determine if any filters are active
   const hasFilters = activeTechnology || activeCategory || activeLevel || activeTag || lang;
 
   return (
-    <AppShell activePath="/explore" user={user}>
-      <div className="container-app space-y-8 py-10">
-        {/* Header */}
-        <div className="space-y-2">
-          <h1 className="text-2xl font-bold text-foreground">探索教程</h1>
-          <p className="text-sm text-muted-foreground">
-            浏览所有已发布的交互式编程教程，按标签或关键词搜索。
-          </p>
+    <>
+      <TopNav activePath="/explore" user={user} />
+      <div className="container-app space-y-8 pb-12 pt-20">
+        <div className="overflow-hidden rounded-xl border border-slate-200 bg-white">
+          <div className="px-6 py-8 sm:px-8 sm:py-10">
+            <div className="mb-3 font-mono text-[11px] tracking-wider text-slate-400">
+              <span className="text-slate-300">{'// '}</span>
+              {search ? (
+                <span>
+                  query: <span className="text-cyan-600">"{search}"</span>
+                </span>
+              ) : activeTechnology ? (
+                <span>
+                  technology: <span className="text-cyan-600">{activeTechnology.name}</span>
+                </span>
+              ) : activeCategory ? (
+                <span>
+                  category: <span className="text-cyan-600">{activeCategory.name}</span>
+                </span>
+              ) : activeLevel ? (
+                <span>
+                  level: <span className="text-cyan-600">{activeLevel.name}</span>
+                </span>
+              ) : activeTag ? (
+                <span>
+                  tag: <span className="text-cyan-600">{activeTag.name}</span>
+                </span>
+              ) : (
+                <span>explore</span>
+              )}
+              {total > 0 && <span className="text-slate-300"> · {total} 篇</span>}
+            </div>
+
+            <h1 className="text-2xl font-bold tracking-tight text-slate-900 sm:text-3xl">
+              探索教程
+            </h1>
+            <p className="mt-2 max-w-lg text-sm leading-relaxed text-slate-500">
+              浏览所有已发布的交互式编程教程，按标签或关键词搜索。
+            </p>
+          </div>
         </div>
 
-        {/* Search + Filters (client component) */}
         <ExploreClient
           tags={JSON.parse(JSON.stringify(tags))}
           activeTechnology={activeTechnology?.slug ?? (activeTag?.slug ?? null)}
@@ -99,57 +123,86 @@ export default async function ExplorePage({
           searchQuery={search ?? ''}
         />
 
-        {/* Active filters summary */}
         {hasFilters && (
-          <div className="flex items-center gap-2 flex-wrap">
-            <span className="text-sm text-muted-foreground">当前筛选：</span>
+          <div className="flex flex-wrap items-center gap-2.5 rounded-lg border border-amber-300/30 bg-amber-50/50 px-4 py-2.5">
+            <span className="font-mono text-[11px] font-semibold tracking-wider text-amber-600/80">
+              FILTER
+            </span>
+
             {(activeTechnology || activeTag) && (
-              <Badge className="bg-primary/10 text-primary border-primary/30">
+              <Badge className="border-cyan-300/40 bg-cyan-50 text-cyan-700">
                 技术: {(activeTechnology ?? activeTag)?.name}
                 <Link
                   href={buildFilterUrl({
-                    technology: undefined, tag: undefined, category, level, lang, search, sort,
+                    technology: undefined,
+                    tag: undefined,
+                    category,
+                    level,
+                    lang,
+                    search,
+                    sort,
                   })}
-                  className="ml-1.5 hover:text-cyan-900"
+                  className="ml-1.5 font-mono text-cyan-400 transition-colors hover:text-cyan-700"
                 >
                   ×
                 </Link>
               </Badge>
             )}
+
             {activeCategory && (
-              <Badge className="bg-primary/10 text-primary border-primary/30">
+              <Badge className="border-cyan-300/40 bg-cyan-50 text-cyan-700">
                 领域: {activeCategory.name}
                 <Link
                   href={buildFilterUrl({
-                    technology, tag, category: undefined, level, lang, search, sort,
+                    technology,
+                    tag,
+                    category: undefined,
+                    level,
+                    lang,
+                    search,
+                    sort,
                   })}
-                  className="ml-1.5 hover:text-cyan-900"
+                  className="ml-1.5 font-mono text-cyan-400 transition-colors hover:text-cyan-700"
                 >
                   ×
                 </Link>
               </Badge>
             )}
+
             {activeLevel && (
-              <Badge className="bg-primary/10 text-primary border-primary/30">
+              <Badge className="border-cyan-300/40 bg-cyan-50 text-cyan-700">
                 难度: {activeLevel.name}
                 <Link
                   href={buildFilterUrl({
-                    technology, tag, category, level: undefined, lang, search, sort,
+                    technology,
+                    tag,
+                    category,
+                    level: undefined,
+                    lang,
+                    search,
+                    sort,
                   })}
-                  className="ml-1.5 hover:text-cyan-900"
+                  className="ml-1.5 font-mono text-cyan-400 transition-colors hover:text-cyan-700"
                 >
                   ×
                 </Link>
               </Badge>
             )}
+
             {lang && (
-              <Badge className="bg-secondary text-secondary-foreground border-border">
-                {lang}
+              <Badge className="border-slate-300/60 bg-slate-100 text-slate-700">
+                <span className="font-mono">{lang}</span>
                 <Link
                   href={buildFilterUrl({
-                    technology, tag, category, level, lang: undefined, search, sort,
+                    technology,
+                    tag,
+                    category,
+                    level,
+                    lang: undefined,
+                    search,
+                    sort,
                   })}
-                  className="ml-1.5 hover:text-foreground"
+                  className="ml-1.5 font-mono text-slate-400 transition-colors hover:text-slate-700"
                 >
                   ×
                 </Link>
@@ -158,106 +211,180 @@ export default async function ExplorePage({
           </div>
         )}
 
-        {/* Results count */}
-        <p className="text-sm text-muted-foreground">
-          {search ? `搜索 "${search}" 找到 ` : '共 '}
-          {total} 篇教程
-        </p>
+        <div className="flex items-center gap-2 font-mono text-xs text-muted-foreground">
+          <span className="inline-block h-1.5 w-1.5 rounded-full bg-emerald-400/60" />
+          <span>
+            {search ? `搜索 "${search}" 找到 ` : '共 '}
+            <span className="font-semibold text-foreground">{total}</span> 篇教程
+          </span>
+        </div>
 
-        {/* Tutorial grid */}
         {tutorials.length === 0 ? (
-          <div className="rounded-xl border border-dashed border-border p-12 text-center">
-            <p className="text-sm text-muted-foreground">
-              {search ? '没有找到匹配的教程。试试其他关键词？' : '暂无已发布的教程。'}
-            </p>
-            {!search && (
-              <Button asChild className="mt-4 bg-primary text-primary-foreground">
-                <Link href="/new">创建第一篇教程</Link>
-              </Button>
-            )}
+          <div className="overflow-hidden rounded-xl border border-slate-200 bg-white">
+            <div className="px-6 py-10 text-center">
+              <p className="text-sm text-slate-500">
+                {search ? (
+                  <>
+                    没有找到匹配 "<span className="font-medium text-slate-700">{search}</span>" 的教程
+                  </>
+                ) : (
+                  '暂无已发布的教程'
+                )}
+              </p>
+              {search && <p className="mt-1 text-xs text-slate-400">试试其他关键词？</p>}
+              {!search && (
+                <Button asChild className="mt-6 bg-slate-900 text-white hover:bg-slate-800">
+                  <Link href="/new">创建第一篇教程</Link>
+                </Button>
+              )}
+            </div>
           </div>
         ) : (
-          <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-3">
+          <div className="grid gap-4 sm:gap-5 md:grid-cols-2 lg:grid-cols-3">
             {tutorials.map((tutorial) => (
-              <Card key={tutorial.id} className="group flex h-full flex-col rounded-lg border-border/60 bg-card p-5 transition-all hover:border-primary/30 hover:-translate-y-1 hover:shadow-lg">
-                <div className="flex-1 space-y-3">
-                  <Link href={`/${tutorial.slug}`}>
-                    <CardTitle className="text-base font-bold text-foreground transition-colors group-hover:text-primary line-clamp-2">
-                      {tutorial.title}
-                    </CardTitle>
-                  </Link>
-                  {tutorial.description && (
+              <article
+                key={tutorial.id}
+                className="group relative flex h-full flex-col overflow-hidden rounded-xl border border-border/50 bg-card transition-all duration-300 hover:-translate-y-0.5 sm:hover:-translate-y-1 hover:border-primary/25 hover:shadow-[0_8px_30px_rgba(0,0,0,0.06)]"
+              >
+                <div className="absolute inset-x-0 top-0 h-[2px] bg-gradient-to-r from-transparent via-primary/0 to-transparent transition-all duration-300 group-hover:via-primary/60" />
+
+                <div className="flex flex-1 flex-col p-5 sm:p-6">
+                  <div className="flex-1 space-y-2.5">
                     <Link href={`/${tutorial.slug}`}>
-                      <CardDescription className="line-clamp-2 text-sm leading-relaxed text-muted-foreground">
-                        {tutorial.description}
-                      </CardDescription>
+                      <CardTitle className="line-clamp-2 text-[15px] font-bold leading-snug text-foreground transition-colors duration-200 group-hover:text-primary">
+                        {tutorial.title}
+                      </CardTitle>
                     </Link>
-                  )}
-                  {tutorial.tags.length > 0 && (
-                    <div className="flex flex-wrap gap-1">
-                      {tutorial.tags.slice(0, 3).map((t) => (
-                        <Link
-                          key={t.id}
-                          href={`/explore?tag=${t.slug}`}
-                          className="inline-block rounded-full bg-primary/10 px-2 py-0.5 text-[10px] font-medium text-primary hover:bg-primary/20 transition-colors"
-                        >
-                          {t.name}
-                        </Link>
-                      ))}
-                      {tutorial.tags.length > 3 && (
-                        <span className="self-center text-[10px] text-muted-foreground">
-                          +{tutorial.tags.length - 3}
-                        </span>
+                    {tutorial.description && (
+                      <Link href={`/${tutorial.slug}`}>
+                        <CardDescription className="line-clamp-2 text-sm leading-relaxed text-muted-foreground">
+                          {tutorial.description}
+                        </CardDescription>
+                      </Link>
+                    )}
+                    {tutorial.tags.length > 0 && (
+                      <div className="flex flex-wrap gap-1 pt-0.5">
+                        {tutorial.tags.slice(0, 3).map((item) => (
+                          <Link
+                            key={item.id}
+                            href={`/tags/${item.slug}`}
+                            className="inline-block rounded-md bg-primary/8 px-1.5 py-0.5 text-[10px] font-medium text-primary/80 transition-colors hover:bg-primary/14"
+                          >
+                            {item.name}
+                          </Link>
+                        ))}
+                        {tutorial.tags.length > 3 && (
+                          <span className="self-center font-mono text-[10px] text-muted-foreground">
+                            +{tutorial.tags.length - 3}
+                          </span>
+                        )}
+                      </div>
+                    )}
+                  </div>
+
+                  <div className="mt-4 flex flex-wrap items-center justify-between gap-y-1.5 border-t border-border/30 pt-3 sm:mt-5 sm:pt-3.5">
+                    <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
+                      {tutorial.authorUsername && (
+                        <>
+                          {tutorial.authorImage && (
+                            <img
+                              src={tutorial.authorImage}
+                              alt=""
+                              className="h-5 w-5 rounded-full ring-1 ring-border/50"
+                            />
+                          )}
+                          <span className="font-medium text-slate-700">
+                            {tutorial.authorName || tutorial.authorUsername}
+                          </span>
+                        </>
                       )}
                     </div>
-                  )}
-                </div>
-                <div className="mt-auto flex items-center justify-between border-t border-border/30 pt-3">
-                  <div className="flex items-center gap-2 text-xs text-muted-foreground">
-                    {tutorial.authorUsername && (
-                      <>
-                        {tutorial.authorImage && (
-                          <img src={tutorial.authorImage} alt="" className="h-4 w-4 rounded-full" />
-                        )}
-                        <span>{tutorial.authorName || tutorial.authorUsername}</span>
-                        <span className="text-border">·</span>
-                      </>
-                    )}
-                    {tutorial.lang && <span>{tutorial.lang}</span>}
-                    <span>{tutorial.stepCount} 步</span>
-                    <span>{tutorial.readingTime} 分钟</span>
+                    <div className="flex items-center gap-2">
+                      {tutorial.lang && (
+                        <span className="rounded bg-slate-100 px-1.5 py-0.5 font-mono text-[10px] font-semibold text-slate-600">
+                          {tutorial.lang}
+                        </span>
+                      )}
+                      <span className="font-mono text-[11px] tabular-nums text-muted-foreground">
+                        {tutorial.stepCount}
+                        <span className="text-muted-foreground/50">步</span>
+                      </span>
+                      <span className="text-border/40">·</span>
+                      <span className="font-mono text-[11px] tabular-nums text-muted-foreground">
+                        {tutorial.readingTime}
+                        <span className="text-muted-foreground/50">min</span>
+                      </span>
+                      <Link
+                        href={`/${tutorial.slug}`}
+                        className="ml-1 text-sm text-muted-foreground/30 transition-all duration-200 hover:translate-x-0.5 hover:text-primary"
+                      >
+                        →
+                      </Link>
+                    </div>
                   </div>
-                  <Link href={`/${tutorial.slug}`} className="text-sm text-muted-foreground transition-colors group-hover:text-primary">→</Link>
                 </div>
-              </Card>
+              </article>
             ))}
           </div>
         )}
 
-        {/* Pagination */}
         {totalPages > 1 && (
-          <div className="flex items-center justify-center gap-2 pt-4">
+          <div className="flex items-center justify-center gap-3 pt-8">
             {page > 1 && (
-              <Button asChild variant="outline" size="sm">
-                <Link href={buildFilterUrl({ technology, tag, category, level, lang, search, sort, page: page - 1 })}>
-                  上一页
+              <Button
+                asChild
+                variant="outline"
+                size="sm"
+                className="border-slate-200 font-mono text-xs text-slate-600 hover:border-cyan-400/40 hover:bg-cyan-50/50 hover:text-cyan-700"
+              >
+                <Link
+                  href={buildFilterUrl({
+                    technology,
+                    tag,
+                    category,
+                    level,
+                    lang,
+                    search,
+                    sort,
+                    page: page - 1,
+                  })}
+                >
+                  ← 上一页
                 </Link>
               </Button>
             )}
-            <span className="text-sm text-muted-foreground">
-              第 {page} / {totalPages} 页
+            <span className="rounded-md border border-slate-200 bg-slate-50 px-3 py-1.5 font-mono text-xs text-slate-500">
+              {page}
+              <span className="text-slate-300">/</span>
+              {totalPages}
             </span>
             {page < totalPages && (
-              <Button asChild variant="outline" size="sm">
-                <Link href={buildFilterUrl({ technology, tag, category, level, lang, search, sort, page: page + 1 })}>
-                  下一页
+              <Button
+                asChild
+                variant="outline"
+                size="sm"
+                className="border-slate-200 font-mono text-xs text-slate-600 hover:border-cyan-400/40 hover:bg-cyan-50/50 hover:text-cyan-700"
+              >
+                <Link
+                  href={buildFilterUrl({
+                    technology,
+                    tag,
+                    category,
+                    level,
+                    lang,
+                    search,
+                    sort,
+                    page: page + 1,
+                  })}
+                >
+                  下一页 →
                 </Link>
               </Button>
             )}
           </div>
         )}
       </div>
-    </AppShell>
+    </>
   );
 }
 
@@ -276,7 +403,6 @@ function buildFilterUrl(opts: {
   if (opts.technology) params.set('technology', opts.technology);
   if (opts.category) params.set('category', opts.category);
   if (opts.level) params.set('level', opts.level);
-  // Backward compat: keep ?tag if no typed dimension params are present
   if (opts.tag && !opts.technology && !opts.category && !opts.level) {
     params.set('tag', opts.tag);
   }

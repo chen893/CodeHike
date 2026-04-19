@@ -5,6 +5,7 @@ import { and, eq } from 'drizzle-orm'
 import { db } from '@/lib/db'
 import { users, accounts, verificationTokens } from '@/lib/db/schema'
 import { withBasePath } from '@/lib/base-path'
+import { getAuthCookieOverrides } from '@/lib/dev-instance.mjs'
 
 const linuxdoAuthorizationEndpoint =
   process.env.LINUXDO_AUTHORIZATION_ENDPOINT ||
@@ -15,6 +16,7 @@ const linuxdoTokenEndpoint =
 const linuxdoUserinfoEndpoint =
   process.env.LINUXDO_USERINFO_ENDPOINT ||
   'https://connect.linuxdo.org/api/user'
+const authCookieOverrides = getAuthCookieOverrides()
 
 async function syncOAuthAccountTokens(params: {
   provider?: string | null
@@ -78,6 +80,7 @@ async function syncOAuthAccountTokens(params: {
 export const { handlers, auth, signIn, signOut } = NextAuth({
   basePath: '/api/auth',
   redirectProxyUrl: process.env.AUTH_REDIRECT_PROXY_URL,
+  cookies: authCookieOverrides,
   adapter: DrizzleAdapter(db, {
     usersTable: users,
     accountsTable: accounts,

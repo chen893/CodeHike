@@ -5,7 +5,12 @@ dev-server.log
 .env.local.*
 
 # Claude Code
-.claude/
+.claude/*
+!.claude/agents/
+!.claude/agents/ui-critic.md
+!.claude/skills/
+!.claude/skills/ui-refactor/
+!.claude/skills/ui-refactor/SKILL.md
 
 # TypeScript
 tsconfig.tsbuildinfo
@@ -22,7 +27,6 @@ test-results/
 # Historical local Drizzle artifact
 drizzle/0000_jittery_spencer_smythe.sql
 
-tmp/
 
 docs/roadmaps/
 

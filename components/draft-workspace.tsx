@@ -63,46 +63,53 @@ export function DraftWorkspace({
     />
   );
 
-  return (
-    <div className={`relative min-h-screen bg-muted text-foreground lg:grid ${controller.showGenerationProgress ? '' : 'lg:grid-cols-[20rem_minmax(0,1fr)]'}`}>
-      <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_top_left,_rgba(15,23,42,0.03),_transparent_28%),linear-gradient(180deg,_rgba(248,250,252,1),_rgba(241,245,249,1))]" />
+  const showSidebar = !controller.showGenerationProgress;
 
-      {!controller.showGenerationProgress && (
+  return (
+    <div
+      className={`relative min-h-screen bg-slate-100 text-slate-900 lg:grid ${
+        showSidebar ? 'lg:grid-cols-[20rem_minmax(0,1fr)]' : 'lg:grid-cols-[minmax(0,1fr)]'
+      }`}
+    >
+      {showSidebar && (
         <>
-          <aside className="fixed left-0 top-0 z-30 hidden h-screen w-[20rem] overflow-hidden border-r border-border bg-card lg:flex lg:flex-col">
-            {sidebarContent}
+          <aside className="fixed left-0 top-0 z-30 hidden h-screen w-[20rem] overflow-hidden border-r border-slate-800 bg-slate-900 lg:flex lg:flex-col">
+            <div className="relative z-10 flex h-full flex-col">
+              {sidebarContent}
+            </div>
           </aside>
 
           <button
             type="button"
-            className="fixed left-4 top-4 z-40 inline-flex h-11 w-11 items-center justify-center rounded-full border border-border bg-card/90 text-foreground shadow-lg shadow-foreground/5 backdrop-blur transition hover:-translate-y-0.5 hover:bg-card lg:hidden"
+            className="fixed left-4 top-4 z-40 inline-flex items-center gap-2 rounded-full border border-slate-200 bg-white px-4 py-2 text-sm font-medium text-slate-600 shadow-sm transition-all hover:border-slate-300 hover:text-slate-900 active:scale-[0.98] lg:hidden"
             onClick={() => setDrawerOpen(true)}
             aria-label="Open menu"
             aria-expanded={drawerOpen}
           >
-            <span className="text-xl leading-none">☰</span>
+            <span className="text-base leading-none">≡</span>
+            <span>目录</span>
           </button>
 
           <div
-            className={`fixed inset-0 z-40 bg-slate-950/20 backdrop-blur-sm transition-opacity duration-300 lg:hidden ${
+            className={`fixed inset-0 z-40 bg-black/30 backdrop-blur-sm transition-opacity duration-300 lg:hidden ${
               drawerOpen ? 'pointer-events-auto opacity-100' : 'pointer-events-none opacity-0'
             }`}
             onClick={() => setDrawerOpen(false)}
             aria-hidden="true"
           >
             <div
-              className={`absolute left-0 top-0 h-full w-[min(86vw,20rem)] border-r border-border bg-card shadow-2xl transition-transform duration-300 ease-out ${
+              className={`absolute left-0 top-0 h-full w-[min(86vw,20rem)] border-r border-slate-800 bg-slate-900 shadow-2xl transition-transform duration-300 ease-out ${
                 drawerOpen ? 'translate-x-0' : '-translate-x-full'
               }`}
               onClick={(event) => event.stopPropagation()}
             >
-              {sidebarContent}
+              <div className="relative z-10 h-full">{sidebarContent}</div>
             </div>
           </div>
         </>
       )}
 
-      <main className={`relative min-h-screen${controller.showGenerationProgress ? '' : ' lg:col-start-2'}`}>
+      <main className={`relative min-h-screen ${showSidebar ? 'lg:col-start-2' : 'lg:col-start-1'}`}>
         <DraftWorkspaceContent
           draft={controller.draft}
           hasDraft={controller.hasDraft}
