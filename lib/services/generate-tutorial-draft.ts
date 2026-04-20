@@ -8,6 +8,7 @@ import {
 } from "../ai/multi-phase-generator";
 import { materializeBaseCodeForFilledSteps } from "../ai/progressive-snapshot-base-code";
 import { RetrievalModelRequiredError } from "../ai/model-capabilities";
+import { PatchValidationError } from "../errors/error-types";
 import { validateTutorialDraft } from "../utils/validation";
 import { computeGenerationQuality } from "./compute-generation-quality";
 import { db } from "../db";
@@ -148,7 +149,7 @@ export function getGenerationJobFailureUpdate(error: unknown): {
     return {
       status: "cancelled",
       errorCode: "JOB_CANCELLED",
-      errorMessage: "Generation cancelled",
+      errorMessage: "生成已取消",
       failureDetail: getFailureDetail(error),
       phase: getErrorPhase(error),
       currentStepIndex: getErrorStepIndex(error),
@@ -160,13 +161,15 @@ export function getGenerationJobFailureUpdate(error: unknown): {
   const errorCode: GenerationJobErrorCode =
     unwrapped instanceof RetrievalModelRequiredError
       ? "MODEL_CAPABILITY_MISMATCH"
-      : phase === "outline"
-        ? "OUTLINE_GENERATION_FAILED"
-        : phase === "validate"
-          ? "DRAFT_VALIDATION_FAILED"
-          : phase === "step_fill"
-            ? "STEP_GENERATION_FAILED"
-            : "PERSIST_FAILED";
+      : unwrapped instanceof PatchValidationError
+        ? "PATCH_VALIDATION_FAILED"
+        : phase === "outline"
+          ? "OUTLINE_GENERATION_FAILED"
+          : phase === "validate"
+            ? "DRAFT_VALIDATION_FAILED"
+            : phase === "step_fill"
+              ? "STEP_GENERATION_FAILED"
+              : "PERSIST_FAILED";
 
   return {
     status: "failed",

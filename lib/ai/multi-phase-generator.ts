@@ -11,6 +11,7 @@ import { applyContentPatches } from '../tutorial/draft-code';
 import { normalizeBaseCode, normalizeTutorialMeta } from '../tutorial/normalize';
 import { ensureDraftChapters, DEFAULT_CHAPTER_ID } from '../tutorial/chapters';
 import { validateTutorialDraft } from '../utils/validation';
+import { PatchValidationError } from '../errors/error-types';
 import { createProvider, getMaxOutputTokens } from './provider-registry';
 import { parseJsonFromText } from './parse-json-text';
 import { tryAutoFixPatches } from './patch-auto-fix';
@@ -548,7 +549,7 @@ export function createMultiPhaseGenerationStream(
                     // Re-validate the fixed patches
                     applyContentPatches(previousFiles, step.patches, primaryFile);
                   } else {
-                    throw patchErr;
+                    throw new PatchValidationError(patchErr instanceof Error ? patchErr.message : String(patchErr));
                   }
                 }
 

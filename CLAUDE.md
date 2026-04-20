@@ -1,10 +1,21 @@
 # CLAUDE.md
 
-本文件仅作为兼容入口保留。
+Start with `AGENTS.md`.
 
-本仓库的权威协作说明、产品约束、实现边界和文档维护要求，统一以 `AGENTS.md` 为准。
+This repository is in a `UI refactor first` phase. Treat `AGENTS.md` as the authority for:
+- branch priorities
+- architecture guardrails
+- UI scorecard
+- delivery rules
 
-- 做产品和实现决策前，先阅读 `AGENTS.md`
-- 如 `CLAUDE.md` 与 `AGENTS.md` 内容不一致，以 `AGENTS.md` 为准
-- 需要更新仓库协作规则时，只维护 `AGENTS.md`
-- 实施过程中遇到的问题，按 `AGENTS.md` 约定记录到 `docs/v3-implementation-issues.md`
+Use these repo-local Claude assets for UI work:
+- `.claude/skills/ui-refactor/SKILL.md`
+- `.claude/agents/ui-critic.md`
+
+Working defaults:
+- inspect the live page before making visual claims
+- define must-keep behaviors before editing
+- refactor one reviewable slice at a time
+- finish each iteration with `KEEP-AND-ITERATE` or `DISCARD-AND-PIVOT`
+
+Do not recreate long-form documents under `docs/` unless explicitly requested.

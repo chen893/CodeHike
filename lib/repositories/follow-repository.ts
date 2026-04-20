@@ -12,6 +12,7 @@ export interface FollowedTutorial {
   authorId: string | null;
   authorName: string | null;
   authorUsername: string | null;
+  authorImage: string | null;
   stepCount: number;
   readingTime: number;
 }
@@ -25,6 +26,7 @@ function toFollowedTutorial(row: {
   authorId: string | null;
   authorName: string | null;
   authorUsername: string | null;
+  authorImage: string | null;
 }): FollowedTutorial {
   const draft = row.tutorialDraftSnapshot as Record<string, unknown>;
   const meta = (draft && typeof draft === 'object' && 'meta' in draft)
@@ -45,6 +47,7 @@ function toFollowedTutorial(row: {
     authorId: row.authorId,
     authorName: row.authorName,
     authorUsername: row.authorUsername,
+    authorImage: row.authorImage,
     stepCount,
     readingTime,
   };
@@ -117,6 +120,7 @@ export async function getFollowedTutorials(userId: string): Promise<FollowedTuto
     authorId: drafts.userId,
     authorName: users.name,
     authorUsername: users.username,
+    authorImage: users.image,
   })
     .from(publishedTutorials)
     .innerJoin(drafts, eq(publishedTutorials.draftRecordId, drafts.id))

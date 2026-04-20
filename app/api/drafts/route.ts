@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server';
 import { getRouteErrorMessage, isRouteValidationError } from '@/lib/api/route-errors';
 import { createDraft } from '@/lib/services/create-draft';
 import { listDraftSummariesForDashboard } from '@/lib/services/draft-queries';
+import { getUserById } from '@/lib/services/user-profile-service';
 import { auth } from '@/auth';
 
 // ---------------------------------------------------------------------------
@@ -36,6 +37,13 @@ export async function GET() {
       );
     }
     const userId = session.user.id;
+    const user = await getUserById(userId);
+    if (!user) {
+      return NextResponse.json(
+        { message: '登录状态已失效，请重新登录', code: 'STALE_SESSION' },
+        { status: 401 }
+      );
+    }
 
     const drafts = await listDraftSummariesForDashboard(userId);
     return NextResponse.json(drafts);
@@ -58,6 +66,13 @@ export async function POST(req: Request) {
       );
     }
     const userId = session.user.id;
+    const user = await getUserById(userId);
+    if (!user) {
+      return NextResponse.json(
+        { message: '登录状态已失效，请重新登录', code: 'STALE_SESSION' },
+        { status: 401 }
+      );
+    }
 
     // Check idempotency key
     const rawIdempotencyKey = req.headers.get('Idempotency-Key')

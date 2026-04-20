@@ -216,8 +216,13 @@ export function CodeFrame({ title, code, fileName, highlightedFiles, activeFile:
     if (!node) return
     requestAnimationFrame(() => {
       const focused = node.querySelector('[data-focus="true"]')
-      if (focused) {
-        focused.scrollIntoView({ block: "center", behavior: "smooth" })
+      if (!focused) return
+      const nodeRect = node.getBoundingClientRect()
+      const elRect = focused.getBoundingClientRect()
+      const isVisible = elRect.top >= nodeRect.top && elRect.bottom <= nodeRect.bottom
+      if (!isVisible) {
+        const offset = elRect.top - nodeRect.top + node.scrollTop - (nodeRect.height - elRect.height) / 2
+        node.scrollTo({ top: offset, behavior: "smooth" })
       }
     })
   }, [activeCode])
@@ -271,8 +276,13 @@ export function MobileCodeFrame({ step, fileName, index, total }) {
     if (!node) return
     requestAnimationFrame(() => {
       const focused = node.querySelector('[data-focus="true"]')
-      if (focused) {
-        focused.scrollIntoView({ block: "center", behavior: "smooth" })
+      if (!focused) return
+      const nodeRect = node.getBoundingClientRect()
+      const elRect = focused.getBoundingClientRect()
+      const isVisible = elRect.top >= nodeRect.top && elRect.bottom <= nodeRect.bottom
+      if (!isVisible) {
+        const offset = elRect.top - nodeRect.top + node.scrollTop - (nodeRect.height - elRect.height) / 2
+        node.scrollTo({ top: offset, behavior: "smooth" })
       }
     })
   }, [activeCode])

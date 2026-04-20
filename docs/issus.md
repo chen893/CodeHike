@@ -1,100 +1,98 @@
-# Issues Notes
+# 生成系统容错机制 Review
 
-> 本页记录当前已知的关键问题与修复要点。详细根因分析见 [v3-implementation-issues.md](./v3-implementation-issues.md)。
+日期: 2026-04-20
 
-## 当前问题要点
+## 发现并修复的问题
 
-- 公开仓库导入原先被错误地绑到登录态，未登录用户直接 401，无法完成基础试用。
-- GitHub `403` 被粗暴归类成“速率限制”，实际混杂了 token 权限、secondary rate limit 和 forbidden 等不同错误。
-- `POST /api/github/file-content` 在 partial failure 时只返回失败文件，没有把成功文件一并返回，导致前端无法保留成功结果。
-- 大仓库 `git/trees?recursive=1` 出现 `truncated=true` 时，前端没有继续按目录懒加载，文件树会不完整。
+### 1. handleRetryFromStep 中途失败丢失失败位置
 
-## 本次修复要点
+**文件**: `components/tutorial/use-generation-progress.ts`
 
-- 公开仓库改为免登录可导入；如果用户已经通过 GitHub OAuth 登录，则仅复用 token 提升配额。
-- 服务端新增更细的 GitHub 错误分类和重试/匿名回退逻辑，不再把所有 `403` 都当成 rate limit。
-- `file-content` route 的 207 partial-success 响应现在会保留成功文件、`totalLines` 和 `rateLimit` 信息。
-- create-draft 的文件树展开已接通 `repo-tree/subdirectory`，大仓库目录会按 `sha` 懒加载。
+**问题**: retry-from-step 在步骤 N 失败时，catch 块不设置 `failedStepIndex` 和 `errorPhase`，导致 `canRetryFromStep=false`，用户只能完整重试，无法再次从失败步骤重试。
 
-## 受影响文件
+**修复**: 在 try 外声明 `currentRetryStep`，每轮循环更新，catch 中设置 `setFailedStepIndex(currentRetryStep)` / `setErrorPhase('step-fill')`。
 
-- `lib/services/github-repo-service.ts`
-- `app/api/github/repo-tree/route.ts`
-- `app/api/github/repo-tree/subdirectory/route.ts`
-- `app/api/github/file-content/route.ts`
-- `components/create-draft/github-client.ts`
-- `components/create-draft/use-github-import-controller.ts`
-- `components/create-draft/file-tree-browser.tsx`
-- `components/create-draft/github-import-tab.tsx`
-- `tests/github-import.test.js`
+### 2. handleRetry 固定 500ms 轮询
 
----
+**文件**: `components/tutorial/use-generation-progress.ts`
 
-## 2026-04-16: DeepSeek Output.object 结构化输出失败
+**问题**: 等待旧 job 终止时用固定 500ms × 15 次 = 7.5s，可能与服务端清理竞态。
 
-### 现象
+**修复**: 改为指数退避 1s→4s (×1.5)，10 次，总等待约 22s。
 
-使用 DeepSeek 模型生成教程时，Phase 1 大纲生成阶段报错：
+### 3. handleRetry 重试时不清空旧进度
+
+**文件**: `components/tutorial/use-generation-progress.ts`
+
+**问题**: 点击重试后，在等待旧 job 终止期间，旧的 outline 和 completedSteps 仍显示在 UI 上，用户看到过时信息。
+
+**修复**: 在 `handleRetry` 开头清空 `setOutline(null)` / `setCompletedSteps([])` / `setStepTitles({})` 等。
+
+### 4. 轮询超时消息不友好
+
+**文件**: `components/tutorial/use-generation-progress.ts`
+
+**问题**: 30 次轮询超时后显示 "保存确认超时，请刷新页面查看状态"，且不保留重试上下文。
+
+**修复**: 改为 "确认生成状态超时，生成可能已完成。请刷新页面查看，或点击重试。"，保留 `canRetry=true`。
+
+### 5. PATCH_VALIDATION_FAILED 死代码
+
+**文件**: `lib/errors/error-types.ts` + `lib/ai/multi-phase-generator.ts` + `lib/services/generate-tutorial-draft.ts`
+
+**问题**: `PATCH_VALIDATION_FAILED` 在 schema 中定义但从未被赋值，所有 `step_fill` 错误都映射到 `STEP_GENERATION_FAILED`，丢失了 patch 校验失败的具体信息。
+
+**修复**: 新增 `PatchValidationError` 类，在 patch 应用失败且自动修复也失败时抛出，`getGenerationJobFailureUpdate` 中检测并映射到 `PATCH_VALIDATION_FAILED`。
+
+### 6. "Generation cancelled" 英文消息
+
+**文件**: `lib/services/generate-tutorial-draft.ts`
+
+**问题**: 取消生成时服务端记录英文 `errorMessage`，UI 直接展示给用户。
+
+**修复**: 改为中文 "生成已取消"。
+
+## 浏览器验证结果
+
+| 场景 | 结果 |
+|---|---|
+| 正常生成 (MiniMax M2.7, 8 步) | 完成，自动跳转编辑器 |
+| 大纲阶段 JSON 解析失败 | 显示 "大纲生成失败" + 重新生成按钮 |
+| 步骤填充阶段取消 | "正在取消..." → "生成已取消" + 重新生成按钮 |
+| 点击重新生成 | 正确重置状态，从头开始 |
+| 页面刷新重连 | 从 DB 恢复 outline/进度，polling 继续跟踪 |
+| 重连后等待完成 | 进度实时更新 (0/8 → 4/8 → 8/8)，完成后跳转 |
+
+## 架构概览
+
 ```
-大纲生成失败 — Failed to process successful response
+Client (use-generation-progress.ts)
+  ├── SSE Stream (POST /generate)
+  │   ├── event: job → jobId
+  │   ├── event: phase → outline / step-fill / validate
+  │   ├── event: outline → 大纲数据
+  │   ├── event: step → 单步完成
+  │   ├── event: done → 流结束
+  │   └── event: error → 错误信息
+  │
+  ├── Polling (GET /generation-status)
+  │   ├── stream-complete 后确认持久化
+  │   ├── reconnecting 恢复进度
+  │   └── cancelling 等待取消确认
+  │
+  ├── handleRetry → 完整重试 (runNonce++)
+  └── handleRetryFromStep → 从失败步骤重试 (逐步 regenerate API)
+
+Server (generate-tutorial-draft.ts)
+  ├── initiateGeneration → 创建 job + SSE stream
+  ├── createMultiPhaseGenerationStream
+  │   ├── Phase 1: outline (MAX_RETRIES=3)
+  │   ├── Phase 2: step-fill (MAX_STEP_RETRIES=3, auto-fix patches)
+  │   └── Phase 3: validate
+  └── persistContent → 事务写入 draft + job
+
+Error Code → Recoverability
+  ├── retry_from_step: STEP_GENERATION_FAILED, PATCH_VALIDATION_FAILED
+  ├── retry_full: OUTLINE_GENERATION_FAILED, DRAFT_VALIDATION_FAILED, PERSIST_FAILED, JOB_CANCELLED, JOB_STALE
+  └── none: MODEL_CAPABILITY_MISMATCH, PUBLISH_SLUG_CONFLICT
 ```
-
-### 根因
-
-Vercel AI SDK 的 `Output.object({ schema })` 依赖底层 provider 的 `response_format: { type: "json_object" }` 能力。DeepSeek API 不支持此参数，导致：
-
-1. AI SDK 发送请求时附带 `response_format`，DeepSeek 忽略它
-2. DeepSeek 返回自由格式的 JSON（字段名与 schema 不匹配，如 `tutorial_title` 而非 `meta.title`）
-3. AI SDK 的 `successfulResponseHandler` 尝试按 Zod schema 解析响应 → 验证失败
-4. `@ai-sdk/provider-utils` 将 Zod 错误包装为 `APICallError: "Failed to process successful response"`，真实错误藏在 `cause` 链中
-
-### 影响范围
-
-所有使用 `Output.object()` 的 AI 生成调用均受影响：
-
-| 文件 | 用途 | 状态 |
-|------|------|------|
-| `lib/ai/multi-phase-generator.ts` | v2 多阶段生成（大纲 + 步骤填充） | 已修复 |
-| `lib/ai/tutorial-generator.ts` | v1 单次流式生成 + 步骤重生成 | 已修复 |
-| `lib/ai/model-capabilities.ts` | 能力探测（`probeToolStructuredOutput`） | 保留（探测本身会正确 catch 失败） |
-
-### 修复方案
-
-**移除所有 `Output.object()` 调用**，改用 `generateText()` 获取原始 `result.text`，再手动提取并解析 JSON：
-
-1. 新增 `parseJsonFromText<T>(text, schema, label)` 辅助函数，按优先级尝试：
-   - 完整文本直接解析
-   - 从 markdown code fence 提取（` ```json ... ``` `）
-   - 提取最外层 `{ ... }` 块
-   - 用 Zod schema 验证
-
-2. 所有 `generateText()` 调用移除 `output` 参数
-3. 所有 `streamText()` 调用移除 `output` 参数
-4. 持久化层（`persistV1Content`）改为接收 `result.text` Promise，手动调用 `parseStreamedDraft()`
-
-### 模型能力标记修正
-
-`lib/ai/model-capabilities.ts` 中 DeepSeek 的能力标记已修正：
-
-```diff
-  'deepseek-chat': {
-    supportsTools: true,
--   supportsStructuredOutput: true,
--   supportsToolStructuredOutput: 'probe',
-+   supportsStructuredOutput: false,
-+   supportsToolStructuredOutput: false,
-  },
-```
-
-### 受影响文件
-
-- `lib/ai/multi-phase-generator.ts` — 移除重复导入，移除 `Output` import，所有生成调用改为手动 JSON 解析
-- `lib/ai/tutorial-generator.ts` — 移除 `Output` import，新增 `parseStreamedDraft()` 导出函数
-- `lib/services/generate-tutorial-draft.ts` — `persistV1Content` 改为接收 `textPromise` 并手动解析
-- `lib/ai/model-capabilities.ts` — DeepSeek 能力标记修正
-
-### 注意事项
-
-- OpenAI 系列（gpt-4o 等）**理论上支持** `Output.object`，但为统一兼容性，同样改为手动解析
-- 如后续有 provider 原生支持 `response_format` 且确实需要流式结构化输出，可考虑按 provider 区分路径
-- `model-capabilities.ts` 的探测函数仍使用 `Output.object`，这是故意的——它用来探测能力边界，失败会被正确 catch

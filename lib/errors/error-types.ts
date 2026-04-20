@@ -91,3 +91,16 @@ export class PublishSlugConflictError extends Error {
     this.name = 'PublishSlugConflictError';
   }
 }
+
+/**
+ * Thrown when patch validation fails during step generation.
+ * Signals that the AI model produced patches that could not be applied
+ * to the current file state, even after auto-fix attempts.
+ */
+export class PatchValidationError extends Error {
+  public readonly code = 'PATCH_VALIDATION_FAILED' as const;
+  constructor(message: string) {
+    super(message);
+    this.name = 'PatchValidationError';
+  }
+}

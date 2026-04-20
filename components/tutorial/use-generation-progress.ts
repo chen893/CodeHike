@@ -49,6 +49,9 @@ interface SSEEventData {
   }>;
 }
 
+const BACKOFF_BASE_MS = 1000;
+const BACKOFF_MULTIPLIER = 1.5;
+
 export function useGenerationProgress({
   draftId,
   onComplete,
@@ -66,6 +69,13 @@ export function useGenerationProgress({
   const [errorPhase, setErrorPhase] = useState<string | null>(null);
   const [failedStepIndex, setFailedStepIndex] = useState<number | null>(null);
   const [errorLabel, setErrorLabel] = useState<string | null>(null);
+
+  function clearErrorState() {
+    setErrorMessage(null);
+    setErrorPhase(null);
+    setFailedStepIndex(null);
+    setErrorLabel(null);
+  }
   const onCompleteRef = useRef(onComplete);
   onCompleteRef.current = onComplete;
 
@@ -83,10 +93,7 @@ export function useGenerationProgress({
     setTotalSteps(0);
     setCompletedSteps([]);
     setStepTitles({});
-    setErrorMessage(null);
-    setErrorPhase(null);
-    setFailedStepIndex(null);
-    setErrorLabel(null);
+    clearErrorState();
     isCancelledRef.current = false;
     jobIdRef.current = null;
 
@@ -306,10 +313,7 @@ export function useGenerationProgress({
       } catch (err: any) {
         if (err.name === 'AbortError') {
           if (isCancelledRef.current) {
-            setErrorMessage(null);
-            setErrorPhase(null);
-            setFailedStepIndex(null);
-            setErrorLabel(null);
+            clearErrorState();
             setV2Status('cancelling');
           }
           // Otherwise it was an unmount cleanup — silently ignore
@@ -338,7 +342,7 @@ export function useGenerationProgress({
       v2Status !== 'cancelling'
     ) return;
 
-    const BASE_POLL_MS = 1000;
+    const BASE_POLL_MS = BACKOFF_BASE_MS;
     const MAX_POLL_MS = 8000;
     const MAX_POLL_ATTEMPTS = 30;
     let pollAttempts = 0;
@@ -362,9 +366,7 @@ export function useGenerationProgress({
 
         if (job.status === 'cancelled') {
           setErrorMessage(job.errorMessage || '生成已取消');
-          setErrorPhase(null);
-          setFailedStepIndex(null);
-          setErrorLabel(null);
+          clearErrorState();
           setV2Status('error');
           return;
         }
@@ -425,11 +427,14 @@ export function useGenerationProgress({
 
       pollAttempts++;
       if (pollAttempts >= MAX_POLL_ATTEMPTS) {
-        setErrorMessage('保存确认超时，请刷新页面查看状态');
+        setErrorMessage('确认生成状态超时，生成可能已完成。请刷新页面查看，或点击重试。');
+        setErrorPhase(null);
+        setFailedStepIndex(null);
+        setErrorLabel(null);
         setV2Status('error');
         return;
       }
-      const delay = Math.min(BASE_POLL_MS * Math.pow(1.5, pollAttempts), MAX_POLL_MS);
+      const delay = Math.min(BASE_POLL_MS * Math.pow(BACKOFF_MULTIPLIER, pollAttempts), MAX_POLL_MS);
       pollTimeout = setTimeout(poll, delay);
     }
 
@@ -460,19 +465,24 @@ export function useGenerationProgress({
 
   async function handleRetry() {
     setV2Status('connecting');
+    setOutline(null);
+    setCurrentStepIndex(-1);
+    setTotalSteps(0);
+    setCompletedSteps([]);
+    setStepTitles({});
     setErrorMessage(null);
-    setErrorPhase(null);
-    setFailedStepIndex(null);
-    setErrorLabel(null);
+    clearErrorState();
 
     // Poll for the draft to be ready before retrying, avoiding race condition
-    const maxAttempts = 15;
-    const pollInterval = 500;
+    const maxAttempts = 10;
+    const MAX_MS = 4000;
     let attempts = 0;
+    let delay = BACKOFF_BASE_MS;
 
     while (attempts < maxAttempts) {
-      await new Promise((resolve) => setTimeout(resolve, pollInterval));
+      await new Promise((resolve) => setTimeout(resolve, delay));
       attempts++;
+      delay = Math.min(delay * BACKOFF_MULTIPLIER, MAX_MS);
 
       try {
         const { job } = await fetchGenerationStatus(draftId);
@@ -492,9 +502,7 @@ export function useGenerationProgress({
   async function handleRetryFromStep(stepIndex: number) {
     setV2Status('connecting');
     setErrorMessage(null);
-    setErrorPhase(null);
-    setFailedStepIndex(null);
-    setErrorLabel(null);
+    clearErrorState();
 
     // Fetch current draft to check if steps were persisted
     let draft: Awaited<ReturnType<typeof fetchDraft>> | null = null;
@@ -517,15 +525,15 @@ export function useGenerationProgress({
     // iterate from failed step and call regenerateDraftStepRequest for each.
     setV2Status('filling-step');
     setCurrentStepIndex(stepIndex);
-    setErrorMessage(null);
-    setErrorPhase(null);
-    setFailedStepIndex(null);
-    setErrorLabel(null);
+    clearErrorState();
+
+    let currentRetryStep = stepIndex;
 
     try {
       let latestDraft = draft;
 
       for (let i = stepIndex; i < steps.length; i++) {
+        currentRetryStep = i;
         setCurrentStepIndex(i);
         const step = latestDraft.tutorialDraft!.steps[i];
         const instruction =
@@ -551,6 +559,9 @@ export function useGenerationProgress({
       onCompleteRef.current();
     } catch (err) {
       setErrorMessage(err instanceof Error ? err.message : '从失败步骤重试失败');
+      setFailedStepIndex(currentRetryStep);
+      setErrorPhase('step-fill');
+      setErrorLabel(`步骤 ${currentRetryStep + 1} 重新生成失败`);
       setV2Status('error');
     }
   }
@@ -561,9 +572,7 @@ export function useGenerationProgress({
     isCancelledRef.current = true;
     setV2Status('cancelling');
     setErrorMessage(null);
-    setErrorPhase(null);
-    setFailedStepIndex(null);
-    setErrorLabel(null);
+    clearErrorState();
 
     try {
       // Signal the server to stop at the next step boundary. The polling effect
