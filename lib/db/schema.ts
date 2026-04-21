@@ -144,6 +144,15 @@ export const draftGenerationJobs = pgTable('draft_generation_jobs', {
   failureDetail: jsonb('failure_detail').$type<Record<string, unknown> | null>(),
   outlineSnapshot: jsonb('outline_snapshot').$type<unknown | null>(),
   stepTitlesSnapshot: jsonb('step_titles_snapshot').$type<string[] | null>(),
+  agentState: jsonb('agent_state').$type<{
+    checkpointIndex: number;
+    snapshotHash: string;
+    repairHistory: Array<{ stepIndex: number; attempts: number; strategy: string; outcome: string }>;
+    replanCount: number;
+    tokenUsage: { used: number; budget: number };
+    outcomes: Array<{ stepIndex: number; result: string; repairCount: number; patchStrategy: string; locChange: number }>;
+    distilledContext?: unknown;
+  } | null>(),
   createdAt: timestamp('created_at', { withTimezone: true })
     .default(sql`clock_timestamp()`)
     .notNull(),

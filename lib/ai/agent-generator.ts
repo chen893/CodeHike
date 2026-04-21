@@ -49,6 +49,14 @@ import {
   type MultiPhaseResult,
   type MultiPhaseLifecyclePhase,
 } from './multi-phase-generator';
+import {
+  microCompact,
+  autoSummarize,
+  fullReplan,
+  checkCompressionThreshold,
+  type DistilledContext,
+} from './agent-context';
+import { createSessionMemory, type SessionMemory } from './agent-memory';
 
 // Re-export shared types so the service layer can use the same error types
 export {
@@ -304,7 +312,7 @@ export function createAgentGenerationStream(
 
         const OUTLINE_MAX_RETRIES = 3;
 
-        let outline: TutorialOutline | undefined;
+        let outline: TutorialOutline | undefined; // let for fullReplan reassignment
         try {
           if (modelSupportsRetrieval) {
             // Retrieval-based outline: directory tree + tools
@@ -479,6 +487,16 @@ export function createAgentGenerationStream(
           outcomes: [],
         };
 
+        // Session memory for repair history tracking and drift detection
+        const sessionMemory = createSessionMemory();
+
+        // Track token usage for compression decisions
+        const tokenBudget = getMaxInputTokens(modelId ?? 'deepseek/deepseek-chat');
+        let estimatedTokenUsage = 0;
+
+        // Distilled context placeholder (replaces full history after compression)
+        let distilledContext: DistilledContext | null = null;
+
         for (let i = 0; i < totalSteps; i++) {
           currentPhase = 'step_fill';
           currentStepIndex = i;
@@ -493,6 +511,13 @@ export function createAgentGenerationStream(
               new MultiPhaseGenerationError('step_fill', new GenerationCancelledError(), i)
             );
             return;
+          }
+
+          // Drift detection: warn if consecutive degraded steps detected
+          const drift = sessionMemory.detectDrift();
+          if (drift.drifting) {
+            console.warn(`[agent-loop] Drift detected: ${drift.consecutiveDegraded} consecutive degraded steps`);
+            // For Plan 02: log the warning. Plan 03 will integrate reviseOutline here.
           }
 
           controller.enqueue(encoder.encode(
@@ -562,7 +587,7 @@ export function createAgentGenerationStream(
                   ? createScopedSourceTools(sourceItems, previousFiles, { budget })
                   : undefined;
                 const snapshotSummary = buildCurrentSnapshotSummary(previousFiles);
-                const { systemPrompt, userPrompt } = buildRetrievalStepFillPrompt(
+                let { systemPrompt, userPrompt } = buildRetrievalStepFillPrompt(
                   sourceItems,
                   teachingBrief,
                   outline,
@@ -573,6 +598,21 @@ export function createAgentGenerationStream(
                   lastError ?? undefined,
                   { toolsEnabled: STEP_FILL_TOOLS_ENABLED },
                 );
+
+                // Inject distilled context if available (replaces accumulated history)
+                if (distilledContext && attempt === 0) {
+                  const distilledSection = `
+
+## Compressed context from previous steps
+${distilledContext.completedStepsSummary}
+
+## Key code structure
+${distilledContext.currentCodeSignatures}
+
+## Error and repair history
+${distilledContext.errorAndRepairHistory}`;
+                  userPrompt += distilledSection;
+                }
 
                 const generateOptions: Parameters<typeof generateText>[0] = {
                   model,
@@ -589,7 +629,7 @@ export function createAgentGenerationStream(
                 step = { ...parsedStep, chapterId: outline.steps[i]?.chapterId ?? parsedStep.chapterId ?? DEFAULT_CHAPTER_ID };
               } else {
                 // Legacy full-injection step fill
-                const { systemPrompt, userPrompt } = buildStepFillPrompt(
+                let { systemPrompt, userPrompt } = buildStepFillPrompt(
                   sourceItems,
                   teachingBrief,
                   outline,
@@ -597,6 +637,21 @@ export function createAgentGenerationStream(
                   previousFiles,
                   lastError ?? undefined,
                 );
+
+                // Inject distilled context if available (replaces accumulated history)
+                if (distilledContext && attempt === 0) {
+                  const distilledSection = `
+
+## Compressed context from previous steps
+${distilledContext.completedStepsSummary}
+
+## Key code structure
+${distilledContext.currentCodeSignatures}
+
+## Error and repair history
+${distilledContext.errorAndRepairHistory}`;
+                  userPrompt += distilledSection;
+                }
 
                 const stepGenerateOpts: Parameters<typeof generateText>[0] = {
                   model,
@@ -634,6 +689,17 @@ export function createAgentGenerationStream(
                   }
 
                   loopState.outcomes.push({
+                    stepIndex: i,
+                    result: attempt === 0 ? 'pass' : 'repaired',
+                    repairCount: attempt,
+                    patchStrategy: validation.fixedPatches ? 'auto-fixed' : 'exact',
+                    locChange: step.patches.reduce((sum, p) => {
+                      return sum + Math.abs(p.replace.split('\n').length - p.find.split('\n').length);
+                    }, 0),
+                  });
+
+                  // Record outcome in session memory
+                  sessionMemory.recordStepOutcome({
                     stepIndex: i,
                     result: attempt === 0 ? 'pass' : 'repaired',
                     repairCount: attempt,
@@ -682,6 +748,15 @@ export function createAgentGenerationStream(
                     errorMessage: lastError,
                   });
 
+                  // Record repair in session memory
+                  sessionMemory.recordRepair({
+                    stepIndex: i,
+                    attempts: attempt + 1,
+                    strategy: 'full-rewrite',
+                    outcome: 'degraded',
+                    errorMessage: lastError ?? '',
+                  });
+
                   // Continue inner loop -- next iteration uses buildRepairPrompt
                   continue;
                 }
@@ -709,6 +784,15 @@ export function createAgentGenerationStream(
                     locChange: 0,
                   });
 
+                  // Record degraded outcome in session memory
+                  sessionMemory.recordStepOutcome({
+                    stepIndex: i,
+                    result: 'replanned',
+                    repairCount: attempt,
+                    patchStrategy: 'exact',
+                    locChange: 0,
+                  });
+
                   // Use the step without patches as degraded
                   step.patches = [];
                   stepResult = step;
@@ -717,6 +801,15 @@ export function createAgentGenerationStream(
               } else {
                 // No patches -- accept step as-is
                 loopState.outcomes.push({
+                  stepIndex: i,
+                  result: attempt === 0 ? 'pass' : 'repaired',
+                  repairCount: attempt,
+                  patchStrategy: 'exact',
+                  locChange: 0,
+                });
+
+                // Record no-patch outcome in session memory
+                sessionMemory.recordStepOutcome({
                   stepIndex: i,
                   result: attempt === 0 ? 'pass' : 'repaired',
                   repairCount: attempt,
@@ -784,6 +877,88 @@ export function createAgentGenerationStream(
               console.warn(
                 `[agent-loop] Step ${i + 1} LOC ${actualLoc} exceeds warning threshold ${warningThreshold} (budget ${locBudget})`,
               );
+            }
+          }
+
+          // ── Context distillation (Plan 02) ──
+
+          // Micro-compact: replace completed steps with one-line summaries
+          const completedSummary = microCompact(filledSteps, filledSteps.length);
+
+          // Update token usage estimate
+          estimatedTokenUsage += estimateTokens(completedSummary);
+          loopState.tokenUsage = { used: estimatedTokenUsage, budget: tokenBudget };
+
+          // Check compression thresholds
+          const compressionAction = checkCompressionThreshold(loopState.tokenUsage);
+
+          if (compressionAction === 'summary') {
+            // Auto-summarize at 65%
+            controller.enqueue(encoder.encode(
+              sseEvent('compress', {
+                type: 'summary',
+                tokensBefore: estimatedTokenUsage,
+                tokensAfter: 0,
+              })
+            ));
+            try {
+              distilledContext = await autoSummarize({
+                completedStepsSummary: completedSummary,
+                currentCode: previousFiles,
+                repairHistory: sessionMemory.getRepairHistory(),
+                outline,
+                currentStepIndex: i + 1,
+                teachingBrief,
+              }, modelId);
+              const tokensSaved = estimatedTokenUsage - estimateTokens(
+                JSON.stringify(distilledContext)
+              );
+              estimatedTokenUsage = Math.max(0, estimatedTokenUsage - tokensSaved);
+              console.log(`[agent-loop] Auto-summarize compressed context: saved ~${tokensSaved} tokens`);
+              controller.enqueue(encoder.encode(
+                sseEvent('compress', {
+                  type: 'summary',
+                  tokensBefore: estimatedTokenUsage + tokensSaved,
+                  tokensAfter: estimatedTokenUsage,
+                })
+              ));
+            } catch (err) {
+              console.error('[agent-loop] Auto-summarize failed:', err);
+              // Continue without compression -- not fatal
+            }
+          } else if (compressionAction === 'replan') {
+            // Full-replan at 85%
+            controller.enqueue(encoder.encode(
+              sseEvent('compress', {
+                type: 'replan',
+                tokensBefore: estimatedTokenUsage,
+                tokensAfter: 0,
+              })
+            ));
+            try {
+              const revisedOutline = await fullReplan({
+                outline,
+                currentStepIndex: i + 1,
+                completedStepsSummary: completedSummary,
+                currentCode: previousFiles,
+                teachingBrief,
+                sourceItems,
+              }, modelId);
+              outline = revisedOutline;
+              // Reset token usage after replan (context is much smaller now)
+              estimatedTokenUsage = estimateTokens(JSON.stringify(outline));
+              loopState.replanCount++;
+              console.log(`[agent-loop] Full-replan regenerated outline from step ${i + 2}`);
+              controller.enqueue(encoder.encode(
+                sseEvent('compress', {
+                  type: 'replan',
+                  tokensBefore: estimatedTokenUsage + tokenBudget * 0.2,
+                  tokensAfter: estimatedTokenUsage,
+                })
+              ));
+            } catch (err) {
+              console.error('[agent-loop] Full-replan failed:', err);
+              // Continue without replan -- not fatal
             }
           }
 
