@@ -1,5 +1,6 @@
 import type { SourceItem } from '../schemas/source-item';
 import type { TeachingBrief } from '../schemas/teaching-brief';
+import type { TutorialOutline } from '../schemas/tutorial-outline';
 import { analyzeSourceCollectionShape } from '../utils/source-collection-shape';
 import { recommendStepBudget } from './step-budget';
 
@@ -317,6 +318,97 @@ ${directorySummary}
 4. 本教程的合理步骤范围是 ${stepBudget.min}-${stepBudget.max} 步，优先落在 ${stepBudget.recommended} 步左右；在范围内优先拆分，不要把一个大文件、完整子系统或多个概念压成一步
 5. 每个步骤的 targetFiles 和 contextFiles 必须是目录中的真实路径
 6. 当源码包含多个模块时，必须将步骤划分为多个章节（chapters），并为每个步骤指定 chapterId`;
+
+  return { systemPrompt, userPrompt };
+}
+
+// ---------------------------------------------------------------------------
+// Outline revision mid-generation (triggered by consecutive repair failures)
+// ---------------------------------------------------------------------------
+
+/**
+ * Build a prompt for revising the remaining outline steps mid-generation.
+ * Called when consecutive repairs fail, indicating the outline's future steps
+ * may be flawed. Preserves all completed steps and only re-plans from the
+ * failing step onward.
+ */
+export function buildReviseOutlinePrompt(
+  outline: TutorialOutline,
+  fromStepIndex: number,
+  completedStepsSummary: string,
+  currentCode: Record<string, string>,
+  teachingBrief: TeachingBrief,
+  _sourceItems: SourceItem[],
+  failureReason: string,
+): { systemPrompt: string; userPrompt: string } {
+  const isMultiFile = Object.keys(currentCode).length > 1;
+  const completedSteps = outline.steps.slice(0, fromStepIndex);
+  const originalRemaining = outline.steps.slice(fromStepIndex);
+
+  const metaExample = isMultiFile
+    ? '{ "title": "Tutorial Title", "description": "Description" }'
+    : '{ "title": "Tutorial Title", "lang": "Language", "fileName": "Filename", "description": "Description" }';
+
+  const baseCodeExample = isMultiFile
+    ? '{ "file1.js": "Minimal runnable code", "utils.js": "Helper module code" }'
+    : '"Minimal runnable code"';
+
+  const systemPrompt = `You are revising a tutorial outline mid-generation. The tutorial has already completed ${fromStepIndex} steps successfully, but the remaining steps have failed repeatedly.
+
+You must output a JSON object with the SAME structure as the original outline, containing ONLY the revised remaining steps. Keep the same meta, intro, baseCode, and chapters.
+
+Output format:
+{
+  "steps": [
+    {
+      "id": "step-N",
+      "title": "Step title",
+      "teachingGoal": "What this step teaches",
+      "conceptIntroduced": "New concept introduced",
+      "estimatedLocChange": 5
+    }
+  ]
+}
+
+Rules:
+1. Preserve completed steps' teaching goals (do not re-introduce concepts already taught)
+2. Adjust remaining steps based on actual code state (not what was originally planned)
+3. Each step: one new concept, {STEP_LOC_MIN}-{STEP_LOC_MAX} LOC change
+4. Maintain the cognitive arc: the revised steps must still form a coherent teaching path
+5. Consider the failure reason: if patches keep failing for a specific code area, simplify or restructure the approach
+6. The revised steps can be fewer or more than the original remaining steps`;
+
+  const currentCodeSection = Object.entries(currentCode)
+    .map(([fileName, code]) => {
+      const lines = code.split('\n');
+      const preview = lines.length > 100
+        ? lines.slice(0, 50).join('\n') + '\n... (truncated) ...\n' + lines.slice(-30).join('\n')
+        : code;
+      return `### ${fileName} (${lines.length} lines)\n\`\`\`\n${preview}\n\`\`\``;
+    }).join('\n\n');
+
+  const userPrompt = `## Completed steps (${completedSteps.length})
+${completedSteps.map((s, i) => `${i + 1}. ${s.title} — ${s.teachingGoal}`).join('\n')}
+
+## Completed steps summary
+${completedStepsSummary}
+
+## Current code state
+${currentCodeSection}
+
+## Original remaining steps (that failed)
+${originalRemaining.map((s, i) => `${fromStepIndex + i + 1}. ${s.title} — ${s.teachingGoal} (concept: ${s.conceptIntroduced})`).join('\n')}
+
+## Failure reason
+${failureReason}
+
+## Tutorial context
+- Topic: ${teachingBrief.topic}
+- Audience: ${teachingBrief.audience_level}
+- Core question: ${teachingBrief.core_question}
+- Language: ${teachingBrief.output_language}
+
+Please redesign the remaining steps. Output only the revised steps array in JSON format.`;
 
   return { systemPrompt, userPrompt };
 }

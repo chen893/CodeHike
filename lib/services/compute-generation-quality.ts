@@ -2,6 +2,17 @@ import type { TutorialDraft } from '../schemas/tutorial-draft';
 import type { TutorialOutline } from '../schemas/tutorial-outline';
 import type { GenerationQuality } from '../schemas/generation-quality';
 
+// ---------------------------------------------------------------------------
+// Agent loop metrics input type
+// ---------------------------------------------------------------------------
+
+export interface AgentLoopMetrics {
+  outcomes: Array<{ stepIndex: number; result: string; repairCount: number; patchStrategy: string; locChange: number }>;
+  repairHistory: Array<{ stepIndex: number; attempts: number; strategy: string; outcome: string; errorMessage: string }>;
+  replanCount: number;
+  compressionCount: number;
+}
+
 /**
  * Compute quality metrics for a generated tutorial.
  */
@@ -9,7 +20,8 @@ export function computeGenerationQuality(
   draft: TutorialDraft,
   outline: TutorialOutline,
   retryCount: number,
-  totalGenerationTimeMs: number
+  totalGenerationTimeMs: number,
+  agentMetrics?: AgentLoopMetrics,
 ): GenerationQuality {
   const { steps } = draft;
   const stepCount = steps.length;
@@ -82,5 +94,18 @@ export function computeGenerationQuality(
     outlineToFillConsistency: Math.round(outlineToFillConsistency * 100) / 100,
     retryCount,
     totalGenerationTimeMs,
+    // Agent loop metrics (if provided)
+    ...(agentMetrics ? {
+      repairCount: agentMetrics.repairHistory.length,
+      firstPassRate: agentMetrics.outcomes.length > 0
+        ? Math.round(agentMetrics.outcomes.filter(o => o.result === 'pass').length / agentMetrics.outcomes.length * 100) / 100
+        : 1,
+      degradedStepCount: agentMetrics.outcomes.filter(o => o.result === 'replanned').length,
+      compressionCount: agentMetrics.compressionCount,
+      avgRepairAttempts: agentMetrics.repairHistory.length > 0
+        ? Math.round(agentMetrics.repairHistory.reduce((sum, r) => sum + r.attempts, 0) / agentMetrics.repairHistory.length * 100) / 100
+        : 0,
+      replanCount: agentMetrics.replanCount,
+    } : {}),
   };
 }

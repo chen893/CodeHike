@@ -65,6 +65,13 @@ export interface GenerationReviewReport {
     oversizedStepCount: number;
     severelyOversizedStepCount: number;
     outlineToFillConsistency: number;
+    // Agent loop metrics (optional -- present when agent loop was used)
+    agentRepairCount?: number;
+    agentFirstPassRate?: number;
+    agentDegradedStepCount?: number;
+    agentCompressionCount?: number;
+    agentReplanCount?: number;
+    agentAvgRepairAttempts?: number;
   };
   promptReview: Array<{
     file: string;
@@ -80,6 +87,15 @@ export interface ReviewGenerationInput {
   outline?: TutorialOutline | null;
   validationValid?: boolean;
   validationErrors?: string[];
+  // Agent loop metrics (optional -- present when agent loop was used)
+  agentMetrics?: {
+    repairCount: number;
+    firstPassRate: number;
+    degradedStepCount: number;
+    compressionCount: number;
+    replanCount: number;
+    avgRepairAttempts: number;
+  };
 }
 
 const FAILURE_PATTERNS = [
@@ -192,6 +208,7 @@ export function reviewGeneratedTutorial({
   outline,
   validationValid = false,
   validationErrors = [],
+  agentMetrics,
 }: ReviewGenerationInput): GenerationReviewReport {
   if (!tutorialDraft) {
     const issues: GenerationReviewIssue[] = [
@@ -418,6 +435,43 @@ export function reviewGeneratedTutorial({
     }
   }
 
+  // Agent loop metrics issues (if available)
+  if (agentMetrics) {
+    const { repairCount, firstPassRate, degradedStepCount, replanCount } = agentMetrics;
+
+    if (firstPassRate < 0.5) {
+      issues.push({
+        code: 'LOW_FIRST_PASS_RATE',
+        severity: 'major',
+        title: 'Less than 50% of steps passed on first attempt',
+        summary: `First pass rate: ${firstPassRate}. ${repairCount} total repairs across ${draft.steps.length} steps.`,
+        stage: 'step_fill',
+        promptFiles: ['lib/ai/step-fill-prompt.ts'],
+        flowFiles: ['lib/ai/agent-generator.ts'],
+        suggestedDirections: [
+          'Review step-fill prompt for clarity on patch precision requirements.',
+          'Consider if the outline creates steps that are too large or ambiguous.',
+        ],
+      });
+    }
+
+    if (degradedStepCount > 0) {
+      issues.push({
+        code: 'DEGRADED_STEPS_PRESENT',
+        severity: 'minor',
+        title: 'Some steps were accepted in degraded state',
+        summary: `${degradedStepCount} step(s) could not be fully repaired and were accepted as degraded. ${replanCount} replan(s) triggered.`,
+        stage: 'step_fill',
+        promptFiles: ['lib/ai/step-fill-prompt.ts', 'lib/ai/outline-prompt.ts'],
+        flowFiles: ['lib/ai/agent-generator.ts'],
+        suggestedDirections: [
+          'Review degraded steps for patterns -- are certain code areas consistently fragile?',
+          'Consider if the outline structure creates inherently fragile patches.',
+        ],
+      });
+    }
+  }
+
   let contentIntegrity = 100;
   contentIntegrity -= placeholderSteps.length * 35;
   contentIntegrity -= missingPatchSteps.length * 5;
@@ -507,6 +561,14 @@ export function reviewGeneratedTutorial({
       oversizedStepCount,
       severelyOversizedStepCount,
       outlineToFillConsistency: Number(outlineToFillConsistency.toFixed(2)),
+      ...(agentMetrics ? {
+        agentRepairCount: agentMetrics.repairCount,
+        agentFirstPassRate: agentMetrics.firstPassRate,
+        agentDegradedStepCount: agentMetrics.degradedStepCount,
+        agentCompressionCount: agentMetrics.compressionCount,
+        agentReplanCount: agentMetrics.replanCount,
+        agentAvgRepairAttempts: agentMetrics.avgRepairAttempts,
+      } : {}),
     },
     promptReview: buildPromptReview(issues),
   };
