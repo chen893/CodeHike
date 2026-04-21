@@ -6,6 +6,9 @@ import {
   type CancelToken,
   type MultiPhaseLifecycleHooks,
 } from "../ai/multi-phase-generator";
+import {
+  createAgentGenerationStream,
+} from "../ai/agent-generator";
 import { materializeBaseCodeForFilledSteps } from "../ai/progressive-snapshot-base-code";
 import { RetrievalModelRequiredError } from "../ai/model-capabilities";
 import { PatchValidationError } from "../errors/error-types";
@@ -334,15 +337,26 @@ async function initiateGenerationStream(
   let stream: ReadableStream<Uint8Array>;
   let result: Promise<MultiPhaseResult>;
 
+  const useAgentLoop = process.env.USE_AGENT_LOOP === '1';
+
   try {
-    const generationStream = createMultiPhaseGenerationStream(
-      draft.sourceItems,
-      draft.teachingBrief,
-      model,
-      cancelToken,
-      lifecycleHooks,
-      checkDbCancel,
-    );
+    const generationStream = useAgentLoop
+      ? createAgentGenerationStream(
+          draft.sourceItems,
+          draft.teachingBrief,
+          model,
+          cancelToken,
+          lifecycleHooks,
+          checkDbCancel,
+        )
+      : createMultiPhaseGenerationStream(
+          draft.sourceItems,
+          draft.teachingBrief,
+          model,
+          cancelToken,
+          lifecycleHooks,
+          checkDbCancel,
+        );
     stream = generationStream.stream;
     result = generationStream.result;
     generationStream.outlineReady.then((outline) => {

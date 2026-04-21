@@ -123,6 +123,18 @@ export function useGenerationProgress({
             }
           } else if (data.phase === 'validate') {
             setV2Status('validating');
+          } else if (data.phase === 'repair') {
+            setV2Status('repairing');
+            if (typeof data.stepIndex === 'number') {
+              setCurrentStepIndex(data.stepIndex);
+            }
+          } else if (data.phase === 'replan') {
+            setV2Status('replanning');
+            if (typeof data.stepIndex === 'number') {
+              setCurrentStepIndex(data.stepIndex);
+            }
+          } else if (data.phase === 'compress') {
+            setV2Status('compressing');
           }
           break;
         case 'outline':
@@ -159,6 +171,34 @@ export function useGenerationProgress({
           break;
         case 'done':
           setV2Status('stream-complete');
+          break;
+        case 'repair':
+          setV2Status('repairing');
+          if (typeof data.stepIndex === 'number') {
+            setCurrentStepIndex(data.stepIndex);
+          }
+          break;
+        case 'replan':
+          setV2Status('replanning');
+          if (typeof data.stepIndex === 'number') {
+            setCurrentStepIndex(data.stepIndex);
+          }
+          break;
+        case 'step-repaired':
+          if (typeof data.stepIndex === 'number') {
+            const stepIndex = data.stepIndex;
+            setCompletedSteps((prev) =>
+              prev.includes(stepIndex) ? prev : [...prev, stepIndex]
+            );
+            if (data.step?.title) {
+              const title = data.step.title;
+              setStepTitles((prev) => ({ ...prev, [stepIndex]: title }));
+            }
+          }
+          setV2Status('filling-step');
+          break;
+        case 'compress':
+          setV2Status('compressing');
           break;
         case 'error':
           setErrorMessage(data.message || '生成失败');
@@ -605,7 +645,10 @@ export function useGenerationProgress({
     v2Status === 'filling-step' ||
     v2Status === 'validating' ||
     v2Status === 'reconnecting' ||
-    v2Status === 'cancelling';
+    v2Status === 'cancelling' ||
+    v2Status === 'repairing' ||
+    v2Status === 'replanning' ||
+    v2Status === 'compressing';
 
   return {
     draftId,

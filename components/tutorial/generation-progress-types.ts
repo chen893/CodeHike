@@ -22,7 +22,10 @@ export type V2Status =
   | 'stream-complete'
   | 'reconnecting'
   | 'cancelling'
-  | 'error';
+  | 'error'
+  | 'repairing'
+  | 'replanning'
+  | 'compressing';
 
 export interface GenerationContext {
   topic: string;
