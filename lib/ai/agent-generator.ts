@@ -19,7 +19,7 @@ import { legacyTutorialStepSchema, type TutorialStep, type TutorialDraft, type C
 import type { TutorialOutline } from '../schemas/tutorial-outline';
 import type { SourceItem } from '../schemas/source-item';
 import type { TeachingBrief } from '../schemas/teaching-brief';
-import { buildOutlinePrompt, buildRetrievalOutlinePrompt } from './outline-prompt';
+import { buildOutlinePrompt, buildRetrievalOutlinePrompt, buildReviseOutlinePrompt } from './outline-prompt';
 import { buildStepFillPrompt, buildRetrievalStepFillPrompt, buildCurrentSnapshotSummary, buildRepairPrompt } from './step-fill-prompt';
 import { adaptPromptForModel } from './prompt-adapters';
 import { applyContentPatches } from '../tutorial/draft-code';
@@ -57,6 +57,7 @@ import {
   type DistilledContext,
 } from './agent-context';
 import { createSessionMemory, type SessionMemory } from './agent-memory';
+import { reviewGeneratedTutorial, type ReviewGenerationInput } from '../review/generation-quality-review';
 
 // Re-export shared types so the service layer can use the same error types
 export {
@@ -497,6 +498,124 @@ export function createAgentGenerationStream(
         // Distilled context placeholder (replaces full history after compression)
         let distilledContext: DistilledContext | null = null;
 
+        // Consecutive repair failure counter for reviseOutline trigger
+        let consecutiveRepairFailures = 0;
+
+        // Track compression count for agent metrics
+        let compressionCount = 0;
+
+        // -----------------------------------------------------------------
+        // reviseOutline: revise the outline from a given step onward when
+        // consecutive repairs fail, indicating the outline is flawed.
+        // -----------------------------------------------------------------
+        async function reviseOutline(
+          fromStepIndex: number,
+          failureReason: string,
+        ): Promise<TutorialOutline | null> {
+          try {
+            const completedSummary = microCompact(filledSteps, filledSteps.length);
+            const { systemPrompt, userPrompt } = buildReviseOutlinePrompt(
+              outline!,
+              fromStepIndex,
+              completedSummary,
+              snapshots.get(fromStepIndex - 1) ?? {},
+              teachingBrief,
+              sourceItems,
+              failureReason,
+            );
+
+            const result = await generateText({
+              model,
+              system: adaptPromptForModel(systemPrompt, modelId),
+              prompt: adaptPromptForModel(userPrompt, modelId),
+              maxOutputTokens: getMaxOutputTokens(modelId),
+            });
+
+            // Parse revised steps using permissive JSON extraction
+            let revisedSteps: any = null;
+            try {
+              const text = result.text;
+              const braceStart = text.indexOf('{');
+              const braceEnd = text.lastIndexOf('}');
+              if (braceStart !== -1 && braceEnd > braceStart) {
+                const jsonObj = JSON.parse(text.slice(braceStart, braceEnd + 1));
+                if (jsonObj?.steps && Array.isArray(jsonObj.steps)) {
+                  revisedSteps = jsonObj;
+                }
+              }
+            } catch {
+              // Parse failed
+            }
+
+            if (!revisedSteps?.steps || !Array.isArray(revisedSteps.steps)) {
+              console.error('[agent-loop] reviseOutline: failed to parse revised steps');
+              return null;
+            }
+
+            // Merge: keep completed steps, replace remaining
+            const mergedSteps = [
+              ...outline!.steps.slice(0, fromStepIndex),
+              ...revisedSteps.steps,
+            ];
+
+            const revisedOutline: TutorialOutline = {
+              ...outline!,
+              steps: mergedSteps,
+            };
+
+            return revisedOutline;
+          } catch (err) {
+            console.error('[agent-loop] reviseOutline failed:', err);
+            return null;
+          }
+        }
+
+        // -----------------------------------------------------------------
+        // critiqueSteps: evaluate teaching coherence every 4 steps.
+        // Uses reviewGeneratedTutorial for assessment. Observability-only,
+        // does not alter generation flow.
+        // -----------------------------------------------------------------
+        function critiqueSteps(
+          currentStepIndex: number,
+        ): void {
+          // Only critique every 4 steps (at indices 3, 7, 11, 15, ...)
+          if ((currentStepIndex + 1) % 4 !== 0) return;
+          if (filledSteps.length < 3) return;
+
+          try {
+            // Build a partial draft for review
+            const partialDraft = ensureDraftChapters({
+              meta: outline!.meta,
+              intro: outline!.intro,
+              baseCode: outline!.baseCode,
+              chapters: outline!.chapters,
+              steps: filledSteps,
+            });
+
+            const reviewInput: ReviewGenerationInput = {
+              tutorialDraft: partialDraft,
+              sourceItems,
+              teachingBrief,
+              outline,
+              validationValid: true,
+              validationErrors: [],
+            };
+
+            const report = reviewGeneratedTutorial(reviewInput);
+
+            // Log the critique result for observability
+            console.log(`[agent-loop] critiqueSteps at step ${currentStepIndex + 1}: score ${report.totalScore}, issues: ${report.issues.length}`);
+
+            // If pedagogical progression is low, log a warning
+            if (report.scorecard.pedagogicalProgression < 70) {
+              console.warn(`[agent-loop] Low pedagogical progression (${report.scorecard.pedagogicalProgression}) at step ${currentStepIndex + 1}`);
+            }
+          } catch (err) {
+            console.error('[agent-loop] critiqueSteps failed:', err);
+            // Non-fatal -- continue generation
+          }
+        }
+
         for (let i = 0; i < totalSteps; i++) {
           currentPhase = 'step_fill';
           currentStepIndex = i;
@@ -710,6 +829,7 @@ ${distilledContext.errorAndRepairHistory}`;
                   });
 
                   stepResult = step;
+                  consecutiveRepairFailures = 0; // Reset on successful step
 
                   // Emit step-repaired if this was a repair attempt
                   if (attempt > 0) {
@@ -817,6 +937,7 @@ ${distilledContext.errorAndRepairHistory}`;
                   locChange: 0,
                 });
                 stepResult = step;
+                consecutiveRepairFailures = 0; // Reset on successful step (no patches)
                 break;
               }
             } catch (stepErr: any) {
@@ -835,12 +956,60 @@ ${distilledContext.errorAndRepairHistory}`;
           }
 
           if (!stepResult) {
-            console.error(`[agent-loop] Step ${i + 1} failed after ${MAX_REPAIRS_PER_STEP} repair attempts`);
-            throw new MultiPhaseGenerationError(
-              'step_fill',
-              new Error(`Step ${i + 1} failed after ${MAX_REPAIRS_PER_STEP} repair attempts: ${lastError ?? 'unknown error'}`),
-              i,
-            );
+            consecutiveRepairFailures++;
+
+            // If consecutive repairs fail >= 2 times, attempt reviseOutline
+            if (consecutiveRepairFailures >= 2 && loopState.replanCount < MAX_REPLANS) {
+              console.warn(`[agent-loop] ${consecutiveRepairFailures} consecutive repair failures, triggering reviseOutline from step ${i}`);
+              controller.enqueue(encoder.encode(
+                sseEvent('replan', { fromStepIndex: i, reason: `${consecutiveRepairFailures} consecutive repair failures`, revisedStepCount: 0 })
+              ));
+
+              const revisedOutline = await reviseOutline(i, lastError ?? 'consecutive repair failures');
+              if (revisedOutline) {
+                outline = revisedOutline;
+                loopState.replanCount++;
+                controller.enqueue(encoder.encode(
+                  sseEvent('replan', { fromStepIndex: i, reason: 'outline revised', revisedStepCount: revisedOutline.steps.length - i })
+                ));
+                // Reset consecutive counter since outline changed
+                consecutiveRepairFailures = 0;
+                // Attempt one more fill with the revised step definition
+                try {
+                  const previousFilesForRetry = snapshots.get(i - 1)!;
+                  const { systemPrompt: sysPrompt, userPrompt: usrPrompt } = modelSupportsRetrieval
+                    ? buildRetrievalStepFillPrompt(sourceItems, teachingBrief, outline, i, previousFilesForRetry, deriveStepSourceScope(outline.steps[i], previousFilesForRetry), buildCurrentSnapshotSummary(previousFilesForRetry), undefined, { toolsEnabled: STEP_FILL_TOOLS_ENABLED })
+                    : buildStepFillPrompt(sourceItems, teachingBrief, outline, i, previousFilesForRetry, undefined);
+                  const retryResult = await generateText({
+                    model,
+                    system: adaptPromptForModel(sysPrompt, modelId),
+                    prompt: adaptPromptForModel(usrPrompt, modelId),
+                    maxOutputTokens: getMaxOutputTokens(modelId),
+                  });
+                  const retryStep = { ...parseJsonFromText(retryResult.text, legacyTutorialStepSchema, `step-${i + 1}-post-replan`), chapterId: outline.steps[i]?.chapterId ?? DEFAULT_CHAPTER_ID };
+                  const retryValidation = validateStepPatches(previousFilesForRetry, retryStep.patches ?? [], primaryFile);
+                  if (retryValidation.result === 'pass') {
+                    if (retryValidation.fixedPatches) retryStep.patches = retryValidation.fixedPatches;
+                    stepResult = retryStep;
+                    sessionMemory.recordStepOutcome({ stepIndex: i, result: 'replanned', repairCount: 0, patchStrategy: 'exact', locChange: 0 });
+                  }
+                } catch {
+                  // Post-replan attempt also failed -- accept as degraded
+                }
+              }
+            }
+
+            if (!stepResult) {
+              // After reviseOutline attempt or if replan limit reached
+              if (loopState.replanCount >= MAX_REPLANS) {
+                console.error(`[agent-loop] Step ${i + 1} failed after ${MAX_REPLANS} replans -- accepting degraded result`);
+              }
+              throw new MultiPhaseGenerationError(
+                'step_fill',
+                new Error(`Step ${i + 1} failed after ${MAX_REPAIRS_PER_STEP} repairs${consecutiveRepairFailures >= 2 ? ' and outline revision' : ''}: ${lastError ?? 'unknown error'}`),
+                i,
+              );
+            }
           }
 
           // Enrich step with outline metadata
@@ -865,6 +1034,9 @@ ${distilledContext.errorAndRepairHistory}`;
           } else {
             snapshots.set(i, previousFiles);
           }
+
+          // Critique teaching coherence every 4 steps
+          critiqueSteps(i);
 
           // LOC budget warning (quality signal, does not block)
           if (stepResult.patches && stepResult.patches.length > 0) {
@@ -894,6 +1066,7 @@ ${distilledContext.errorAndRepairHistory}`;
 
           if (compressionAction === 'summary') {
             // Auto-summarize at 65%
+            compressionCount++;
             controller.enqueue(encoder.encode(
               sseEvent('compress', {
                 type: 'summary',
@@ -928,6 +1101,7 @@ ${distilledContext.errorAndRepairHistory}`;
             }
           } else if (compressionAction === 'replan') {
             // Full-replan at 85%
+            compressionCount++;
             controller.enqueue(encoder.encode(
               sseEvent('compress', {
                 type: 'replan',
@@ -1022,7 +1196,18 @@ ${distilledContext.errorAndRepairHistory}`;
           draft,
           outline,
           retryCount: totalRetries,
-        });
+          agentMetrics: {
+            outcomes: loopState.outcomes,
+            repairHistory: sessionMemory.getRepairHistory(),
+            replanCount: loopState.replanCount,
+            compressionCount,
+          },
+        } as MultiPhaseResult & { agentMetrics: {
+          outcomes: Array<{ stepIndex: number; result: string; repairCount: number; patchStrategy: string; locChange: number }>;
+          repairHistory: Array<{ stepIndex: number; attempts: number; strategy: string; outcome: string; errorMessage: string }>;
+          replanCount: number;
+          compressionCount: number;
+        }});
 
         controller.close();
       } catch (err: any) {
