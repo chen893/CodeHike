@@ -1,6 +1,7 @@
 import type { SourceItem } from '../schemas/source-item';
 import type { TeachingBrief } from '../schemas/teaching-brief';
 import type { TutorialOutline } from '../schemas/tutorial-outline';
+import type { TutorialStep } from '../schemas/tutorial-draft';
 import { findProgressivePlaceholderTargets } from './progressive-snapshot-base-code';
 import { analyzeSourceCollectionShape } from '../utils/source-collection-shape';
 
@@ -290,6 +291,78 @@ ${
 6. marks.start / marks.end 也必须使用当前步骤应用 patch 后的 1-based 行号
 7. 如果提供了 targetFiles，至少有一条 patch 必须落在这些文件上
 8. 步骤 id 使用：${outlineStep.id}${isMultiFile ? '\n9. patches/focus/marks 必须指定 "file" 字段来指明操作哪个文件' : ''}`;
+
+  return { systemPrompt, userPrompt };
+}
+
+/**
+ * Build a repair prompt that injects actual code state + error message.
+ * The AI sees what the code actually looks like (not what it expected),
+ * and the specific error that occurred.
+ */
+export function buildRepairPrompt(
+  failedStep: TutorialStep,
+  actualCode: Record<string, string>,
+  errorMessage: string,
+  outline: TutorialOutline,
+  stepIndex: number,
+  teachingBrief: TeachingBrief,
+  sourceItems: SourceItem[],
+): { systemPrompt: string; userPrompt: string } {
+  const isMultiFile = Object.keys(actualCode).length > 1;
+  const outlineStep = outline.steps[stepIndex];
+
+  const systemPrompt = buildStepFillSystemPromptCore(stepIndex, isMultiFile) + `
+
+## Repair mode (critical)
+
+The previous patch failed to apply. You must regenerate patches based on the **actual code state** shown below.
+
+Rules:
+1. You will see the "current actual code" (not what AI expected)
+2. find must be copied verbatim from "current actual code"
+3. Read the error message carefully to understand why the match failed
+4. Do not repeat the same error pattern
+5. If the original find fragment does not exist in current code, locate the actual target code`;
+
+  const actualCodeSection = Object.entries(actualCode)
+    .map(([fileName, code]) => `### ${fileName}\n\`\`\`\n${code}\n\`\`\``)
+    .join('\n\n');
+
+  const userPrompt = `## Teaching goal
+${outlineStep.teachingGoal}
+
+## Concept introduced
+${outlineStep.conceptIntroduced}
+
+## Current actual code (real state after previous step)
+${actualCodeSection}
+
+## Previous failure message
+${errorMessage}
+
+## Previous failed step (reference only, do not reuse its patches)
+- Title: ${failedStep.title}
+- Paragraphs: ${failedStep.paragraphs?.length ?? 0}
+- Patches: ${failedStep.patches?.length ?? 0}
+
+## Position in tutorial
+- Title: ${outline.meta.title}
+- Current step: ${stepIndex + 1} / ${outline.steps.length}
+- Previous: ${stepIndex > 0 ? outline.steps[stepIndex - 1].title : '(baseCode)'}
+- Next: ${stepIndex < outline.steps.length - 1 ? outline.steps[stepIndex + 1].title : '(last step)'}
+
+## Teaching intent
+- Topic: ${teachingBrief.topic}
+- Level: ${teachingBrief.audience_level}
+- Language: ${teachingBrief.output_language}
+
+## Requirements
+1. Explain why this concept is needed (problem-driven, 1-2 paragraphs)
+2. Show code changes ({STEP_LOC_MIN}-{STEP_LOC_MAX} lines)
+3. Explain what the code solves (1 paragraph)
+4. patch.find must be copied verbatim from "current actual code" above
+5. Step id: ${outlineStep.id}${isMultiFile ? '\n6. patches/focus/marks must specify "file" field' : ''}`;
 
   return { systemPrompt, userPrompt };
 }
