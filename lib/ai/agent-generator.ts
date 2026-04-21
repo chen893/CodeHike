@@ -58,6 +58,7 @@ import {
 } from './agent-context';
 import { createSessionMemory, type SessionMemory } from './agent-memory';
 import { reviewGeneratedTutorial, type ReviewGenerationInput } from '../review/generation-quality-review';
+import { createAgentRunLogger, type AgentRunLogger } from './agent-run-logger';
 
 // Re-export shared types so the service layer can use the same error types
 export {
@@ -238,6 +239,7 @@ export function createAgentGenerationStream(
 ): MultiPhaseStream {
   const encoder = new TextEncoder();
   const model = createProvider(modelId);
+  const logger = createAgentRunLogger();
 
   let resolveResult: (value: MultiPhaseResult) => void;
   let rejectResult: (reason: any) => void;
@@ -282,6 +284,7 @@ export function createAgentGenerationStream(
           sourceItems.length > 30 ||
           totalSourceTokens > getMaxInputTokens(modelId ?? '') * 0.6;
 
+        logger.logEvent('init', { modelId: modelId ?? '(default)', modelSupportsRetrieval, isLargeRepo, sourceFileCount: sourceItems.length, totalSourceTokens, recommendedSteps: stepBudget.recommended });
         console.log('[agent-loop] Generation params:', {
           modelId: modelId ?? '(default)',
           modelSupportsRetrieval,
@@ -421,6 +424,7 @@ export function createAgentGenerationStream(
           controller.enqueue(encoder.encode(sseEvent('outline', outline)));
           await lifecycleHooks.onOutlineReady?.(outline);
           resolveOutline!(outline);
+          logger.logEvent('outline-complete', { stepCount: outline.steps.length, title: outline.meta.title });
         } catch (outlineErr: any) {
           const causeChain: string[] = [];
           let cursor: any = outlineErr;
@@ -801,7 +805,7 @@ ${distilledContext.errorAndRepairHistory}`;
                 const validation = validateStepPatches(previousFiles, step.patches, primaryFile);
 
                 if (validation.result === 'pass') {
-                  // Use auto-fixed patches if available
+                  logger.logEvent('step-validation', { stepIndex: i, attempt, result: 'pass', autoFixed: !!validation.fixedPatches });
                   if (validation.fixedPatches) {
                     step.patches = validation.fixedPatches;
                     console.log(`[agent-loop] Auto-fix applied for step ${i + 1} (attempt ${attempt + 1})`);
@@ -842,6 +846,7 @@ ${distilledContext.errorAndRepairHistory}`;
                 }
 
                 if (validation.result === 'repairable') {
+                  logger.logEvent('step-validation', { stepIndex: i, attempt, result: 'repairable', error: validation.errors[0] });
                   totalRetries++;
                   lastFailedStep = step;
                   lastError = validation.errors.join('\n');
@@ -882,6 +887,7 @@ ${distilledContext.errorAndRepairHistory}`;
                 }
 
                 if (validation.result === 'unrecoverable') {
+                  logger.logEvent('step-validation', { stepIndex: i, attempt, result: 'unrecoverable', error: validation.errors[0] });
                   totalRetries++;
                   loopState.replanCount++;
 
@@ -1065,7 +1071,7 @@ ${distilledContext.errorAndRepairHistory}`;
           const compressionAction = checkCompressionThreshold(loopState.tokenUsage);
 
           if (compressionAction === 'summary') {
-            // Auto-summarize at 65%
+            logger.logEvent('compression', { type: 'summary', stepIndex: i, tokenUsage: loopState.tokenUsage });
             compressionCount++;
             controller.enqueue(encoder.encode(
               sseEvent('compress', {
@@ -1100,7 +1106,7 @@ ${distilledContext.errorAndRepairHistory}`;
               // Continue without compression -- not fatal
             }
           } else if (compressionAction === 'replan') {
-            // Full-replan at 85%
+            logger.logEvent('compression', { type: 'replan', stepIndex: i, tokenUsage: loopState.tokenUsage });
             compressionCount++;
             controller.enqueue(encoder.encode(
               sseEvent('compress', {
@@ -1191,6 +1197,8 @@ ${distilledContext.errorAndRepairHistory}`;
         controller.enqueue(encoder.encode(
           sseEvent('done', { success: true })
         ));
+
+        logger.logEvent('done', { totalSteps: filledSteps.length, totalRetries, replanCount: loopState.replanCount, compressionCount, outcomeSummary: loopState.outcomes.map(o => `${o.stepIndex}:${o.result}`) });
 
         resolveResult({
           draft,
