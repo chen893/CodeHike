@@ -245,74 +245,70 @@ test('buildTutorialSteps uses explicit mark line ranges', async () => {
   );
 });
 
-test('buildTutorialSteps rejects invalid explicit mark ranges', async () => {
-  await assert.rejects(
-    () =>
-      buildTutorialSteps({
-        meta: {
-          title: 'Broken mark tutorial',
-          description: 'Test tutorial',
-          lang: 'typescript',
-          fileName: 'example.ts',
-        },
-        intro: { paragraphs: [] },
-        baseCode: {
-          'example.ts': 'const a = 1;\nconst b = 2;\n',
-        },
-        chapters: [
-          {
-            id: 'chapter-1',
-            title: 'Chapter 1',
-            description: 'Chapter 1',
-            stepIds: ['step-1'],
-          },
-        ],
-        steps: [
-          {
-            id: 'step-1',
-            chapterId: 'chapter-1',
-            title: 'Broken mark',
-            paragraphs: ['Invalid mark range.'],
-            marks: [{ file: 'example.ts', start: 2, end: 5, color: '#ff0' }],
-          },
-        ],
-      }),
-    (err) => err.message.includes('Mark 行号超出范围')
-  );
+test('buildTutorialSteps clamps out-of-range mark ranges', async () => {
+  // mark references lines 2-5 but file only has 2 lines → clamped to 1-2
+  const steps = await buildTutorialSteps({
+    meta: {
+      title: 'Clamped mark tutorial',
+      description: 'Test tutorial',
+      lang: 'typescript',
+      fileName: 'example.ts',
+    },
+    intro: { paragraphs: [] },
+    baseCode: {
+      'example.ts': 'const a = 1;\nconst b = 2;\n',
+    },
+    chapters: [
+      {
+        id: 'chapter-1',
+        title: 'Chapter 1',
+        description: 'Chapter 1',
+        stepIds: ['step-1'],
+      },
+    ],
+    steps: [
+      {
+        id: 'step-1',
+        chapterId: 'chapter-1',
+        title: 'Clamped mark',
+        paragraphs: ['Mark range clamped.'],
+        marks: [{ file: 'example.ts', start: 2, end: 5, color: '#ff0' }],
+      },
+    ],
+  });
+  assert.ok(steps, 'steps should be generated without error');
 });
 
-test('buildTutorialSteps rejects invalid explicit focus ranges', async () => {
-  await assert.rejects(
-    () =>
-      buildTutorialSteps({
-        meta: {
-          title: 'Broken focus tutorial',
-          description: 'Test tutorial',
-          lang: 'typescript',
-          fileName: 'example.ts',
-        },
-        intro: { paragraphs: [] },
-        baseCode: {
-          'example.ts': 'const a = 1;\nconst b = 2;\n',
-        },
-        chapters: [
-          {
-            id: 'chapter-1',
-            title: 'Chapter 1',
-            description: 'Chapter 1',
-            stepIds: ['step-1'],
-          },
-        ],
-        steps: [
-          {
-            id: 'step-1',
-            chapterId: 'chapter-1',
-            title: 'Broken focus',
-            paragraphs: ['Invalid focus range.'],
-            focus: { file: 'example.ts', start: 3, end: 5 },
-          },
-        ],
-      }),
-    (err) => err.message.includes('Focus 行号超出范围')
-  );
+test('buildTutorialSteps clamps out-of-range focus ranges', async () => {
+  // focus references lines 3-5 but file only has 2 lines → clamped to 2-2
+  const steps = await buildTutorialSteps({
+    meta: {
+      title: 'Clamped focus tutorial',
+      description: 'Test tutorial',
+      lang: 'typescript',
+      fileName: 'example.ts',
+    },
+    intro: { paragraphs: [] },
+    baseCode: {
+      'example.ts': 'const a = 1;\nconst b = 2;\n',
+    },
+    chapters: [
+      {
+        id: 'chapter-1',
+        title: 'Chapter 1',
+        description: 'Chapter 1',
+        stepIds: ['step-1'],
+      },
+    ],
+    steps: [
+      {
+        id: 'step-1',
+        chapterId: 'chapter-1',
+        title: 'Clamped focus',
+        paragraphs: ['Focus range clamped.'],
+        focus: { file: 'example.ts', start: 3, end: 5 },
+      },
+    ],
+  });
+  assert.ok(steps, 'steps should be generated without error');
 });
