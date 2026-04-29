@@ -26,6 +26,7 @@ export function useCreateDraftFormController() {
     output_language: '中文',
   });
   const [modelId, setModelId] = useState<string>(AVAILABLE_MODELS[0]?.id ?? '');
+  const [reviewOutlineFirst, setReviewOutlineFirst] = useState(false);
   const [generating, setGenerating] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const submittingRef = useRef(false);
@@ -94,7 +95,12 @@ export function useCreateDraftFormController() {
 
       const params = new URLSearchParams({ generate: '1' });
       if (modelId) params.set('modelId', modelId);
-      router.push(`/drafts/${draft.id}?${params.toString()}`);
+      if (reviewOutlineFirst) {
+        params.set('generationMode', 'outline_review');
+        router.push(`/drafts/${draft.id}/outline?${params.toString()}`);
+      } else {
+        router.push(`/drafts/${draft.id}?${params.toString()}`);
+      }
     } catch (error) {
       setError(error instanceof Error ? error.message : '发生错误');
       setGenerating(false);
@@ -110,6 +116,8 @@ export function useCreateDraftFormController() {
     brief,
     modelId,
     setModelId,
+    reviewOutlineFirst,
+    setReviewOutlineFirst,
     generating,
     error,
     setBrief,

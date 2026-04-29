@@ -57,6 +57,7 @@ export function RemoteTutorialPage({ slug, title }) {
 
         <TutorialScrollyDemo
           steps={state.data.steps}
+          baseStep={state.data.baseStep}
           intro={state.data.intro}
           title={state.data.title}
           fileName={state.data.fileName}

@@ -14,6 +14,7 @@ import { validateTutorialDraft } from '../utils/validation';
 import { PatchValidationError } from '../errors/error-types';
 import { createProvider, getMaxOutputTokens } from './provider-registry';
 import { parseJsonFromText } from './parse-json-text';
+import { finalizeToolCallJson } from './finalize-tool-call-json';
 import { tryAutoFixPatches } from './patch-auto-fix';
 import {
   findProgressivePlaceholderTargets,
@@ -76,9 +77,19 @@ function validateRetrievalStepTargets(
 }
 
 export interface MultiPhaseResult {
-  draft: TutorialDraft;
+  draft: TutorialDraft | null;
   outline: TutorialOutline;
   retryCount: number;
+}
+
+export type MultiPhaseExecutionMode =
+  | 'full'
+  | 'outline_only'
+  | 'fill_from_outline';
+
+export interface MultiPhaseGenerationOptions {
+  mode?: MultiPhaseExecutionMode;
+  initialOutline?: TutorialOutline;
 }
 
 function sseEvent(event: string, data: unknown): string {
@@ -180,7 +191,8 @@ export function createMultiPhaseGenerationStream(
   modelId?: string,
   cancelToken?: CancelToken,
   lifecycleHooks: MultiPhaseLifecycleHooks = {},
-  checkDbCancel?: () => Promise<boolean>
+  checkDbCancel?: () => Promise<boolean>,
+  options: MultiPhaseGenerationOptions = {},
 ): MultiPhaseStream {
   const encoder = new TextEncoder();
   const model = createProvider(modelId);
@@ -198,6 +210,7 @@ export function createMultiPhaseGenerationStream(
   });
 
   const startTime = Date.now();
+  const executionMode = options.mode ?? 'full';
 
   /**
    * Check both in-memory cancelToken and DB cancelRequested flag.
@@ -266,7 +279,9 @@ export function createMultiPhaseGenerationStream(
 
         let outline: TutorialOutline | undefined;
         try {
-          if (modelSupportsRetrieval) {
+          if (options.initialOutline) {
+            outline = options.initialOutline;
+          } else if (modelSupportsRetrieval) {
             // Retrieval-based outline: directory tree + tools
             const directorySummary = buildDirectorySummary(sourceItems);
             const budget = createTokenBudgetSession({
@@ -277,6 +292,8 @@ export function createMultiPhaseGenerationStream(
             const { systemPrompt, userPrompt } = buildRetrievalOutlinePrompt(
               sourceItems, teachingBrief, directorySummary,
             );
+            const adaptedSystemPrompt = adaptPromptForModel(systemPrompt, modelId);
+            const adaptedUserPrompt = adaptPromptForModel(userPrompt, modelId);
 
             console.log('[DEBUG] Retrieval outline prompt sizes:', {
               systemPromptChars: systemPrompt.length,
@@ -299,15 +316,25 @@ export function createMultiPhaseGenerationStream(
 
                 const result = await generateText({
                   model,
-                  system: adaptPromptForModel(systemPrompt, modelId),
-                  prompt: adaptPromptForModel(userPrompt, modelId),
+                  system: adaptedSystemPrompt,
+                  prompt: adaptedUserPrompt,
                   tools: sourceTools,
                   stopWhen: stepCountIs(20),
                   maxOutputTokens: getMaxOutputTokens(modelId),
                 });
 
                 console.log('[DEBUG] generateText completed in', Date.now() - generateStart, 'ms, response length:', result.text?.length ?? 0);
-                outline = parseJsonFromText(result.text, tutorialOutlineSchema, 'outline-retrieval');
+                outline = await finalizeToolCallJson({
+                  label: 'outline-retrieval',
+                  schema: tutorialOutlineSchema,
+                  model,
+                  modelId,
+                  systemPrompt,
+                  userPrompt,
+                  initialText: result.text,
+                  responseMessages: result.response.messages,
+                  logPrefix: 'multi-phase',
+                });
                 lastOutlineError = null;
                 break; // success
               } catch (err: any) {
@@ -403,6 +430,19 @@ export function createMultiPhaseGenerationStream(
           ));
           controller.close();
           rejectResult(new MultiPhaseGenerationError('outline', outlineErr));
+          return;
+        }
+
+        if (executionMode === 'outline_only') {
+          controller.enqueue(encoder.encode(
+            sseEvent('done', { success: true, mode: 'outline_only' })
+          ));
+          resolveResult({
+            draft: null,
+            outline,
+            retryCount: 0,
+          });
+          controller.close();
           return;
         }
 

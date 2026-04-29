@@ -16,6 +16,7 @@ interface ChapterRowProps {
   onMoveDown: () => void;
   onAddStep: () => void;
   allChapters: Chapter[];
+  structureLocked?: boolean;
   saving?: boolean;
 }
 
@@ -32,6 +33,7 @@ export function ChapterRow({
   onMoveDown,
   onAddStep,
   allChapters,
+  structureLocked = false,
   saving = false,
 }: ChapterRowProps) {
   const [isEditing, setIsEditing] = useState(false);
@@ -125,10 +127,10 @@ export function ChapterRow({
         </div>
 
         <div className="mt-3 flex flex-wrap items-center gap-1.5 opacity-0 transition-opacity group-hover/chapter:opacity-100">
-          <button type="button" className="inline-flex h-7 w-7 items-center justify-center rounded-full border border-slate-600 bg-slate-700 text-[10px] text-slate-500 transition-colors hover:border-slate-500 hover:bg-slate-600 hover:text-slate-200 disabled:pointer-events-none disabled:opacity-40" onClick={onMoveUp} disabled={saving || order === 0} aria-label={`上移 ${chapter.title}`}>▲</button>
-          <button type="button" className="inline-flex h-7 w-7 items-center justify-center rounded-full border border-slate-600 bg-slate-700 text-[10px] text-slate-500 transition-colors hover:border-slate-500 hover:bg-slate-600 hover:text-slate-200 disabled:pointer-events-none disabled:opacity-40" onClick={onMoveDown} disabled={saving || order >= totalChapters - 1} aria-label={`下移 ${chapter.title}`}>▼</button>
+          <button type="button" className="inline-flex h-7 w-7 items-center justify-center rounded-full border border-slate-600 bg-slate-700 text-[10px] text-slate-500 transition-colors hover:border-slate-500 hover:bg-slate-600 hover:text-slate-200 disabled:pointer-events-none disabled:opacity-40" onClick={onMoveUp} disabled={saving || structureLocked || order === 0} aria-label={`上移 ${chapter.title}`}>▲</button>
+          <button type="button" className="inline-flex h-7 w-7 items-center justify-center rounded-full border border-slate-600 bg-slate-700 text-[10px] text-slate-500 transition-colors hover:border-slate-500 hover:bg-slate-600 hover:text-slate-200 disabled:pointer-events-none disabled:opacity-40" onClick={onMoveDown} disabled={saving || structureLocked || order >= totalChapters - 1} aria-label={`下移 ${chapter.title}`}>▼</button>
           <button type="button" className="inline-flex h-7 w-7 items-center justify-center rounded-full border border-slate-600 bg-slate-700 text-[10px] text-slate-500 transition-colors hover:border-slate-500 hover:bg-slate-600 hover:text-slate-200 disabled:pointer-events-none disabled:opacity-40" onClick={() => setIsEditing(true)} disabled={saving} aria-label={`编辑 ${chapter.title}`}>✎</button>
-          <button type="button" className="inline-flex h-7 w-7 items-center justify-center rounded-full border border-slate-600 bg-slate-700 text-[10px] text-slate-500 transition-colors hover:border-red-500/50 hover:bg-red-500/10 hover:text-red-400 disabled:pointer-events-none disabled:opacity-40" onClick={handleDelete} disabled={saving || totalChapters <= 1} aria-label={`删除 ${chapter.title}`}>✕</button>
+          <button type="button" className="inline-flex h-7 w-7 items-center justify-center rounded-full border border-slate-600 bg-slate-700 text-[10px] text-slate-500 transition-colors hover:border-red-500/50 hover:bg-red-500/10 hover:text-red-400 disabled:pointer-events-none disabled:opacity-40" onClick={handleDelete} disabled={saving || structureLocked || totalChapters <= 1} aria-label={`删除 ${chapter.title}`}>✕</button>
         </div>
       </div>
 
@@ -137,7 +139,7 @@ export function ChapterRow({
           type="button"
           className="ml-3 inline-flex items-center gap-2 rounded-md border border-dashed border-slate-700 bg-transparent px-3 py-1.5 text-[10px] uppercase tracking-[0.16em] text-slate-500 transition-colors hover:border-slate-600 hover:bg-slate-800 hover:text-slate-300 disabled:pointer-events-none disabled:opacity-40"
           onClick={onAddStep}
-          disabled={saving}
+          disabled={saving || structureLocked}
         >
           + 添加步骤
         </button>

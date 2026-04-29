@@ -7,11 +7,12 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { Plus, Trash2, FileCode, GitBranch, Lightbulb } from 'lucide-react';
+import { createUuid } from '@/lib/utils/uuid';
 import type { TeachingBrief } from '@/lib/schemas/index';
 import { AVAILABLE_MODELS } from '@/lib/schemas/model-config';
 import { STYLE_TEMPLATES } from '@/lib/ai/style-templates';
 import { useCreateDraftFormController } from '@/components/drafts/use-create-draft-form-controller';
-import { FIRST_EXPERIENCE_TEMPLATE } from '@/lib/first-experience-template';
+import { FIRST_EXPERIENCE_TEMPLATE, MINI_AGENT_TEMPLATE } from '@/lib/first-experience-template';
 import { GitHubImportTab } from '@/components/create-draft/github-import-tab';
 import type { SourceItemDraft } from '@/components/drafts/create-draft-form-utils';
 
@@ -23,6 +24,8 @@ export function CreateDraftForm() {
     brief,
     modelId,
     setModelId,
+    reviewOutlineFirst,
+    setReviewOutlineFirst,
     generating,
     error,
     setBrief,
@@ -72,26 +75,48 @@ export function CreateDraftForm() {
           </div>
 
           {/* Quick-fill CTA — aligned right on sm+ */}
-          <button
-            type="button"
-            className="group inline-flex shrink-0 items-center gap-2 rounded-lg border border-primary/20 bg-primary/5 px-3.5 py-2 text-xs font-medium text-primary transition-all hover:border-primary/40 hover:bg-primary/10 hover:shadow-[0_0_20px_rgba(var(--primary),0.08)]"
-            onClick={() => {
-              const tmpl = FIRST_EXPERIENCE_TEMPLATE;
-              const src = tmpl.sourceItems[0];
-              updateSourceItem(activeSourceItemId, {
-                label: src.label,
-                language: src.language,
-                content: src.content,
-              });
-              setBrief({
-                ...brief,
-                ...tmpl.teachingBrief,
-              });
-            }}
-          >
-            <span className="font-mono text-[11px] opacity-60 transition-opacity group-hover:opacity-100">{'>'}</span>
-            用 Redux 示例试试
-          </button>
+          <div className="flex flex-wrap items-center gap-2">
+            <button
+              type="button"
+              className="group inline-flex shrink-0 items-center gap-2 rounded-lg border border-primary/20 bg-primary/5 px-3.5 py-2 text-xs font-medium text-primary transition-all hover:border-primary/40 hover:bg-primary/10 hover:shadow-[0_0_20px_rgba(var(--primary),0.08)]"
+              onClick={() => {
+                const tmpl = FIRST_EXPERIENCE_TEMPLATE;
+                const src = tmpl.sourceItems[0];
+                updateSourceItem(activeSourceItemId, {
+                  label: src.label,
+                  language: src.language,
+                  content: src.content,
+                });
+                setBrief({
+                  ...brief,
+                  ...tmpl.teachingBrief,
+                });
+              }}
+            >
+              <span className="font-mono text-[11px] opacity-60 transition-opacity group-hover:opacity-100">{'>'}</span>
+              用 Redux 示例试试
+            </button>
+            <button
+              type="button"
+              className="group inline-flex shrink-0 items-center gap-2 rounded-lg border border-amber-300/30 bg-amber-500/5 px-3.5 py-2 text-xs font-medium text-amber-600 transition-all hover:border-amber-400/40 hover:bg-amber-500/10 hover:shadow-[0_0_20px_rgba(245,158,11,0.08)]"
+              onClick={() => {
+                const tmpl = MINI_AGENT_TEMPLATE;
+                const newItems = tmpl.sourceItems.map((src) => ({
+                  id: createUuid(),
+                  kind: src.kind,
+                  label: src.label,
+                  language: src.language,
+                  content: src.content,
+                }));
+                setSourceItems(newItems);
+                setActiveSourceItemId(newItems[0]!.id);
+                setBrief({ ...brief, ...tmpl.teachingBrief });
+              }}
+            >
+              <span className="font-mono text-[11px] opacity-60 transition-opacity group-hover:opacity-100">{'>'}</span>
+              mini-agent-ts 多文件测试
+            </button>
+          </div>
         </div>
 
         {/* Subtle separator line */}
@@ -410,6 +435,32 @@ export function CreateDraftForm() {
               </select>
             </div>
           </div>
+
+          <div className="rounded-xl border border-border/80 bg-background/60 p-4">
+            <div className="flex items-start justify-between gap-4">
+              <div className="space-y-1">
+                <Label className="flex items-center gap-1.5 font-mono text-[11px] font-normal uppercase tracking-wider text-muted-foreground/70">
+                  <span className="inline-block h-1 w-1 rounded-full bg-amber-500/60" />
+                  生成方式
+                </Label>
+                <p className="text-sm text-foreground">
+                  默认直接生成完整教程；需要时也可以先审阅 AI 生成的大纲。
+                </p>
+                <p className="text-xs leading-5 text-muted-foreground">
+                  先审阅更适合多章节或结构要求强的教程，会多一步确认，但能减少后续返工。
+                </p>
+              </div>
+              <label className="flex shrink-0 items-center gap-3 rounded-full border border-border bg-card px-3 py-2 text-sm text-foreground">
+                <input
+                  type="checkbox"
+                  className="h-4 w-4"
+                  checked={reviewOutlineFirst}
+                  onChange={(event) => setReviewOutlineFirst(event.target.checked)}
+                />
+                先审阅大纲
+              </label>
+            </div>
+          </div>
         </div>
       </section>
 
@@ -424,7 +475,9 @@ export function CreateDraftForm() {
       {/* ── Submit area ── */}
       <div className="flex flex-col items-end gap-2 pt-2 pb-8 sm:flex-row sm:items-center sm:justify-between">
         <p className="hidden text-xs text-muted-foreground/50 sm:block">
-          提交后将自动开始 AI 生成流程
+          {reviewOutlineFirst
+            ? '提交后先生成大纲，确认后再继续生成教程'
+            : '提交后将自动开始 AI 生成流程'}
         </p>
         <Button
           type="submit"
@@ -440,7 +493,7 @@ export function CreateDraftForm() {
           ) : (
             <span className="flex items-center gap-2">
               <span className="font-mono text-xs opacity-60">{'>'}</span>
-              创建并生成
+              {reviewOutlineFirst ? '创建并生成大纲' : '创建并生成'}
             </span>
           )}
         </Button>

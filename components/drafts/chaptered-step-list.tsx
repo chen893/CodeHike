@@ -26,6 +26,7 @@ interface ChapteredStepListProps {
   ) => void;
   onMoveChapter: (chapterId: string, direction: 'up' | 'down') => void;
   onAppendStepToChapter: (chapterId: string) => void;
+  structureLocked?: boolean;
   saving?: boolean;
 }
 
@@ -42,6 +43,7 @@ export function ChapteredStepList({
   onDeleteChapter,
   onMoveChapter,
   onAppendStepToChapter,
+  structureLocked = false,
   saving = false,
 }: ChapteredStepListProps) {
   const sections = useMemo(
@@ -119,6 +121,7 @@ export function ChapteredStepList({
               onMoveDown={() => onMoveChapter(section.id, 'down')}
               onAddStep={() => onAppendStepToChapter(section.id)}
               allChapters={chapters}
+              structureLocked={structureLocked}
               saving={saving}
             />
 
@@ -139,6 +142,7 @@ export function ChapteredStepList({
                       onMoveStepToChapter(step.id, targetId)
                     }
                     onDelete={() => onDeleteStep(step.id)}
+                    structureLocked={structureLocked}
                     saving={saving}
                   />
                 ))}
@@ -158,7 +162,7 @@ export function ChapteredStepList({
         type="button"
         className="w-full rounded-md border border-dashed border-slate-700 px-3 py-3 text-[11px] font-medium uppercase tracking-[0.16em] text-slate-500 transition-colors hover:border-slate-600 hover:bg-slate-800 hover:text-slate-300 disabled:pointer-events-none disabled:opacity-40"
         onClick={onAddChapter}
-        disabled={saving}
+        disabled={saving || structureLocked}
       >
         + 添加章节
       </button>

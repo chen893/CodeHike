@@ -1,6 +1,7 @@
 import * as draftRepo from '../repositories/draft-repository';
 import { replaceStepsRequestSchema } from '../schemas/api';
 import { validateTutorialDraft } from '../utils/validation';
+import { assertStructureEditable } from '../tutorial/structure-lock';
 
 function getSortedIds(values: string[]) {
   return [...values].sort((left, right) => left.localeCompare(right));
@@ -19,6 +20,7 @@ export async function replaceDraftSteps(
 
   const draft = await draftRepo.getDraftById(id, userId);
   if (!draft || !draft.tutorialDraft) throw new Error('Draft not found');
+  assertStructureEditable(draft.tutorialDraft);
 
   const existingIds = getSortedIds(draft.tutorialDraft.steps.map((step) => step.id));
   const nextIds = getSortedIds(parsed.stepIds);

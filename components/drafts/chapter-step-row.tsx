@@ -14,6 +14,7 @@ interface ChapterStepRowProps {
   onMoveDown: () => void;
   onMoveToChapter: (targetChapterId: string) => void;
   onDelete: () => void;
+  structureLocked?: boolean;
   saving?: boolean;
 }
 
@@ -28,6 +29,7 @@ export function ChapterStepRow({
   onMoveDown,
   onMoveToChapter,
   onDelete,
+  structureLocked = false,
   saving = false,
 }: ChapterStepRowProps) {
   const otherChapters = chapters.filter((ch) => ch.id !== step.chapterId);
@@ -52,15 +54,15 @@ export function ChapterStepRow({
       </div>
 
       <div className="mt-2 flex flex-wrap items-center gap-1 opacity-0 transition-opacity group-hover/step:opacity-100 group-focus-within/step:opacity-100">
-        <button type="button" className="inline-flex h-6 w-6 items-center justify-center rounded-full border border-slate-600 bg-slate-700 text-[9px] text-slate-500 transition-colors hover:border-slate-500 hover:bg-slate-600 hover:text-slate-200 disabled:pointer-events-none disabled:opacity-40" onClick={(e) => { e.stopPropagation(); onMoveUp(); }} disabled={saving || stepIndexInChapter === 0} aria-label={`上移 ${step.title}`}>▲</button>
-        <button type="button" className="inline-flex h-6 w-6 items-center justify-center rounded-full border border-slate-600 bg-slate-700 text-[9px] text-slate-500 transition-colors hover:border-slate-500 hover:bg-slate-600 hover:text-slate-200 disabled:pointer-events-none disabled:opacity-40" onClick={(e) => { e.stopPropagation(); onMoveDown(); }} disabled={saving || stepIndexInChapter >= totalStepsInChapter - 1} aria-label={`下移 ${step.title}`}>▼</button>
+        <button type="button" className="inline-flex h-6 w-6 items-center justify-center rounded-full border border-slate-600 bg-slate-700 text-[9px] text-slate-500 transition-colors hover:border-slate-500 hover:bg-slate-600 hover:text-slate-200 disabled:pointer-events-none disabled:opacity-40" onClick={(e) => { e.stopPropagation(); onMoveUp(); }} disabled={saving || structureLocked || stepIndexInChapter === 0} aria-label={`上移 ${step.title}`}>▲</button>
+        <button type="button" className="inline-flex h-6 w-6 items-center justify-center rounded-full border border-slate-600 bg-slate-700 text-[9px] text-slate-500 transition-colors hover:border-slate-500 hover:bg-slate-600 hover:text-slate-200 disabled:pointer-events-none disabled:opacity-40" onClick={(e) => { e.stopPropagation(); onMoveDown(); }} disabled={saving || structureLocked || stepIndexInChapter >= totalStepsInChapter - 1} aria-label={`下移 ${step.title}`}>▼</button>
         {otherChapters.length > 0 && (
-          <select className="h-6 max-w-[80px] rounded-full border border-slate-600 bg-slate-700 px-2 text-[9px] text-slate-500 outline-none transition-colors hover:border-slate-500 hover:text-slate-200 disabled:pointer-events-none disabled:opacity-40" value="" onChange={(e) => { if (e.target.value) { onMoveToChapter(e.target.value); } }} disabled={saving} onClick={(e) => e.stopPropagation()} aria-label={`移动 ${step.title} 到其他章节`}>
+          <select className="h-6 max-w-[80px] rounded-full border border-slate-600 bg-slate-700 px-2 text-[9px] text-slate-500 outline-none transition-colors hover:border-slate-500 hover:text-slate-200 disabled:pointer-events-none disabled:opacity-40" value="" onChange={(e) => { if (e.target.value) { onMoveToChapter(e.target.value); } }} disabled={saving || structureLocked} onClick={(e) => e.stopPropagation()} aria-label={`移动 ${step.title} 到其他章节`}>
             <option value="" disabled>移至</option>
             {otherChapters.map((ch) => (<option key={ch.id} value={ch.id}>{ch.title}</option>))}
           </select>
         )}
-        <button type="button" className="inline-flex h-6 w-6 items-center justify-center rounded-full border border-slate-600 bg-slate-700 text-[9px] text-slate-500 transition-colors hover:border-red-500/50 hover:bg-red-500/10 hover:text-red-400 disabled:pointer-events-none disabled:opacity-40" onClick={(e) => { e.stopPropagation(); onDelete(); }} disabled={saving} aria-label={`删除 ${step.title}`}>✕</button>
+        <button type="button" className="inline-flex h-6 w-6 items-center justify-center rounded-full border border-slate-600 bg-slate-700 text-[9px] text-slate-500 transition-colors hover:border-red-500/50 hover:bg-red-500/10 hover:text-red-400 disabled:pointer-events-none disabled:opacity-40" onClick={(e) => { e.stopPropagation(); onDelete(); }} disabled={saving || structureLocked} aria-label={`删除 ${step.title}`}>✕</button>
       </div>
     </div>
   );

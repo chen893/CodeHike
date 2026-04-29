@@ -1,5 +1,9 @@
 import { NextResponse } from 'next/server';
-import { getRouteErrorMessage, isRouteValidationError } from '@/lib/api/route-errors';
+import {
+  getRouteErrorMessage,
+  isRouteConflictError,
+  isRouteValidationError,
+} from '@/lib/api/route-errors';
 import { updateDraftStructure } from '@/lib/services/update-draft-structure';
 import { auth } from '@/auth';
 
@@ -35,10 +39,13 @@ export async function PUT(
     console.error('更新章节结构失败:', err);
     const message = getRouteErrorMessage(err, '更新章节结构失败');
     const isNotFound = message.includes('not found');
+    const isConflict = isRouteConflictError(err);
     const isValidation = isRouteValidationError(err);
-    const status = isNotFound ? 404 : isValidation ? 400 : 500;
+    const status = isNotFound ? 404 : isConflict ? 409 : isValidation ? 400 : 500;
     const code = isNotFound
       ? 'NOT_FOUND'
+      : isConflict
+        ? 'STRUCTURE_LOCKED'
       : isValidation
         ? 'VALIDATION_ERROR'
         : 'UPDATE_STRUCTURE_ERROR';

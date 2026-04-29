@@ -1,9 +1,11 @@
 import * as draftRepo from '../repositories/draft-repository';
 import { validateTutorialDraft } from '../utils/validation';
+import { assertStructureEditable } from '../tutorial/structure-lock';
 
 export async function deleteDraftStep(id: string, stepId: string, userId: string) {
   const draft = await draftRepo.getDraftById(id, userId);
   if (!draft || !draft.tutorialDraft) throw new Error('Draft not found');
+  assertStructureEditable(draft.tutorialDraft);
 
   const stepIndex = draft.tutorialDraft.steps.findIndex((step) => step.id === stepId);
   if (stepIndex === -1) throw new Error('Step not found');

@@ -2,9 +2,15 @@ import NextAuth from 'next-auth'
 import GitHub from 'next-auth/providers/github'
 import { DrizzleAdapter } from '@auth/drizzle-adapter'
 import { and, eq } from 'drizzle-orm'
+import { cookies, headers } from 'next/headers'
 import { db } from '@/lib/db'
 import { users, accounts, verificationTokens } from '@/lib/db/schema'
 import { withBasePath } from '@/lib/base-path'
+import {
+  canUseDevAuthBypass,
+  DEV_BYPASS_COOKIE_NAME,
+  readDevBypassUserIdFromCookieHeader,
+} from '@/lib/dev-auth'
 import { getAuthCookieOverrides } from '@/lib/dev-instance.mjs'
 
 const linuxdoAuthorizationEndpoint =
@@ -77,7 +83,7 @@ async function syncOAuthAccountTokens(params: {
   }
 }
 
-export const { handlers, auth, signIn, signOut } = NextAuth({
+const nextAuth = NextAuth({
   basePath: '/api/auth',
   redirectProxyUrl: process.env.AUTH_REDIRECT_PROXY_URL,
   cookies: authCookieOverrides,
@@ -162,6 +168,61 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
     },
   },
 })
+
+export const { handlers, signIn, signOut } = nextAuth
+
+async function getDevBypassSession(
+  userId: string | null | undefined,
+  hostHeader: string | null | undefined
+) {
+  if (!canUseDevAuthBypass({ userId, hostHeader })) {
+    return null
+  }
+
+  const [user] = await db
+    .select({
+      id: users.id,
+      name: users.name,
+      email: users.email,
+      image: users.image,
+    })
+    .from(users)
+    .where(eq(users.id, userId))
+    .limit(1)
+
+  if (!user?.id) {
+    return null
+  }
+
+  return {
+    user,
+    expires: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString(),
+  }
+}
+
+export async function auth(...args: Parameters<typeof nextAuth.auth>) {
+  if (process.env.NODE_ENV === 'development') {
+    if (args.length === 0) {
+      const cookieStore = await cookies()
+      const headerStore = await headers()
+      const devUserId = cookieStore.get(DEV_BYPASS_COOKIE_NAME)?.value
+      const hostHeader =
+        headerStore.get('x-forwarded-host') ?? headerStore.get('host')
+      const bypassSession = await getDevBypassSession(devUserId, hostHeader)
+      if (bypassSession) return bypassSession
+    } else if (args[0] instanceof Request) {
+      const devUserId = readDevBypassUserIdFromCookieHeader(
+        args[0].headers.get('cookie')
+      )
+      const hostHeader =
+        args[0].headers.get('x-forwarded-host') ?? args[0].headers.get('host')
+      const bypassSession = await getDevBypassSession(devUserId, hostHeader)
+      if (bypassSession) return bypassSession
+    }
+  }
+
+  return nextAuth.auth(...args)
+}
 
 export async function getCurrentUser() {
   const session = await auth()

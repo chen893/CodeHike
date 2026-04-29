@@ -2,6 +2,7 @@
 
 import { useState } from 'react';
 import type { ClientDraftRecord } from '@/lib/types/client';
+import type { DraftGenerationMode } from '@/lib/types/generation-mode';
 import { DraftWorkspaceContent } from '@/components/drafts/draft-workspace-content';
 import { DraftWorkspaceSidebar } from '@/components/drafts/draft-workspace-sidebar';
 import { useDraftWorkspaceController } from '@/components/drafts/use-draft-workspace-controller';
@@ -10,18 +11,21 @@ interface DraftWorkspaceProps {
   draft: ClientDraftRecord;
   startGeneration?: boolean;
   generationModelId?: string;
+  generationMode?: DraftGenerationMode;
 }
 
 export function DraftWorkspace({
   draft,
   startGeneration = false,
   generationModelId,
+  generationMode,
 }: DraftWorkspaceProps) {
   const [drawerOpen, setDrawerOpen] = useState(false);
   const controller = useDraftWorkspaceController({
     initialDraft: draft,
     startGeneration,
     generationModelId,
+    generationMode,
   });
 
   const sidebarContent = (
@@ -35,6 +39,7 @@ export function DraftWorkspace({
       status={controller.status}
       saving={controller.saving}
       editingMeta={controller.editingMeta}
+      structureLocked={controller.structureLocked}
       canPublish={controller.canPublish}
       canDeleteDraft={controller.canDeleteDraft}
       onSelectStep={(stepId) => {
@@ -121,6 +126,7 @@ export function DraftWorkspace({
           generationRunNonce={controller.generationRunNonce}
           generationContext={controller.generationContext}
           generationModelId={controller.generationModelId}
+          generationMode={controller.generationMode}
           startNewGeneration={controller.startNewGeneration}
           repairingStartIndex={controller.repairingStartIndex}
           firstInvalidStep={controller.firstInvalidStep}

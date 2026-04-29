@@ -7,6 +7,7 @@ import { classifyError } from '@/lib/errors/classify-error';
 import { findFirstInvalidStep } from '@/lib/tutorial/draft-code';
 import { createUuid } from '@/lib/utils/uuid';
 import type { ClientDraftRecord } from '@/lib/types/client';
+import type { DraftGenerationMode } from '@/lib/types/generation-mode';
 import {
   appendDraftStepRequest,
   deleteDraftRequest,
@@ -22,6 +23,7 @@ import {
 } from './draft-client';
 import { buildGenerationContext, resolveSelectedStepIndex } from './draft-workspace-utils';
 import { deriveChapterSections, ensureDraftChapters, DEFAULT_CHAPTER_ID } from '@/lib/tutorial/chapters';
+import { hasGeneratedPatches } from '@/lib/tutorial/structure-lock';
 import {
   addChapterRequest,
   updateChapterRequest,
@@ -34,12 +36,14 @@ interface UseDraftWorkspaceControllerOptions {
   initialDraft: ClientDraftRecord;
   startGeneration?: boolean;
   generationModelId?: string;
+  generationMode?: DraftGenerationMode;
 }
 
 export function useDraftWorkspaceController({
   initialDraft,
   startGeneration = false,
   generationModelId,
+  generationMode,
 }: UseDraftWorkspaceControllerOptions) {
   const router = useRouter();
   const [draft, setDraft] = useState<ClientDraftRecord>(initialDraft);
@@ -61,6 +65,7 @@ export function useDraftWorkspaceController({
   const firstInvalidStep = draft.tutorialDraft ? findFirstInvalidStep(draft.tutorialDraft) : null;
   const generationContext = buildGenerationContext(draft);
   const startNewGeneration = startGeneration || generationRunNonce > 0;
+  const structureLocked = hasGeneratedPatches(draft.tutorialDraft);
 
   // Chapter-related computed state
   const normalizedTutorialDraft = draft.tutorialDraft
@@ -587,6 +592,8 @@ export function useDraftWorkspaceController({
     firstInvalidStep,
     generationContext,
     generationModelId,
+    generationMode,
+    structureLocked,
     chapters,
     chapterSections,
     selectedChapterId,

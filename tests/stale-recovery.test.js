@@ -190,10 +190,16 @@ test('full generation clears old tutorial content before marking draft running',
     'utf8'
   );
 
-  assert.match(serviceSource, /clearDraftTutorialForGeneration\(draftId, tx\)/);
+  assert.match(
+    serviceSource,
+    /clearDraftTutorialForGeneration\(draftId,\s*tx(?:,\s*\{[\s\S]*?preserveOutline:[\s\S]*?\})?\)/
+  );
   assert.match(repoSource, /export async function clearDraftTutorialForGeneration/);
   assert.match(repoSource, /tutorialDraft:\s*null/);
-  assert.match(repoSource, /generationOutline:\s*null/);
+  assert.match(
+    repoSource,
+    /generationOutline:\s*options\?\.preserveOutline\s*\?\s*undefined\s*:\s*null/
+  );
   assert.match(repoSource, /generationQuality:\s*null/);
   assert.match(repoSource, /validationErrors:\s*\[\]/);
 });

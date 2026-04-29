@@ -2,6 +2,7 @@ import * as draftRepo from '../repositories/draft-repository';
 import { validateTutorialDraft } from '../utils/validation';
 import { appendStepRequestSchema } from '../schemas/api';
 import { ensureDraftChapters } from '../tutorial/chapters';
+import { assertStructureEditable } from '../tutorial/structure-lock';
 
 export async function appendDraftStep(
   id: string,
@@ -12,6 +13,7 @@ export async function appendDraftStep(
 
   const draft = await draftRepo.getDraftById(id, userId);
   if (!draft || !draft.tutorialDraft) throw new Error('Draft not found');
+  assertStructureEditable(draft.tutorialDraft);
 
   // Normalize draft to ensure chapters exist (handles legacy drafts)
   const normalizedTd = ensureDraftChapters(draft.tutorialDraft as any);

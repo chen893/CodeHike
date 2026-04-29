@@ -1,6 +1,7 @@
 import NextAuth from 'next-auth'
 import { withBasePath } from '@/lib/base-path'
 import { buildRelativeCallbackUrl } from '@/lib/auth/callback-url'
+import { canUseDevAuthBypass, DEV_BYPASS_COOKIE_NAME } from '@/lib/dev-auth'
 
 // Lightweight auth for middleware — no DB adapter (Edge Runtime compatible)
 // Just verifies the JWT session cookie; user/account creation happens in the full auth.ts
@@ -10,6 +11,10 @@ const { auth } = NextAuth({
 
 export default auth((req) => {
   const { pathname } = req.nextUrl
+  const hasDevBypass = canUseDevAuthBypass({
+    userId: req.cookies.get(DEV_BYPASS_COOKIE_NAME)?.value,
+    hostHeader: req.headers.get('x-forwarded-host') ?? req.headers.get('host'),
+  })
 
   // Public routes: homepage, published tutorials, explore, tags, profiles, auth callbacks, model probe, search
   const isPublicRoute =
@@ -32,7 +37,7 @@ export default auth((req) => {
     pathname.startsWith('/api/user/') ||
     pathname.startsWith('/api/github/')
 
-  if (isProtectedRoute && !req.auth) {
+  if (isProtectedRoute && !req.auth && !hasDevBypass) {
     // API routes should return 401 JSON
     if (pathname.startsWith('/api/')) {
       return Response.json(

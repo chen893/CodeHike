@@ -104,7 +104,7 @@ test('buildTutorialSteps does not leak line annotations inside JSDoc comments', 
 }
 `;
 
-  const steps = await buildTutorialSteps({
+  const { steps } = await buildTutorialSteps({
     meta: {
       title: 'Tool tutorial',
       description: 'Test tutorial',
@@ -161,7 +161,7 @@ test('buildTutorialSteps does not leak line annotations inside JSDoc comments', 
 });
 
 test('buildTutorialSteps uses explicit focus line ranges', async () => {
-  const steps = await buildTutorialSteps({
+  const { steps } = await buildTutorialSteps({
     meta: {
       title: 'Focus tutorial',
       description: 'Test tutorial',
@@ -203,7 +203,7 @@ test('buildTutorialSteps uses explicit focus line ranges', async () => {
 });
 
 test('buildTutorialSteps uses explicit mark line ranges', async () => {
-  const steps = await buildTutorialSteps({
+  const { steps } = await buildTutorialSteps({
     meta: {
       title: 'Mark tutorial',
       description: 'Test tutorial',
@@ -247,7 +247,7 @@ test('buildTutorialSteps uses explicit mark line ranges', async () => {
 
 test('buildTutorialSteps clamps out-of-range mark ranges', async () => {
   // mark references lines 2-5 but file only has 2 lines → clamped to 1-2
-  const steps = await buildTutorialSteps({
+  const { steps } = await buildTutorialSteps({
     meta: {
       title: 'Clamped mark tutorial',
       description: 'Test tutorial',
@@ -281,7 +281,7 @@ test('buildTutorialSteps clamps out-of-range mark ranges', async () => {
 
 test('buildTutorialSteps clamps out-of-range focus ranges', async () => {
   // focus references lines 3-5 but file only has 2 lines → clamped to 2-2
-  const steps = await buildTutorialSteps({
+  const { steps } = await buildTutorialSteps({
     meta: {
       title: 'Clamped focus tutorial',
       description: 'Test tutorial',

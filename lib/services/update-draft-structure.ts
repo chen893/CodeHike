@@ -7,6 +7,7 @@ import {
 import { validateTutorialDraft } from '../utils/validation';
 import type { Chapter } from '../schemas/chapter';
 import type { TutorialDraft, TutorialStep } from '../schemas/tutorial-draft';
+import { assertStructureEditable } from '../tutorial/structure-lock';
 
 const updateStructureInputSchema = z.object({
   chapters: z.array(
@@ -39,6 +40,7 @@ export async function updateDraftStructure(
   if (!draft || !draft.tutorialDraft) {
     throw new Error('Draft not found');
   }
+  assertStructureEditable(draft.tutorialDraft);
 
   const { chapters: inputChapters, stepOrder } = parsed;
 

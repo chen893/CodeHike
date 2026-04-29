@@ -129,6 +129,7 @@ export function RemotePreviewPage({ fetchUrl, title }: RemotePreviewPageProps) {
 
       <TutorialScrollyDemo
         steps={payload.steps}
+        baseStep={payload.baseStep}
         intro={payload.intro}
         title={payload.title}
         fileName={payload.fileName}

@@ -1,5 +1,9 @@
 import { NextResponse } from 'next/server';
-import { getRouteErrorMessage, isRouteValidationError } from '@/lib/api/route-errors';
+import {
+  getRouteErrorMessage,
+  isRouteConflictError,
+  isRouteValidationError,
+} from '@/lib/api/route-errors';
 import { appendDraftStep } from '@/lib/services/append-draft-step';
 import { replaceDraftSteps } from '@/lib/services/replace-draft-steps';
 import { auth } from '@/auth';
@@ -43,9 +47,16 @@ export async function POST(
     console.error('添加步骤失败:', err);
     const message = getRouteErrorMessage(err, '添加步骤失败');
     const isNotFound = message.includes('not found');
+    const isConflict = isRouteConflictError(err);
     const isValidation = isRouteValidationError(err);
-    const status = isNotFound ? 404 : isValidation ? 400 : 500;
-    const code = isNotFound ? 'NOT_FOUND' : isValidation ? 'VALIDATION_ERROR' : 'APPEND_STEP_ERROR';
+    const status = isNotFound ? 404 : isConflict ? 409 : isValidation ? 400 : 500;
+    const code = isNotFound
+      ? 'NOT_FOUND'
+      : isConflict
+        ? 'STRUCTURE_LOCKED'
+        : isValidation
+          ? 'VALIDATION_ERROR'
+          : 'APPEND_STEP_ERROR';
     return NextResponse.json({ message, code }, { status });
   }
 }
@@ -82,9 +93,16 @@ export async function PUT(
     console.error('重排步骤失败:', err);
     const message = getRouteErrorMessage(err, '重排步骤失败');
     const isNotFound = message.includes('not found');
+    const isConflict = isRouteConflictError(err);
     const isValidation = isRouteValidationError(err);
-    const status = isNotFound ? 404 : isValidation ? 400 : 500;
-    const code = isNotFound ? 'NOT_FOUND' : isValidation ? 'VALIDATION_ERROR' : 'REPLACE_STEPS_ERROR';
+    const status = isNotFound ? 404 : isConflict ? 409 : isValidation ? 400 : 500;
+    const code = isNotFound
+      ? 'NOT_FOUND'
+      : isConflict
+        ? 'STRUCTURE_LOCKED'
+        : isValidation
+          ? 'VALIDATION_ERROR'
+          : 'REPLACE_STEPS_ERROR';
     return NextResponse.json({ message, code }, { status });
   }
 }

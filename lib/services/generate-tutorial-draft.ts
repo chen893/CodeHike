@@ -25,8 +25,10 @@ import type {
 import type { DraftGenerationJob } from "../types/generation-job";
 import { isTerminalDraftGenerationJobStatus } from "../types/generation-job";
 import { ensureDraftChapters } from "../tutorial/chapters";
+import { ensureOutlineChapters } from "../tutorial/outline-chapters";
 import type { TutorialOutline } from "../schemas/tutorial-outline";
 import type { SourceItem } from "../schemas/source-item";
+import type { DraftGenerationMode } from "../types/generation-mode";
 
 /**
  * In-memory registry of active generations.
@@ -42,7 +44,12 @@ const activeGenerations = new Map<
   { jobId: string; token: CancelToken }
 >();
 
-const GENERATION_JOB_LEASE_MS = 5 * 60 * 1000;
+// Complex retrieval-based generations can spend well over 5 minutes in the
+// initial outline pass on slower providers (notably MiniMax) before the next
+// lifecycle heartbeat is emitted. Keep the lease comfortably above that window
+// so healthy runs are not recovered as stale mid-flight.
+const GENERATION_JOB_LEASE_MS = 15 * 60 * 1000;
+const GENERATION_HEARTBEAT_INTERVAL_MS = 30 * 1000;
 
 async function recoverStaleGenerationJobsFor(context: string) {
   const recoveredCount = await generationJobRepo.recoverStaleGenerationJobs();
@@ -272,6 +279,7 @@ export async function initiateGeneration(
   draftId: string,
   modelId: string | undefined,
   userId: string,
+  generationMode: DraftGenerationMode = "auto",
 ): Promise<Response> {
   // Clean up stale jobs before checking the draft state. A crashed request can
   // leave drafts.generationState='running'; recovery must get the first chance
@@ -285,8 +293,23 @@ export async function initiateGeneration(
     throw new Error("Generation is already in progress for this draft");
   }
 
+  const savedOutline =
+    generationMode === "fill_from_saved_outline"
+      ? draft.generationOutline
+        ? ensureOutlineChapters(draft.generationOutline)
+        : null
+      : null;
+
+  if (generationMode === "fill_from_saved_outline" && !savedOutline) {
+    throw new Error("outline_missing: 请先生成并保存大纲后，再继续生成教程。");
+  }
+
   const effectiveModel =
-    modelId || process.env.DEFAULT_AI_MODEL || process.env.DEEPSEEK_MODEL || "minimax/MiniMax-M2.7";
+    modelId ||
+    draft.generationModel ||
+    process.env.DEFAULT_AI_MODEL ||
+    process.env.DEEPSEEK_MODEL ||
+    "minimax/MiniMax-M2.7";
 
   let job: DraftGenerationJob;
   const startedAt = new Date();
@@ -305,12 +328,21 @@ export async function initiateGeneration(
       },
       tx
     );
-    await draftRepo.clearDraftTutorialForGeneration(draftId, tx);
+    await draftRepo.clearDraftTutorialForGeneration(draftId, tx, {
+      preserveOutline: generationMode === "fill_from_saved_outline",
+    });
     await draftRepo.updateDraftGenerationState(draftId, "running", undefined, tx);
     await draftRepo.updateDraftActiveGenerationJobId(draftId, job.id, tx);
   });
 
-  return initiateGenerationStream(draftId, draft, effectiveModel, job!);
+  return initiateGenerationStream(
+    draftId,
+    draft,
+    effectiveModel,
+    job!,
+    generationMode,
+    savedOutline,
+  );
 }
 
 /**
@@ -321,6 +353,8 @@ async function initiateGenerationStream(
   draft: any,
   model: string,
   job: DraftGenerationJob,
+  generationMode: DraftGenerationMode,
+  savedOutline: TutorialOutline | null,
 ): Promise<Response> {
   const cancelToken: CancelToken = { value: false };
   const lifecycleHooks = createJobLifecycleHooks(job.id, draftId, draft.sourceItems);
@@ -336,6 +370,29 @@ async function initiateGenerationStream(
 
   let stream: ReadableStream<Uint8Array>;
   let result: Promise<MultiPhaseResult>;
+  let heartbeatTimer: NodeJS.Timeout | null = null;
+
+  const stopHeartbeat = () => {
+    if (!heartbeatTimer) return;
+    clearInterval(heartbeatTimer);
+    heartbeatTimer = null;
+  };
+
+  const startHeartbeat = () => {
+    stopHeartbeat();
+    heartbeatTimer = setInterval(() => {
+      const now = new Date();
+      generationJobRepo.updateDraftGenerationJob(jobId, {
+        heartbeatAt: now,
+        leaseUntil: getLeaseUntil(now),
+      }).catch((err) => {
+        console.error(
+          `[generate-v2] Failed to refresh heartbeat for draft ${draftId}, job ${jobId}:`,
+          err,
+        );
+      });
+    }, GENERATION_HEARTBEAT_INTERVAL_MS);
+  };
 
   const useAgentLoop = process.env.USE_AGENT_LOOP === '1';
 
@@ -348,6 +405,15 @@ async function initiateGenerationStream(
           cancelToken,
           lifecycleHooks,
           checkDbCancel,
+          {
+            mode:
+              generationMode === "outline_review"
+                ? "outline_only"
+                : generationMode === "fill_from_saved_outline"
+                  ? "fill_from_outline"
+                  : "full",
+            initialOutline: savedOutline ?? undefined,
+          },
         )
       : createMultiPhaseGenerationStream(
           draft.sourceItems,
@@ -356,6 +422,15 @@ async function initiateGenerationStream(
           cancelToken,
           lifecycleHooks,
           checkDbCancel,
+          {
+            mode:
+              generationMode === "outline_review"
+                ? "outline_only"
+                : generationMode === "fill_from_saved_outline"
+                  ? "fill_from_outline"
+                  : "full",
+            initialOutline: savedOutline ?? undefined,
+          },
         );
     stream = generationStream.stream;
     result = generationStream.result;
@@ -370,9 +445,11 @@ async function initiateGenerationStream(
     throw err;
   }
 
+  startHeartbeat();
+
   // Persist all content asynchronously after generation completes.
   // Always clean up the registry entry regardless of outcome.
-  persistContent(draftId, job.id, result, draft, model)
+  persistContent(draftId, job.id, result, draft, model, generationMode)
     .catch((persistErr) => {
       console.error(
         `[generate-v2] Failed to persist content for draft ${draftId}:`,
@@ -380,6 +457,7 @@ async function initiateGenerationStream(
       );
     })
     .finally(() => {
+      stopHeartbeat();
       const activeGeneration = activeGenerations.get(draftId);
       if (activeGeneration?.jobId === job.id) {
         activeGenerations.delete(draftId);
@@ -400,8 +478,15 @@ async function initiateGenerationStream(
         }
         controller.close();
       } catch (err: any) {
-        console.error(`[generate-v2] Stream error for draft ${draftId}, job ${job.id}:`, err?.message ?? err);
-        controller.error(err);
+        const message = err?.message ?? String(err);
+        if (!message.includes("Controller is already closed")) {
+          console.error(`[generate-v2] Stream error for draft ${draftId}, job ${job.id}:`, message);
+        }
+        try {
+          controller.error(err);
+        } catch {
+          // Ignore secondary stream errors after the response has already closed.
+        }
       } finally {
         reader.releaseLock();
       }
@@ -424,6 +509,7 @@ async function persistContent(
   resultPromise: Promise<MultiPhaseResult>,
   draft: any,
   model: string,
+  generationMode: DraftGenerationMode,
 ) {
   const startTime = Date.now();
 
@@ -444,8 +530,46 @@ async function persistContent(
       phase: "persist",
       heartbeatAt: persistStartedAt,
       leaseUntil: getLeaseUntil(persistStartedAt),
-      retryCount,
+        retryCount,
     });
+
+    if (generationMode === "outline_review" || !tutorialDraft) {
+      const finishedAt = new Date();
+      await db.transaction(async (tx) => {
+        await draftRepo.saveDraftOutlineReviewResult(
+          draftId,
+          outline,
+          model,
+          tx,
+        );
+        await draftRepo.updateDraftGenerationState(
+          draftId,
+          "idle",
+          undefined,
+          tx,
+        );
+        await generationJobRepo.updateDraftGenerationJob(
+          jobId,
+          {
+            status: "succeeded",
+            phase: "outline",
+            finishedAt,
+            heartbeatAt: finishedAt,
+            leaseUntil: null,
+            currentStepIndex: null,
+            totalSteps: outline.steps.length,
+            retryCount,
+            errorCode: null,
+            errorMessage: null,
+            failureDetail: null,
+            outlineSnapshot: outline,
+            stepTitlesSnapshot: outline.steps.map((step) => step.title),
+          },
+          tx,
+        );
+      });
+      return;
+    }
 
     const validation = await validateTutorialDraft(tutorialDraft);
     const totalMs = Date.now() - startTime;

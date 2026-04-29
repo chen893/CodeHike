@@ -18,7 +18,7 @@ export async function getDraftPreviewPageData(id: string, userId: string) {
   }
 
   const normalizedDraft = ensureDraftChapters(draft.tutorialDraft as any);
-  const steps = await buildTutorialSteps(normalizedDraft);
+  const { steps, baseStep } = await buildTutorialSteps(normalizedDraft);
 
   const chapters = deriveChapterSections(normalizedDraft.chapters, normalizedDraft.steps);
   const stepChapterMeta = deriveStepChapterMeta(normalizedDraft.chapters, normalizedDraft.steps);
@@ -26,6 +26,7 @@ export async function getDraftPreviewPageData(id: string, userId: string) {
   return {
     draft,
     steps,
+    baseStep,
     title: draft.tutorialDraft.meta.title,
     fileName: draft.tutorialDraft.meta.fileName,
     intro: draft.tutorialDraft.intro.paragraphs,

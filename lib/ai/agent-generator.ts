@@ -29,6 +29,7 @@ import { validateTutorialDraft } from '../utils/validation';
 import { PatchValidationError } from '../errors/error-types';
 import { createProvider, getMaxOutputTokens } from './provider-registry';
 import { parseJsonFromText } from './parse-json-text';
+import { finalizeToolCallJson } from './finalize-tool-call-json';
 import { tryAutoFixPatches } from './patch-auto-fix';
 import {
   findProgressivePlaceholderTargets,
@@ -48,6 +49,7 @@ import {
   type MultiPhaseStream,
   type MultiPhaseResult,
   type MultiPhaseLifecyclePhase,
+  type MultiPhaseGenerationOptions,
 } from './multi-phase-generator';
 import {
   microCompact,
@@ -236,10 +238,12 @@ export function createAgentGenerationStream(
   cancelToken?: CancelToken,
   lifecycleHooks: MultiPhaseLifecycleHooks = {},
   checkDbCancel?: () => Promise<boolean>,
+  options: MultiPhaseGenerationOptions = {},
 ): MultiPhaseStream {
   const encoder = new TextEncoder();
   const model = createProvider(modelId);
   const logger = createAgentRunLogger();
+  const executionMode = options.mode ?? 'full';
 
   let resolveResult: (value: MultiPhaseResult) => void;
   let rejectResult: (reason: any) => void;
@@ -318,7 +322,9 @@ export function createAgentGenerationStream(
 
         let outline: TutorialOutline | undefined; // let for fullReplan reassignment
         try {
-          if (modelSupportsRetrieval) {
+          if (options.initialOutline) {
+            outline = options.initialOutline;
+          } else if (modelSupportsRetrieval) {
             // Retrieval-based outline: directory tree + tools
             const directorySummary = buildDirectorySummary(sourceItems);
             const budget = createTokenBudgetSession({
@@ -329,6 +335,8 @@ export function createAgentGenerationStream(
             const { systemPrompt, userPrompt } = buildRetrievalOutlinePrompt(
               sourceItems, teachingBrief, directorySummary,
             );
+            const adaptedSystemPrompt = adaptPromptForModel(systemPrompt, modelId);
+            const adaptedUserPrompt = adaptPromptForModel(userPrompt, modelId);
 
             console.log('[agent-loop] Retrieval outline prompt sizes:', {
               systemPromptChars: systemPrompt.length,
@@ -348,15 +356,25 @@ export function createAgentGenerationStream(
 
                 const result = await generateText({
                   model,
-                  system: adaptPromptForModel(systemPrompt, modelId),
-                  prompt: adaptPromptForModel(userPrompt, modelId),
+                  system: adaptedSystemPrompt,
+                  prompt: adaptedUserPrompt,
                   tools: sourceTools,
                   stopWhen: stepCountIs(20),
                   maxOutputTokens: getMaxOutputTokens(modelId),
                 });
 
                 console.log('[agent-loop] generateText completed in', Date.now() - generateStart, 'ms, response length:', result.text?.length ?? 0);
-                outline = parseJsonFromText(result.text, tutorialOutlineSchema, 'outline-retrieval');
+                outline = await finalizeToolCallJson({
+                  label: 'outline-retrieval',
+                  schema: tutorialOutlineSchema,
+                  model,
+                  modelId,
+                  systemPrompt,
+                  userPrompt,
+                  initialText: result.text,
+                  responseMessages: result.response.messages,
+                  logPrefix: 'agent-loop',
+                });
                 lastOutlineError = null;
                 break;
               } catch (err: any) {
@@ -451,6 +469,19 @@ export function createAgentGenerationStream(
           ));
           controller.close();
           rejectResult(new MultiPhaseGenerationError('outline', outlineErr));
+          return;
+        }
+
+        if (executionMode === 'outline_only') {
+          controller.enqueue(encoder.encode(
+            sseEvent('done', { success: true, mode: 'outline_only' })
+          ));
+          resolveResult({
+            draft: null,
+            outline,
+            retryCount: 0,
+          });
+          controller.close();
           return;
         }
 

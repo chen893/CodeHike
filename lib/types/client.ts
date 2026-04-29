@@ -41,6 +41,7 @@ export interface ClientTutorialPayload {
   fileName: string;
   intro: string[];
   steps: unknown[];
+  baseStep?: unknown;
   chapters?: unknown[];
   stepChapterMeta?: Record<string, unknown>;
 }

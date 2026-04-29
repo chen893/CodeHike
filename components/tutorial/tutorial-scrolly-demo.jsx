@@ -12,6 +12,7 @@ import { CreateCTA } from "./create-cta"
 
 export function TutorialScrollyDemo({
   steps,
+  baseStep,
   intro,
   title,
   fileName,
@@ -50,7 +51,7 @@ export function TutorialScrollyDemo({
           className="sticky flex items-start justify-center overflow-hidden"
           style={stickyViewportStyle}
         >
-          <SelectedCodeFrame steps={steps} fileName={fileName} />
+          <SelectedCodeFrame steps={steps} fileName={fileName} baseStep={baseStep} />
         </div>
       </aside>
 
@@ -111,7 +112,7 @@ export function TutorialScrollyDemo({
         )}
 
         {intro ? (
-          <section className="flex min-h-auto flex-col justify-center py-10 pl-4 sm:py-12 sm:pl-8 lg:min-h-screen lg:pl-12 lg:pr-16 lg:pb-16 lg:pt-12">
+          <section data-intro-section className="flex min-h-auto flex-col justify-center py-10 pl-4 sm:py-12 sm:pl-8 lg:min-h-screen lg:pl-12 lg:pr-16 lg:pb-16 lg:pt-12">
             <h1 className="text-5xl font-extrabold leading-tight text-foreground sm:text-6xl lg:text-7xl">
               {title || "教程渲染器"}
             </h1>

@@ -48,6 +48,7 @@ export default async function TutorialPage({ params }) {
       <main className="min-h-screen pt-12">
         <TutorialScrollyDemo
           steps={tutorial.steps}
+          baseStep={tutorial.baseStep}
           intro={tutorial.intro}
           title={tutorial.title}
           fileName={tutorial.fileName}

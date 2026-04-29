@@ -1,5 +1,9 @@
 import { NextResponse } from 'next/server';
-import { getRouteErrorMessage, isRouteValidationError } from '@/lib/api/route-errors';
+import {
+  getRouteErrorMessage,
+  isRouteConflictError,
+  isRouteValidationError,
+} from '@/lib/api/route-errors';
 import { deleteDraftStep } from '@/lib/services/delete-draft-step';
 import { updateDraftStep } from '@/lib/services/update-draft-step';
 import { auth } from '@/auth';
@@ -65,13 +69,13 @@ export async function DELETE(
     console.error('删除步骤失败:', err);
     const message = getRouteErrorMessage(err, '删除步骤失败');
     const isNotFound = message.includes('not found');
+    const isConflict = isRouteConflictError(err);
     const isValidation = isRouteValidationError(err);
-    const isConflict = err instanceof Error && err.message.toLowerCase().startsWith('conflict:');
     const status = isNotFound ? 404 : isConflict ? 409 : isValidation ? 400 : 500;
     const code = isNotFound
       ? 'NOT_FOUND'
       : isConflict
-        ? 'CONFLICT'
+        ? 'STRUCTURE_LOCKED'
         : isValidation
           ? 'VALIDATION_ERROR'
           : 'DELETE_STEP_ERROR';

@@ -37,6 +37,7 @@ export default async function DraftPreviewPage({
       </div>
       <TutorialScrollyDemo
         steps={preview.steps}
+        baseStep={preview.baseStep}
         intro={preview.intro}
         title={preview.title}
         fileName={preview.fileName}

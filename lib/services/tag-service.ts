@@ -7,6 +7,7 @@
  */
 
 import { generateTags } from '../ai/tag-generator';
+import * as publishedRepo from '../repositories/published-tutorial-repository';
 import * as tagRepo from '../repositories/tag-repository';
 import * as tagRelationRepo from '../repositories/tag-relation-repository';
 import * as candidateRepo from '../repositories/tag-candidate-repository';
@@ -106,6 +107,30 @@ export async function setTutorialTagsByName(
   trackTutorialTagged(tutorialId, tags.map((t) => t.name));
 
   return tags;
+}
+
+export async function resolvePublishedTutorialIdBySlug(
+  slug: string,
+): Promise<string | null> {
+  const tutorial = await publishedRepo.getPublishedBySlug(slug);
+  return tutorial?.id ?? null;
+}
+
+export async function getTutorialTagsBySlug(
+  slug: string,
+): Promise<TutorialTag[] | null> {
+  const tutorialId = await resolvePublishedTutorialIdBySlug(slug);
+  if (!tutorialId) return null;
+  return getTutorialTags(tutorialId);
+}
+
+export async function setTutorialTagsBySlug(
+  slug: string,
+  tagNames: string[],
+): Promise<TutorialTag[] | null> {
+  const tutorialId = await resolvePublishedTutorialIdBySlug(slug);
+  if (!tutorialId) return null;
+  return setTutorialTagsByName(tutorialId, tagNames);
 }
 
 /**

@@ -326,9 +326,33 @@ export function MobileCodeFrame({ step, fileName, index, total }) {
   )
 }
 
-export function SelectedCodeFrame({ steps, fileName }) {
+export function SelectedCodeFrame({ steps, fileName, baseStep }) {
   const [selectedIndex] = useSelectedIndex()
-  const step = steps[selectedIndex] ?? steps[0]
+  const [showBase, setShowBase] = useState(Boolean(baseStep))
+
+  useEffect(() => {
+    if (!baseStep) {
+      setShowBase(false)
+      return
+    }
+
+    const intro = document.querySelector('[data-intro-section]')
+    if (!intro) {
+      setShowBase(false)
+      return
+    }
+
+    const check = () => {
+      const rect = intro.getBoundingClientRect()
+      setShowBase(rect.bottom > window.innerHeight * 0.5)
+    }
+    check()
+    window.addEventListener('scroll', check, { passive: true })
+    return () => window.removeEventListener('scroll', check)
+  }, [baseStep])
+
+  const showingBase = showBase && baseStep
+  const step = showingBase ? baseStep : (steps[selectedIndex] ?? steps[0])
 
   const [viewedFilesMap, setViewedFilesMap] = useState({})
 
@@ -336,22 +360,24 @@ export function SelectedCodeFrame({ steps, fileName }) {
     if (!step) return
     const defaultFile = step.activeFile || fileName
     if (!defaultFile) return
+    const key = showingBase ? 'base' : selectedIndex
     setViewedFilesMap(prev => {
-      const current = prev[selectedIndex] || []
+      const current = prev[key] || []
       if (current.includes(defaultFile)) return prev
-      return { ...prev, [selectedIndex]: [...current, defaultFile] }
+      return { ...prev, [key]: [...current, defaultFile] }
     })
-  }, [selectedIndex, step, fileName])
+  }, [selectedIndex, step, fileName, showingBase])
 
-  const viewedFiles = viewedFilesMap[selectedIndex] || []
+  const viewedFilesKey = showingBase ? 'base' : selectedIndex
+  const viewedFiles = viewedFilesMap[viewedFilesKey] || []
 
   const handleFileViewed = useCallback((file) => {
     setViewedFilesMap(prev => {
-      const current = prev[selectedIndex] || []
+      const current = prev[viewedFilesKey] || []
       if (current.includes(file)) return prev
-      return { ...prev, [selectedIndex]: [...current, file] }
+      return { ...prev, [viewedFilesKey]: [...current, file] }
     })
-  }, [selectedIndex])
+  }, [viewedFilesKey])
 
   if (!step) {
     return (
@@ -363,8 +389,8 @@ export function SelectedCodeFrame({ steps, fileName }) {
 
   return (
     <CodeFrame
-      key={selectedIndex}
-      title={step.eyebrow}
+      key={showingBase ? 'base' : selectedIndex}
+      title={showingBase ? '起始代码' : step.eyebrow}
       code={step.highlighted}
       fileName={fileName}
       highlightedFiles={step.highlightedFiles}

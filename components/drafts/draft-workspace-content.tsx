@@ -6,6 +6,7 @@ import { GenerationProgress, type GenerationContext } from '@/components/generat
 import { StepEditor } from '@/components/step-editor';
 import { Button } from '@/components/ui/button';
 import type { ClientDraftRecord } from '@/lib/types/client';
+import type { DraftGenerationMode } from '@/lib/types/generation-mode';
 
 const surfaceClass =
   'rounded-xl bg-white p-5 sm:p-6';
@@ -21,6 +22,7 @@ interface DraftWorkspaceContentProps {
   generationRunNonce: number;
   generationContext: GenerationContext;
   generationModelId?: string;
+  generationMode?: DraftGenerationMode;
   startNewGeneration: boolean;
   repairingStartIndex: number | null;
   firstInvalidStep: {
@@ -51,6 +53,7 @@ export function DraftWorkspaceContent({
   generationRunNonce,
   generationContext,
   generationModelId,
+  generationMode,
   startNewGeneration,
   repairingStartIndex,
   firstInvalidStep,
@@ -72,6 +75,7 @@ export function DraftWorkspaceContent({
           onExit={onExitGenerationProgress}
           context={generationContext}
           modelId={generationModelId}
+          generationMode={generationMode}
           startNewGeneration={startNewGeneration}
         />
       )}

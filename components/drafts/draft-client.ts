@@ -2,6 +2,8 @@
 
 import { withBasePath } from '@/lib/base-path';
 import type { SourceItem, TeachingBrief } from '@/lib/schemas';
+import type { TutorialOutline } from '@/lib/schemas/tutorial-outline';
+import type { DraftGenerationMode } from '@/lib/types/generation-mode';
 import type {
   ClientDraftRecord,
   ClientApiErrorResponse,
@@ -93,6 +95,19 @@ export async function updateDraftRequest(draftId: string, data: unknown) {
   });
 
   return readJsonResponse<ClientDraftRecord>(response, '保存元信息失败');
+}
+
+export async function updateDraftOutlineRequest(
+  draftId: string,
+  outline: TutorialOutline
+) {
+  const response = await fetch(withBasePath(`/api/drafts/${draftId}/outline`), {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(outline),
+  });
+
+  return readJsonResponse<ClientDraftRecord>(response, '保存大纲失败');
 }
 
 export async function appendDraftStepRequest(draftId: string, step: ClientDraftStep) {
@@ -246,11 +261,21 @@ export async function deleteChapterRequest(
   return readJsonResponse<ClientDraftRecord>(response, '删除章节失败');
 }
 
-export async function startDraftGenerationStream(draftId: string, signal: AbortSignal, modelId?: string) {
+export async function startDraftGenerationStream(
+  draftId: string,
+  signal: AbortSignal,
+  options?: {
+    modelId?: string;
+    generationMode?: DraftGenerationMode;
+  }
+) {
   const response = await fetch(withBasePath(`/api/drafts/${draftId}/generate`), {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ modelId }),
+    body: JSON.stringify({
+      modelId: options?.modelId,
+      generationMode: options?.generationMode,
+    }),
     signal,
   });
 

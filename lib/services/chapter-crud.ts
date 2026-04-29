@@ -4,6 +4,7 @@ import { validateTutorialDraft } from '../utils/validation';
 import { createUuid } from '../utils/uuid';
 import type { Chapter } from '../schemas/chapter';
 import type { TutorialDraft } from '../schemas/tutorial-draft';
+import { assertStructureEditable } from '../tutorial/structure-lock';
 
 /**
  * Add a new empty chapter to a draft.
@@ -19,6 +20,7 @@ export async function addChapter(
   if (!draft || !draft.tutorialDraft) {
     throw new Error('Draft not found');
   }
+  assertStructureEditable(draft.tutorialDraft);
 
   // Ensure legacy drafts have chapters
   const td: TutorialDraft = ensureDraftChapters(draft.tutorialDraft as any);
@@ -121,6 +123,7 @@ export async function deleteChapter(
   if (!draft || !draft.tutorialDraft) {
     throw new Error('Draft not found');
   }
+  assertStructureEditable(draft.tutorialDraft);
 
   const td: TutorialDraft = ensureDraftChapters(draft.tutorialDraft as any);
 

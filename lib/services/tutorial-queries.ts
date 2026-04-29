@@ -63,7 +63,7 @@ export async function getTutorialPageData(slug: string, userId?: string) {
   }
 
   const normalizedDraft = ensureDraftChapters(record.tutorial);
-  const steps = await buildTutorialSteps(normalizedDraft);
+  const { steps, baseStep } = await buildTutorialSteps(normalizedDraft);
 
   // Compute chapter metadata for the reading page
   const chapters = deriveChapterSections(normalizedDraft.chapters, normalizedDraft.steps);
@@ -75,6 +75,7 @@ export async function getTutorialPageData(slug: string, userId?: string) {
   return {
     source: record.source,
     steps,
+    baseStep,
     title: record.tutorial.meta.title,
     description: record.tutorial.meta.description,
     fileName: record.tutorial.meta.fileName,

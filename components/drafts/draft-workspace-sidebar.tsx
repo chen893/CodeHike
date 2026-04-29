@@ -29,6 +29,7 @@ interface DraftWorkspaceSidebarProps {
   status: DraftStatusInfo;
   saving: boolean;
   editingMeta: boolean;
+  structureLocked: boolean;
   canPublish: boolean;
   canDeleteDraft: boolean;
   onSelectStep: (stepId: string) => void;
@@ -68,6 +69,7 @@ export function DraftWorkspaceSidebar({
   status,
   saving,
   editingMeta,
+  structureLocked,
   canPublish,
   canDeleteDraft,
   onSelectStep,
@@ -138,6 +140,12 @@ export function DraftWorkspaceSidebar({
             </span>
           </div>
         )}
+
+        {hasDraft && structureLocked && (
+          <div className="mt-3 rounded-lg border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-xs leading-5 text-amber-100">
+            已生成 patch 链，章节与步骤结构已锁定。现在只建议编辑文案和局部代码。
+          </div>
+        )}
       </div>
 
       <div className="min-h-0 flex-1 flex flex-col py-3">
@@ -150,7 +158,7 @@ export function DraftWorkspaceSidebar({
                 size="sm"
                 className="h-7 px-2 text-xs text-slate-500 hover:text-slate-300 hover:bg-slate-800"
                 onClick={() => void onAddChapter()}
-                disabled={saving}
+                disabled={saving || structureLocked}
               >
                 <Plus className="h-3.5 w-3.5" />
                 章节
@@ -171,6 +179,7 @@ export function DraftWorkspaceSidebar({
                 onDeleteChapter={onDeleteChapter}
                 onMoveChapter={onMoveChapter}
                 onAppendStepToChapter={onAppendStepToChapter}
+                structureLocked={structureLocked}
                 saving={saving}
               />
             </div>
@@ -204,7 +213,7 @@ export function DraftWorkspaceSidebar({
         )}
 
         <div className="grid grid-cols-2 gap-2">
-          <Button variant="outline" size="sm" className="h-8 border-slate-600 bg-slate-800 text-slate-300 shadow-none hover:bg-slate-700 hover:text-slate-100" onClick={() => void onAppendStep()} disabled={saving || !hasDraft}>
+          <Button variant="outline" size="sm" className="h-8 border-slate-600 bg-slate-800 text-slate-300 shadow-none hover:bg-slate-700 hover:text-slate-100" onClick={() => void onAppendStep()} disabled={saving || !hasDraft || structureLocked}>
             <Plus className="h-3.5 w-3.5" />
             添加步骤
           </Button>

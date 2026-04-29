@@ -242,7 +242,8 @@ export async function writePartialTutorial(
 
 export async function clearDraftTutorialForGeneration(
   id: string,
-  tx?: TransactionClient
+  tx?: TransactionClient,
+  options?: { preserveOutline?: boolean }
 ): Promise<DraftRecord | null> {
   const executor = tx || db;
   const [row] = await executor
@@ -251,7 +252,7 @@ export async function clearDraftTutorialForGeneration(
       tutorialDraft: null,
       syncState: 'empty',
       tutorialDraftInputHash: null,
-      generationOutline: null,
+      generationOutline: options?.preserveOutline ? undefined : null,
       generationQuality: null,
       validationValid: false,
       validationErrors: [],
@@ -277,7 +278,7 @@ export async function updateDraftGenerationState(
   if (state === 'failed' && errorMessage) {
     updates.generationErrorMessage = errorMessage;
   }
-  if (state === 'running' || state === 'succeeded') {
+  if (state === 'running' || state === 'succeeded' || state === 'idle') {
     updates.generationErrorMessage = null;
   }
 
@@ -355,6 +356,26 @@ export async function updateDraftGenerationOutline(
     .update(drafts)
     .set({
       generationOutline: outline as any,
+      updatedAt: new Date(),
+    })
+    .where(eq(drafts.id, id))
+    .returning();
+  return row ? toDraftRecord(row) : null;
+}
+
+export async function saveDraftOutlineReviewResult(
+  id: string,
+  outline: TutorialOutline,
+  model: string,
+  tx?: TransactionClient
+): Promise<DraftRecord | null> {
+  const executor = tx || db;
+  const [row] = await executor
+    .update(drafts)
+    .set({
+      generationOutline: outline as any,
+      generationModel: model,
+      generationLastAt: new Date(),
       updatedAt: new Date(),
     })
     .where(eq(drafts.id, id))

@@ -9,6 +9,7 @@ import {
   regenerateDraftStepRequest,
   startDraftGenerationStream,
 } from '@/components/drafts/draft-client';
+import type { DraftGenerationMode } from '@/lib/types/generation-mode';
 import type {
   GenerationProgressViewModel,
   OutlineData,
@@ -21,6 +22,7 @@ interface UseGenerationProgressOptions {
   draftId: string;
   onComplete: () => void;
   modelId?: string;
+  generationMode?: DraftGenerationMode;
   startNewGeneration?: boolean;
 }
 
@@ -56,6 +58,7 @@ export function useGenerationProgress({
   draftId,
   onComplete,
   modelId,
+  generationMode,
   startNewGeneration = false,
 }: UseGenerationProgressOptions): GenerationProgressViewModel {
   const [runNonce, setRunNonce] = useState(0);
@@ -85,6 +88,24 @@ export function useGenerationProgress({
   const isCancelledRef = useRef(false);
   // Tracks the job ID emitted by the SSE stream for job-based reconnection
   const jobIdRef = useRef<string | null>(null);
+
+  useEffect(() => {
+    if (!startNewGeneration || typeof window === 'undefined') return;
+
+    const url = new URL(window.location.href);
+    let mutated = false;
+
+    for (const key of ['generate', 'generationMode', 'modelId']) {
+      if (!url.searchParams.has(key)) continue;
+      url.searchParams.delete(key);
+      mutated = true;
+    }
+
+    if (!mutated) return;
+
+    const nextUrl = `${url.pathname}${url.search}${url.hash}`;
+    window.history.replaceState(window.history.state, '', nextUrl);
+  }, [startNewGeneration]);
 
   useEffect(() => {
     setV2Status('connecting');
@@ -231,9 +252,11 @@ export function useGenerationProgress({
         if (!job) {
           // No active or recent job — start a new generation
           // Fall through to SSE stream below
-        } else if (job.status === 'succeeded') {
+        } else if (job.status === 'succeeded' && !shouldStartNewGeneration) {
           onCompleteRef.current();
           return;
+        } else if (job.status === 'succeeded' && shouldStartNewGeneration) {
+          // Fall through to start a new stream below.
         } else if (job.status === 'cancelled') {
           if (shouldStartNewGeneration) {
             // Fall through to SSE stream below.
@@ -313,7 +336,10 @@ export function useGenerationProgress({
 
       // ── Start a new SSE generation stream ──
       try {
-        const stream = await startDraftGenerationStream(draftId, controller.signal, modelId);
+        const stream = await startDraftGenerationStream(draftId, controller.signal, {
+          modelId,
+          generationMode,
+        });
         const reader = stream.getReader();
         const decoder = new TextDecoder();
         let lineBuffer = '';
@@ -373,7 +399,7 @@ export function useGenerationProgress({
       controller.abort();
       controllerRef.current = null;
     };
-  }, [draftId, modelId, runNonce, startNewGeneration]);
+  }, [draftId, generationMode, modelId, runNonce, startNewGeneration]);
 
   useEffect(() => {
     if (

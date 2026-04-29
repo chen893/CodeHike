@@ -1,11 +1,11 @@
 import { notFound, redirect } from 'next/navigation';
-import { DraftWorkspace } from '@/components/draft-workspace';
+import { getCurrentUser } from '@/auth';
+import { OutlineReviewWorkspace } from '@/components/drafts/outline-review-workspace';
 import { getDraftDetail } from '@/lib/services/draft-queries';
 import { isDraftGenerationMode } from '@/lib/types/generation-mode';
 import { toClientDraftRecord } from '@/lib/utils/client-data';
-import { getCurrentUser } from '@/auth';
 
-export default async function DraftPage({
+export default async function DraftOutlinePage({
   params,
   searchParams,
 }: {
@@ -13,26 +13,29 @@ export default async function DraftPage({
   searchParams?: Promise<Record<string, string | string[] | undefined>>;
 }) {
   const user = await getCurrentUser();
-  if (!user?.id) {
-    const { id } = await params;
-    redirect(`/auth/signin?callbackUrl=${encodeURIComponent(`/drafts/${id}`)}`);
-  }
-  const userId = user.id;
-
   const { id } = await params;
-  const query = searchParams ? await searchParams : {};
-  const draft = await getDraftDetail(id, userId);
 
+  if (!user?.id) {
+    redirect(`/auth/signin?callbackUrl=${encodeURIComponent(`/drafts/${id}/outline`)}`);
+  }
+
+  const draft = await getDraftDetail(id, user.id);
   if (!draft) notFound();
 
+  if (draft.tutorialDraft) {
+    redirect(`/drafts/${id}`);
+  }
+
+  const query = searchParams ? await searchParams : {};
   const generateParam = query.generate;
   const modelIdParam = query.modelId;
   const generationModeParam = query.generationMode;
+
   const shouldStartGeneration =
     generateParam === '1' || generateParam === 'true';
 
   if (shouldStartGeneration && draft.generationState === 'running') {
-    redirect(`/drafts/${id}`);
+    redirect(`/drafts/${id}/outline`);
   }
 
   const generationModelId =
@@ -41,18 +44,10 @@ export default async function DraftPage({
     typeof generationModeParam === 'string' &&
     isDraftGenerationMode(generationModeParam)
       ? generationModeParam
-      : undefined;
-
-  if (generationMode === 'outline_review') {
-    const redirectQuery = new URLSearchParams();
-    if (shouldStartGeneration) redirectQuery.set('generate', '1');
-    if (generationModelId) redirectQuery.set('modelId', generationModelId);
-    redirectQuery.set('generationMode', 'outline_review');
-    redirect(`/drafts/${id}/outline?${redirectQuery.toString()}`);
-  }
+      : 'outline_review';
 
   return (
-    <DraftWorkspace
+    <OutlineReviewWorkspace
       draft={toClientDraftRecord(draft)}
       startGeneration={shouldStartGeneration}
       generationModelId={generationModelId}
