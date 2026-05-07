@@ -8,10 +8,8 @@
  * Fallback now uses a simple lang -> tag name mapping from the vocabulary.
  */
 
-import { generateText, Output } from 'ai';
 import { createProvider } from './provider-registry';
-import { supportsNativeStructuredOutput } from './model-capabilities';
-import { parseJsonFromText } from './parse-json-text';
+import { generateStructuredObject } from './structured-output-adapter';
 import { z } from 'zod';
 
 const tagOutputSchema = z.object({
@@ -51,23 +49,16 @@ ${vocabularySection}
 
 Prefer a mix of technology, category, and level tags. Return a JSON object with "tags" (from vocabulary) and optionally "newTagCandidates" (max 2 new tags not in vocabulary).`;
 
-    const useNative = supportsNativeStructuredOutput(modelId);
-
-    const generateOpts: Parameters<typeof generateText>[0] = {
+    const result = await generateStructuredObject<z.infer<typeof tagOutputSchema>>({
+      label: 'tag-generator',
+      schemaName: 'tutorial_tags',
+      schema: tagOutputSchema,
       model,
       prompt,
       maxOutputTokens: 256,
-    };
-
-    if (useNative) {
-      generateOpts.output = Output.object({ schema: tagOutputSchema });
-    }
-
-    const result = await generateText(generateOpts);
-
-    const output = useNative && result.output
-      ? result.output
-      : parseJsonFromText(result.text, tagOutputSchema, 'tag-generator');
+      modelId,
+    });
+    const output = result.output;
 
     return {
       tags: output.tags || [],

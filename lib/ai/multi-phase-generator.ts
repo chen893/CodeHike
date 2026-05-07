@@ -1,4 +1,5 @@
-import { generateText, Output, stepCountIs } from 'ai';
+import { generateText, stepCountIs } from 'ai';
+import type { z } from 'zod';
 import { tutorialOutlineSchema } from '../schemas/tutorial-outline';
 import { legacyTutorialStepSchema, type TutorialStep, type TutorialDraft } from '../schemas/tutorial-draft';
 import type { TutorialOutline } from '../schemas/tutorial-outline';
@@ -13,8 +14,7 @@ import { ensureDraftChapters, DEFAULT_CHAPTER_ID } from '../tutorial/chapters';
 import { validateTutorialDraft } from '../utils/validation';
 import { PatchValidationError } from '../errors/error-types';
 import { createProvider, getMaxOutputTokens } from './provider-registry';
-import { parseJsonFromText } from './parse-json-text';
-import { finalizeToolCallJson } from './finalize-tool-call-json';
+import { generateStructuredObject } from './structured-output-adapter';
 import { tryAutoFixPatches } from './patch-auto-fix';
 import {
   findProgressivePlaceholderTargets,
@@ -26,11 +26,17 @@ import { createSourceTools, createScopedSourceTools, buildDirectorySummary } fro
 import { createTokenBudgetSession, estimateTokens, getMaxInputTokens } from './token-budget';
 import { validateOutlineSourceScope, deriveStepSourceScope } from './outline-source-scope';
 import { recommendStepBudget } from './step-budget';
+import type {
+  AgentFailureCategory,
+  AgentLoopMetrics,
+  AgentRuntimeAction,
+} from './agent-runtime/types';
 
 const MAX_STEP_RETRIES = 3;
 const LOC_WARNING_FLOOR = 60;
 const LOC_DEFAULT_BUDGET = 8;
 const STEP_FILL_TOOLS_ENABLED = process.env.VIBEDOCS_STEP_FILL_TOOLS === '1';
+type GeneratedTutorialStep = z.infer<typeof legacyTutorialStepSchema>;
 
 function unique(values: string[]) {
   return [...new Set(values)];
@@ -80,6 +86,7 @@ export interface MultiPhaseResult {
   draft: TutorialDraft | null;
   outline: TutorialOutline;
   retryCount: number;
+  agentMetrics?: AgentLoopMetrics;
 }
 
 export type MultiPhaseExecutionMode =
@@ -111,16 +118,29 @@ export interface MultiPhaseStepRetryEvent {
   attempt: number;
   retryCount: number;
   errorMessage: string;
+  category?: AgentFailureCategory;
 }
 
 export interface MultiPhaseStepCompletedEvent {
   stepIndex: number;
   totalSteps: number;
   retryCount: number;
+  result?: 'pass' | 'repaired' | 'replanned';
+}
+
+export interface MultiPhaseActionEvent {
+  action: AgentRuntimeAction;
+  stepIndex?: number | null;
+  totalSteps?: number | null;
+  retryCount?: number;
+  attempt?: number;
+  errorMessage?: string;
+  category?: AgentFailureCategory;
 }
 
 export interface MultiPhaseLifecycleHooks {
   onPhase?: (event: MultiPhasePhaseEvent) => Promise<void> | void;
+  onAction?: (event: MultiPhaseActionEvent) => Promise<void> | void;
   onOutlineReady?: (outline: TutorialOutline) => Promise<void> | void;
   onStepRetry?: (event: MultiPhaseStepRetryEvent) => Promise<void> | void;
   onStepCompleted?: (event: MultiPhaseStepCompletedEvent) => Promise<void> | void;
@@ -324,17 +344,20 @@ export function createMultiPhaseGenerationStream(
                 });
 
                 console.log('[DEBUG] generateText completed in', Date.now() - generateStart, 'ms, response length:', result.text?.length ?? 0);
-                outline = await finalizeToolCallJson({
+                const finalized = await generateStructuredObject<TutorialOutline>({
                   label: 'outline-retrieval',
+                  schemaName: 'tutorial_outline',
                   schema: tutorialOutlineSchema,
                   model,
                   modelId,
-                  systemPrompt,
-                  userPrompt,
-                  initialText: result.text,
+                  system: systemPrompt,
+                  prompt: userPrompt,
                   responseMessages: result.response.messages,
-                  logPrefix: 'multi-phase',
+                  preferredModes: ['forced_output_tool', 'prompted_json'],
+                  allowOutputTool: modelSupportsRetrieval,
+                  maxOutputTokens: getMaxOutputTokens(modelId),
                 });
+                outline = finalized.output;
                 lastOutlineError = null;
                 break; // success
               } catch (err: any) {
@@ -365,24 +388,23 @@ export function createMultiPhaseGenerationStream(
             });
 
             const generateStart = Date.now();
-            const useStructuredOutput = useNativeStructuredOutput;
-            const generateOpts: Parameters<typeof generateText>[0] = {
+            const generated = await generateStructuredObject<TutorialOutline>({
+              label: 'outline-legacy',
+              schemaName: 'tutorial_outline',
+              schema: tutorialOutlineSchema,
               model,
-              system: adaptPromptForModel(systemPrompt, modelId),
-              prompt: adaptPromptForModel(userPrompt, modelId),
+              modelId,
+              system: systemPrompt,
+              prompt: userPrompt,
               maxOutputTokens: getMaxOutputTokens(modelId),
-            };
-            if (useStructuredOutput) {
-              generateOpts.output = Output.object({ schema: tutorialOutlineSchema });
-            }
-            const result = await generateText(generateOpts);
-            console.log('[DEBUG] generateText completed in', Date.now() - generateStart, 'ms, response length:', result.text?.length ?? 0);
-
-            if (useStructuredOutput && result.output) {
-              outline = result.output as TutorialOutline;
-            } else {
-              outline = parseJsonFromText(result.text, tutorialOutlineSchema, 'outline-legacy');
-            }
+              useNativeStructuredOutput,
+              preferredModes: useNativeStructuredOutput
+                ? ['native_object', 'forced_output_tool', 'prompted_json']
+                : ['forced_output_tool', 'prompted_json'],
+              allowOutputTool: modelSupportsRetrieval,
+            });
+            console.log('[DEBUG] generateText completed in', Date.now() - generateStart, 'ms, response length:', generated.rawText?.length ?? 0);
+            outline = generated.output;
           }
 
           // Ensure meta.lang/fileName are populated from baseCode
@@ -537,8 +559,37 @@ export function createMultiPhaseGenerationStream(
                   generateOptions.tools = scopedTools;
                   generateOptions.stopWhen = stepCountIs(6);
                 }
-                const result = await generateText(generateOptions);
-                const parsedStep = parseJsonFromText(result.text, legacyTutorialStepSchema, `step-${i + 1}-retrieval`);
+                let generatedStep;
+                if (scopedTools) {
+                  const result = await generateText(generateOptions);
+                  generatedStep = await generateStructuredObject<GeneratedTutorialStep>({
+                    label: `step-${i + 1}-retrieval`,
+                    schemaName: 'tutorial_step',
+                    schema: legacyTutorialStepSchema,
+                    model,
+                    modelId,
+                    system: systemPrompt,
+                    prompt: userPrompt,
+                    responseMessages: result.response.messages,
+                    maxOutputTokens: getMaxOutputTokens(modelId),
+                    preferredModes: ['forced_output_tool', 'prompted_json'],
+                    allowOutputTool: modelSupportsRetrieval,
+                  });
+                } else {
+                  generatedStep = await generateStructuredObject<GeneratedTutorialStep>({
+                    label: `step-${i + 1}-retrieval`,
+                    schemaName: 'tutorial_step',
+                    schema: legacyTutorialStepSchema,
+                    model,
+                    modelId,
+                    system: systemPrompt,
+                    prompt: userPrompt,
+                    maxOutputTokens: getMaxOutputTokens(modelId),
+                    preferredModes: ['forced_output_tool', 'prompted_json'],
+                    allowOutputTool: modelSupportsRetrieval,
+                  });
+                }
+                const parsedStep = generatedStep.output;
                 step = { ...parsedStep, chapterId: outline.steps[i]?.chapterId ?? parsedStep.chapterId ?? DEFAULT_CHAPTER_ID };
               } else {
                 // Legacy full-injection step fill (existing behavior)
@@ -551,24 +602,22 @@ export function createMultiPhaseGenerationStream(
                   lastError ?? undefined
                 );
 
-                const stepGenerateOpts: Parameters<typeof generateText>[0] = {
+                const generatedStep = await generateStructuredObject<GeneratedTutorialStep>({
+                  label: `step-${i + 1}-legacy`,
+                  schemaName: 'tutorial_step',
+                  schema: legacyTutorialStepSchema,
                   model,
-                  system: adaptPromptForModel(systemPrompt, modelId),
-                  prompt: adaptPromptForModel(userPrompt, modelId),
+                  modelId,
+                  system: systemPrompt,
+                  prompt: userPrompt,
                   maxOutputTokens: getMaxOutputTokens(modelId),
-                };
-                if (useNativeStructuredOutput) {
-                  stepGenerateOpts.output = Output.object({ schema: legacyTutorialStepSchema });
-                }
-                const result = await generateText(stepGenerateOpts);
-
-                let parsedStep;
-                if (useNativeStructuredOutput && result.output) {
-                  // Output.object() validates against legacyTutorialStepSchema already
-                  parsedStep = result.output;
-                } else {
-                  parsedStep = parseJsonFromText(result.text, legacyTutorialStepSchema, `step-${i + 1}-legacy`);
-                }
+                  useNativeStructuredOutput,
+                  preferredModes: useNativeStructuredOutput
+                    ? ['native_object', 'forced_output_tool', 'prompted_json']
+                    : ['forced_output_tool', 'prompted_json'],
+                  allowOutputTool: modelSupportsRetrieval,
+                });
+                const parsedStep = generatedStep.output;
                 step = { ...parsedStep, chapterId: outline.steps[i]?.chapterId ?? parsedStep.chapterId ?? DEFAULT_CHAPTER_ID };
               }
 

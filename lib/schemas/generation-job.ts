@@ -1,6 +1,42 @@
 import { z } from 'zod';
 import { tutorialOutlineSchema } from './tutorial-outline';
 
+export const agentRuntimeActionSchema = z.enum([
+  'planning',
+  'step_fill',
+  'repair',
+  'replan',
+  'compress',
+  'validate',
+]);
+
+export const agentFailureCategorySchema = z.enum([
+  'repairable',
+  'unrecoverable',
+  'provider',
+  'validation',
+  'unknown',
+]);
+
+export const agentStateSnapshotSchema = z.object({
+  checkpointIndex: z.number().int(),
+  currentAction: agentRuntimeActionSchema,
+  currentAttempt: z.number().int().min(0),
+  retryCount: z.number().int().min(0),
+  replanCount: z.number().int().min(0),
+  compressionCount: z.number().int().min(0),
+  driftSignals: z.object({
+    consecutiveRepairFailures: z.number().int().min(0),
+    consecutiveDegradedSteps: z.number().int().min(0),
+  }),
+  lastFailure: z.object({
+    stepIndex: z.number().int().nullable(),
+    category: agentFailureCategorySchema,
+    message: z.string().nullable(),
+  }).nullable(),
+  lastCommittedSnapshotHash: z.string().nullable(),
+});
+
 export const generationJobStatusSchema = z.enum([
   'queued',
   'running',
@@ -53,10 +89,14 @@ export const generationJobSchema = z.object({
   failureDetail: generationJobFailureDetailSchema.nullable(),
   outlineSnapshot: tutorialOutlineSchema.nullable(),
   stepTitlesSnapshot: z.array(z.string()).nullable(),
+  agentState: agentStateSnapshotSchema.nullable(),
   createdAt: z.date(),
   updatedAt: z.date(),
 });
 
+export type AgentRuntimeAction = z.infer<typeof agentRuntimeActionSchema>;
+export type AgentFailureCategory = z.infer<typeof agentFailureCategorySchema>;
+export type AgentStateSnapshot = z.infer<typeof agentStateSnapshotSchema>;
 export type GenerationJobStatus = z.infer<typeof generationJobStatusSchema>;
 export type GenerationJobPhase = z.infer<typeof generationJobPhaseSchema>;
 export type GenerationJobErrorCode = z.infer<typeof generationJobErrorCodeSchema>;

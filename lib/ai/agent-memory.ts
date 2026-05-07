@@ -11,7 +11,7 @@
  *   - Project memory is future scope (cross-generation patterns)
  */
 
-import type { StepOutcome, RepairRecord } from './agent-generator';
+import type { StepOutcome, RepairRecord } from './agent-runtime/types';
 
 // ---------------------------------------------------------------------------
 // Types
@@ -28,6 +28,8 @@ export interface SessionMemory {
   recordStepOutcome(outcome: StepOutcome): void;
   /** Record a repair attempt. */
   recordRepair(record: RepairRecord): void;
+  /** Get all completed-step outcomes. */
+  getStepOutcomes(): StepOutcome[];
   /** Get all repair history. */
   getRepairHistory(): RepairRecord[];
   /** Get strategies that succeeded (for injection into prompts). */
@@ -71,6 +73,10 @@ export function createSessionMemory(
 
     recordRepair(record: RepairRecord) {
       repairHistory.push(record);
+    },
+
+    getStepOutcomes() {
+      return [...stepOutcomes];
     },
 
     getRepairHistory() {

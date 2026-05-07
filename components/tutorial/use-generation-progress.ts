@@ -4,9 +4,8 @@ import { useEffect, useRef, useState } from 'react';
 import {
   cancelDraftGeneration,
   DraftClientError,
-  fetchDraft,
   fetchGenerationStatus,
-  regenerateDraftStepRequest,
+  retryDraftFromStepRequest,
   startDraftGenerationStream,
 } from '@/components/drafts/draft-client';
 import type { DraftGenerationMode } from '@/lib/types/generation-mode';
@@ -280,12 +279,19 @@ export function useGenerationProgress({
               setErrorLabel('大纲生成失败');
             } else if (
               job.errorCode === 'STEP_GENERATION_FAILED' ||
-              job.errorCode === 'PATCH_VALIDATION_FAILED'
+              job.errorCode === 'PATCH_VALIDATION_FAILED' ||
+              (job.errorCode === 'DRAFT_VALIDATION_FAILED' &&
+                job.currentStepIndex != null &&
+                job.currentStepIndex >= 0)
             ) {
               setErrorPhase('step-fill');
               if (job.currentStepIndex != null && job.currentStepIndex >= 0) {
                 setFailedStepIndex(job.currentStepIndex);
-                setErrorLabel(`步骤 ${job.currentStepIndex + 1} 填充失败`);
+                setErrorLabel(
+                  job.errorCode === 'DRAFT_VALIDATION_FAILED'
+                    ? `步骤 ${job.currentStepIndex + 1} 校验失败`
+                    : `步骤 ${job.currentStepIndex + 1} 填充失败`
+                );
               }
             } else if (job.errorCode === 'JOB_STALE') {
               setErrorLabel('生成任务超时');
@@ -450,12 +456,19 @@ export function useGenerationProgress({
             setErrorLabel('大纲生成失败');
           } else if (
             job.errorCode === 'STEP_GENERATION_FAILED' ||
-            job.errorCode === 'PATCH_VALIDATION_FAILED'
+            job.errorCode === 'PATCH_VALIDATION_FAILED' ||
+            (job.errorCode === 'DRAFT_VALIDATION_FAILED' &&
+              job.currentStepIndex != null &&
+              job.currentStepIndex >= 0)
           ) {
             setErrorPhase('step-fill');
             if (job.currentStepIndex != null && job.currentStepIndex >= 0) {
               setFailedStepIndex(job.currentStepIndex);
-              setErrorLabel(`步骤 ${job.currentStepIndex + 1} 填充失败`);
+              setErrorLabel(
+                job.errorCode === 'DRAFT_VALIDATION_FAILED'
+                  ? `步骤 ${job.currentStepIndex + 1} 校验失败`
+                  : `步骤 ${job.currentStepIndex + 1} 填充失败`
+              );
             }
           } else if (job.errorCode === 'JOB_STALE') {
             setErrorLabel('生成任务超时');
@@ -570,64 +583,27 @@ export function useGenerationProgress({
     setErrorMessage(null);
     clearErrorState();
 
-    // Fetch current draft to check if steps were persisted
-    let draft: Awaited<ReturnType<typeof fetchDraft>> | null = null;
-    try {
-      draft = await fetchDraft(draftId);
-    } catch {
-      // Can't fetch draft, fall back to full retry
-      await handleRetry();
-      return;
-    }
-
-    const steps = draft.tutorialDraft?.steps;
-    if (!steps || stepIndex < 0 || stepIndex >= steps.length) {
-      // No persisted steps to regenerate from, fall back to full retry
-      await handleRetry();
-      return;
-    }
-
     // Reuse the same regeneration logic as the workspace controller:
-    // iterate from failed step and call regenerateDraftStepRequest for each.
+    // recover from the failed step index, even if that step never persisted.
     setV2Status('filling-step');
     setCurrentStepIndex(stepIndex);
     clearErrorState();
 
-    let currentRetryStep = stepIndex;
-
     try {
-      let latestDraft = draft;
-
-      for (let i = stepIndex; i < steps.length; i++) {
-        currentRetryStep = i;
-        setCurrentStepIndex(i);
-        const step = latestDraft.tutorialDraft!.steps[i];
-        const instruction =
-          i === stepIndex
-            ? '生成在当前步骤失败。请基于最新的前文代码，重新生成当前步骤及其代码变化，确保教程从这里继续衔接。'
-            : '前面的步骤已经重新生成。请基于最新前文代码继续生成当前步骤，确保 patches、focus 和 marks 都与当前代码精确匹配。';
-
-        latestDraft = await regenerateDraftStepRequest(draftId, step.id, {
-          mode: 'step',
-          instruction,
-        });
-
-        setCompletedSteps((prev) =>
-          prev.includes(i) ? prev : [...prev, i]
-        );
-        if (latestDraft.tutorialDraft?.steps[i]?.title) {
-          setStepTitles((prev) => ({ ...prev, [i]: latestDraft.tutorialDraft!.steps[i].title }));
-        }
-      }
+      await retryDraftFromStepRequest(draftId, {
+        stepIndex,
+        instruction:
+          '生成在当前步骤失败。请基于最新的前文代码，重新生成当前步骤及其代码变化，确保教程从这里继续衔接。',
+      });
 
       // Per-step regeneration does not create a generation job; finish by
       // reloading the draft instead of polling the previous failed job.
       onCompleteRef.current();
     } catch (err) {
       setErrorMessage(err instanceof Error ? err.message : '从失败步骤重试失败');
-      setFailedStepIndex(currentRetryStep);
+      setFailedStepIndex(stepIndex);
       setErrorPhase('step-fill');
-      setErrorLabel(`步骤 ${currentRetryStep + 1} 重新生成失败`);
+      setErrorLabel(`步骤 ${stepIndex + 1} 重新生成失败`);
       setV2Status('error');
     }
   }

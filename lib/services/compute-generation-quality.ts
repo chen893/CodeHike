@@ -1,17 +1,7 @@
 import type { TutorialDraft } from '../schemas/tutorial-draft';
 import type { TutorialOutline } from '../schemas/tutorial-outline';
 import type { GenerationQuality } from '../schemas/generation-quality';
-
-// ---------------------------------------------------------------------------
-// Agent loop metrics input type
-// ---------------------------------------------------------------------------
-
-export interface AgentLoopMetrics {
-  outcomes: Array<{ stepIndex: number; result: string; repairCount: number; patchStrategy: string; locChange: number }>;
-  repairHistory: Array<{ stepIndex: number; attempts: number; strategy: string; outcome: string; errorMessage: string }>;
-  replanCount: number;
-  compressionCount: number;
-}
+import type { AgentLoopMetrics } from '../ai/agent-runtime/types';
 
 /**
  * Compute quality metrics for a generated tutorial.

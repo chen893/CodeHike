@@ -243,14 +243,14 @@ export async function writePartialTutorial(
 export async function clearDraftTutorialForGeneration(
   id: string,
   tx?: TransactionClient,
-  options?: { preserveOutline?: boolean }
+  options?: { preserveOutline?: boolean; preservePartialDraft?: boolean }
 ): Promise<DraftRecord | null> {
   const executor = tx || db;
   const [row] = await executor
     .update(drafts)
     .set({
-      tutorialDraft: null,
-      syncState: 'empty',
+      tutorialDraft: options?.preservePartialDraft ? undefined : null,
+      syncState: options?.preservePartialDraft ? undefined : 'empty',
       tutorialDraftInputHash: null,
       generationOutline: options?.preserveOutline ? undefined : null,
       generationQuality: null,

@@ -15,13 +15,18 @@ import {
   fetchDraft,
   publishDraftRequest,
   regenerateDraftStepRequest,
+  retryDraftFromStepRequest,
   replaceDraftStepsRequest,
   unpublishDraftRequest,
   updateDraftRequest,
   updateDraftStepRequest,
   DraftClientError,
 } from './draft-client';
-import { buildGenerationContext, resolveSelectedStepIndex } from './draft-workspace-utils';
+import {
+  buildGenerationContext,
+  deriveFailedGenerationStepIndex,
+  resolveSelectedStepIndex,
+} from './draft-workspace-utils';
 import { deriveChapterSections, ensureDraftChapters, DEFAULT_CHAPTER_ID } from '@/lib/tutorial/chapters';
 import { hasGeneratedPatches } from '@/lib/tutorial/structure-lock';
 import {
@@ -63,6 +68,7 @@ export function useDraftWorkspaceController({
   const selectedStepId = selectedStep?.id ?? null;
   const status = getDraftStatusInfo(draft);
   const firstInvalidStep = draft.tutorialDraft ? findFirstInvalidStep(draft.tutorialDraft) : null;
+  const failedGenerationStepIndex = deriveFailedGenerationStepIndex(draft);
   const generationContext = buildGenerationContext(draft);
   const startNewGeneration = startGeneration || generationRunNonce > 0;
   const structureLocked = hasGeneratedPatches(draft.tutorialDraft);
@@ -330,20 +336,23 @@ export function useDraftWorkspaceController({
   }
 
   async function retryFromFailedStep(stepIndex: number) {
-    if (!draft.tutorialDraft) {
+    if (!draft.generationOutline) {
       retryGeneration();
       return;
     }
 
-    const steps = draft.tutorialDraft.steps;
-    if (stepIndex < 0 || stepIndex >= steps.length) {
+    const outlineSteps = draft.generationOutline.steps ?? [];
+    if (stepIndex < 0 || stepIndex >= outlineSteps.length) {
       retryGeneration();
       return;
     }
 
-    const step = steps[stepIndex];
+    const stepTitle =
+      draft.tutorialDraft?.steps[stepIndex]?.title ??
+      outlineSteps[stepIndex]?.title ??
+      `步骤 ${stepIndex + 1}`;
     const confirmation = window.confirm(
-      `将从第 ${stepIndex + 1} 步《${step.title}》开始，重新生成该步骤及其后续步骤。继续吗？`
+      `将从第 ${stepIndex + 1} 步《${stepTitle}》开始，重新生成该步骤及其后续步骤。继续吗？`
     );
     if (!confirmation) return;
 
@@ -352,25 +361,16 @@ export function useDraftWorkspaceController({
     setSelectedStepIndex(stepIndex);
 
     try {
-      let latestDraft = draft;
-
-      for (
-        let currentIndex = stepIndex;
-        currentIndex < latestDraft.tutorialDraft!.steps.length;
-        currentIndex++
-      ) {
-        const currentStep = latestDraft.tutorialDraft!.steps[currentIndex];
-        const instruction =
-          currentIndex === stepIndex
-            ? '生成在当前步骤失败。请基于最新的前文代码，重新生成当前步骤及其代码变化，确保教程从这里继续衔接。'
-            : '前面的步骤已经重新生成。请基于最新前文代码继续生成当前步骤，确保 patches、focus 和 marks 都与当前代码精确匹配。';
-
-        latestDraft = await regenerateDraftStepRequest(draft.id, currentStep.id, {
-          mode: 'step',
-          instruction,
-        });
-        applyDraftUpdate(latestDraft, currentStep.id, currentIndex);
-      }
+      const updated = await retryDraftFromStepRequest(draft.id, {
+        stepIndex,
+        instruction:
+          '生成在当前步骤失败。请基于最新的前文代码，重新生成当前步骤及其代码变化，确保教程从这里继续衔接。',
+      });
+      applyDraftUpdate(
+        updated,
+        updated.tutorialDraft?.steps[stepIndex]?.id ?? null,
+        stepIndex
+      );
     } catch (error) {
       // Pass structured errorCode when available so classifyError uses
       // code-driven classification instead of fragile message matching.
@@ -414,6 +414,10 @@ export function useDraftWorkspaceController({
     if (draft.publishedSlug) {
       router.push(`/${draft.publishedSlug}`);
     }
+  }
+
+  function openOutlineReview() {
+    router.push(`/drafts/${draft.id}/outline`);
   }
 
   function toggleEditingMeta() {
@@ -590,6 +594,7 @@ export function useDraftWorkspaceController({
     repairingStartIndex,
     status,
     firstInvalidStep,
+    failedGenerationStepIndex,
     generationContext,
     generationModelId,
     generationMode,
@@ -624,6 +629,7 @@ export function useDraftWorkspaceController({
     exitGenerationProgress,
     openPreview,
     openPublishedTutorial,
+    openOutlineReview,
     addChapter,
     updateChapter,
     deleteChapter,

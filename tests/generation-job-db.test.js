@@ -69,6 +69,7 @@ CREATE TABLE "draft_generation_jobs" (
   "failure_detail" jsonb,
   "outline_snapshot" jsonb,
   "step_titles_snapshot" jsonb,
+  "agent_state" jsonb,
   "created_at" timestamp with time zone DEFAULT clock_timestamp() NOT NULL,
   "updated_at" timestamp with time zone DEFAULT clock_timestamp() NOT NULL,
   CONSTRAINT "draft_generation_jobs_draft_id_drafts_id_fk" FOREIGN KEY ("draft_id") REFERENCES "drafts"("id") ON DELETE cascade,

@@ -22,7 +22,7 @@ export default async function DraftOutlinePage({
   const draft = await getDraftDetail(id, user.id);
   if (!draft) notFound();
 
-  if (draft.tutorialDraft) {
+  if (draft.tutorialDraft && draft.generationState !== 'failed') {
     redirect(`/drafts/${id}`);
   }
 
@@ -30,6 +30,7 @@ export default async function DraftOutlinePage({
   const generateParam = query.generate;
   const modelIdParam = query.modelId;
   const generationModeParam = query.generationMode;
+  const fromStepParam = query.fromStep;
 
   const shouldStartGeneration =
     generateParam === '1' || generateParam === 'true';
@@ -40,6 +41,10 @@ export default async function DraftOutlinePage({
 
   const generationModelId =
     typeof modelIdParam === 'string' ? modelIdParam : undefined;
+  const recoveryStartStepIndex =
+    typeof fromStepParam === 'string' && /^\d+$/.test(fromStepParam)
+      ? Number(fromStepParam)
+      : undefined;
   const generationMode =
     typeof generationModeParam === 'string' &&
     isDraftGenerationMode(generationModeParam)
@@ -52,6 +57,7 @@ export default async function DraftOutlinePage({
       startGeneration={shouldStartGeneration}
       generationModelId={generationModelId}
       generationMode={generationMode}
+      recoveryStartStepIndex={recoveryStartStepIndex}
     />
   );
 }

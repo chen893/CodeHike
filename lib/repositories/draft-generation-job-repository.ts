@@ -7,6 +7,7 @@ import {
   type DraftGenerationJob,
 } from '../types/generation-job';
 import type {
+  AgentStateSnapshot,
   GenerationJobErrorCode,
   GenerationJobFailureDetail,
   GenerationJobPhase,
@@ -42,6 +43,7 @@ function toDraftGenerationJob(row: DraftGenerationJobRow): DraftGenerationJob {
     failureDetail: (row.failureDetail as GenerationJobFailureDetail | null) ?? null,
     outlineSnapshot: (row.outlineSnapshot as TutorialOutline | null) ?? null,
     stepTitlesSnapshot: (row.stepTitlesSnapshot as string[] | null) ?? null,
+    agentState: (row.agentState as AgentStateSnapshot | null) ?? null,
     createdAt: row.createdAt,
     updatedAt: row.updatedAt,
   };
@@ -66,6 +68,7 @@ export async function createDraftGenerationJob(data: {
   failureDetail?: GenerationJobFailureDetail | null;
   outlineSnapshot?: TutorialOutline | null;
   stepTitlesSnapshot?: string[] | null;
+  agentState?: AgentStateSnapshot | null;
 }, tx?: TransactionClient): Promise<DraftGenerationJob> {
   const executor = tx || db;
   const [row] = await executor
@@ -89,6 +92,7 @@ export async function createDraftGenerationJob(data: {
       failureDetail: data.failureDetail as Record<string, unknown> | null,
       outlineSnapshot: data.outlineSnapshot as unknown | null,
       stepTitlesSnapshot: data.stepTitlesSnapshot,
+      agentState: data.agentState ?? null,
     })
     .returning();
 
@@ -158,6 +162,7 @@ async function applyDraftGenerationJobUpdate(
     failureDetail?: GenerationJobFailureDetail | null;
     outlineSnapshot?: TutorialOutline | null;
     stepTitlesSnapshot?: string[] | null;
+    agentState?: AgentStateSnapshot | null;
   },
   executor: typeof db | TransactionClient
 ): Promise<DraftGenerationJob | null> {
@@ -188,6 +193,9 @@ async function applyDraftGenerationJobUpdate(
   }
   if (data.stepTitlesSnapshot !== undefined) {
     updates.stepTitlesSnapshot = data.stepTitlesSnapshot;
+  }
+  if (data.agentState !== undefined) {
+    updates.agentState = data.agentState;
   }
 
   const [row] = await executor
@@ -233,6 +241,7 @@ export async function updateDraftGenerationJob(
     failureDetail?: GenerationJobFailureDetail | null;
     outlineSnapshot?: TutorialOutline | null;
     stepTitlesSnapshot?: string[] | null;
+    agentState?: AgentStateSnapshot | null;
   },
   tx?: TransactionClient
 ): Promise<DraftGenerationJob | null> {

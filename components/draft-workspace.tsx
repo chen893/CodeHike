@@ -130,12 +130,15 @@ export function DraftWorkspace({
           startNewGeneration={controller.startNewGeneration}
           repairingStartIndex={controller.repairingStartIndex}
           firstInvalidStep={controller.firstInvalidStep}
+          failedGenerationStepIndex={controller.failedGenerationStepIndex}
           onGenerationComplete={controller.completeGeneration}
           onRegenerateFailedTail={controller.regenerateFailedTail}
+          onRetryFromFailedStep={controller.retryFromFailedStep}
           onSaveMeta={controller.saveMeta}
           onSaveStep={controller.saveStep}
           onRegenerateStep={controller.regenerateStep}
           onRetryGeneration={controller.retryGeneration}
+          onOpenOutlineReview={controller.openOutlineReview}
           onExitGenerationProgress={controller.exitGenerationProgress}
         />
       </main>

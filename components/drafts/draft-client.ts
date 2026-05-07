@@ -148,6 +148,19 @@ export async function regenerateDraftStepRequest(
   return readJsonResponse<ClientDraftRecord>(response, '重新生成失败');
 }
 
+export async function retryDraftFromStepRequest(
+  draftId: string,
+  input: { stepIndex: number; instruction?: string }
+) {
+  const response = await fetch(withBasePath(`/api/drafts/${draftId}/retry-from-step`), {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(input),
+  });
+
+  return readJsonResponse<ClientDraftRecord>(response, '从失败步骤重试失败');
+}
+
 export async function replaceDraftStepsRequest(draftId: string, stepIds: string[]) {
   const response = await fetch(withBasePath(`/api/drafts/${draftId}/steps`), {
     method: 'PUT',
@@ -305,6 +318,8 @@ export interface GenerationJobStatus {
   id: string;
   status: string;
   phase: string | null;
+  currentAction?: string | null;
+  checkpointIndex?: number | null;
   currentStepIndex: number | null;
   totalSteps: number | null;
   modelId: string | null;

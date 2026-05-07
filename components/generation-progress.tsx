@@ -38,6 +38,7 @@ export function GenerationProgress({
     <GenerationProgressView
       draftId={draftId}
       context={context}
+      generationMode={generationMode}
       controller={controller}
       onExit={onExit}
     />

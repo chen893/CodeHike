@@ -18,13 +18,18 @@ import {
 import { deriveChapterSections } from '@/lib/tutorial/chapters';
 import { tutorialOutlineSchema, type OutlineStep, type TutorialOutline } from '@/lib/schemas/tutorial-outline';
 import { buildGenerationContext } from './draft-workspace-utils';
-import { fetchDraft, updateDraftOutlineRequest } from './draft-client';
+import {
+  fetchDraft,
+  retryDraftFromStepRequest,
+  updateDraftOutlineRequest,
+} from './draft-client';
 
 interface OutlineReviewWorkspaceProps {
   draft: ClientDraftRecord;
   startGeneration?: boolean;
   generationModelId?: string;
   generationMode?: DraftGenerationMode;
+  recoveryStartStepIndex?: number;
 }
 
 function normalizeOutline(outline: TutorialOutline | null) {
@@ -64,6 +69,7 @@ export function OutlineReviewWorkspace({
   startGeneration = false,
   generationModelId,
   generationMode = 'outline_review',
+  recoveryStartStepIndex,
 }: OutlineReviewWorkspaceProps) {
   const router = useRouter();
   const [draftState, setDraftState] = useState(draft);
@@ -95,6 +101,13 @@ export function OutlineReviewWorkspace({
     [normalizedOutline]
   );
   const effectiveModelId = generationModelId || draftState.generationModel || undefined;
+  const scopedRecoveryStartIndex =
+    typeof recoveryStartStepIndex === 'number' &&
+    recoveryStartStepIndex >= 0 &&
+    draftState.generationState === 'failed'
+      ? recoveryStartStepIndex
+      : null;
+  const isScopedRecovery = scopedRecoveryStartIndex !== null;
 
   const validation = useMemo(() => {
     if (!outlineState) {
@@ -116,6 +129,17 @@ export function OutlineReviewWorkspace({
 
   function applyOutline(next: TutorialOutline) {
     setOutlineState(ensureOutlineChapters(next));
+  }
+
+  function getStepGlobalIndex(stepId: string) {
+    if (!normalizedOutline) return -1;
+    return normalizedOutline.steps.findIndex((step) => step.id === stepId);
+  }
+
+  function isLockedStep(stepId: string) {
+    if (scopedRecoveryStartIndex === null) return false;
+    const stepIndex = getStepGlobalIndex(stepId);
+    return stepIndex !== -1 && stepIndex < scopedRecoveryStartIndex;
   }
 
   function updateChapter(chapterId: string, patch: { title?: string; description?: string }) {
@@ -282,6 +306,25 @@ export function OutlineReviewWorkspace({
   async function continueGeneration() {
     const updated = await saveOutline();
     if (!updated) return;
+
+    if (scopedRecoveryStartIndex !== null) {
+      setSaving(true);
+      try {
+        await retryDraftFromStepRequest(updated.id, {
+          stepIndex: scopedRecoveryStartIndex,
+          instruction:
+            '你正在恢复一个在中途失败的教程。请保留失败步骤之前已经完成的教学节奏，只重新规划并生成当前失败步骤及其后续步骤。',
+        });
+        router.replace(`/drafts/${updated.id}`);
+      } catch (error) {
+        console.error('按失败路径继续生成失败:', error);
+        alert(error instanceof Error ? error.message : '按失败路径继续生成失败，请重试');
+      } finally {
+        setSaving(false);
+      }
+      return;
+    }
+
     router.push(buildContinueUrl(updated.id, effectiveModelId));
   }
 
@@ -349,26 +392,39 @@ export function OutlineReviewWorkspace({
             Outline Review
           </p>
           <h1 className="text-2xl font-semibold text-slate-950">
-            {normalizedOutline?.meta.title || draftState.teachingBrief.topic || '审阅教程大纲'}
+            {isScopedRecovery
+              ? `调整第 ${scopedRecoveryStartIndex + 1} 步后的生成路径`
+              : normalizedOutline?.meta.title || draftState.teachingBrief.topic || '审阅教程大纲'}
           </h1>
           <p className="max-w-3xl text-sm leading-6 text-slate-600">
-            默认流程可以直接生成完整教程；这里用于需要先确认章节结构的场景。确认后会基于当前大纲继续生成 patch 教程。
+            {isScopedRecovery
+              ? `前 ${scopedRecoveryStartIndex} 步会被保留。你现在只调整第 ${scopedRecoveryStartIndex + 1} 步及其后续路径，然后系统会只重跑这段尾部。`
+              : '默认流程可以直接生成完整教程；这里用于需要先确认章节结构的场景。确认后会基于当前大纲继续生成 patch 教程。'}
           </p>
+          {draftState.tutorialDraft && draftState.generationState === 'failed' && (
+            <p className="max-w-3xl text-sm leading-6 text-amber-700">
+              {isScopedRecovery
+                ? '当前是失败尾部恢复模式。继续生成时会保留已完成步骤，只替换失败步骤及其后续内容。'
+                : '当前是失败后的恢复编辑。保存并继续生成时，会丢弃现有的半成品步骤，改为基于当前大纲重新填充后续教程。'}
+            </p>
+          )}
           {validation.message && (
             <p className="text-sm text-amber-700">{validation.message}</p>
           )}
         </div>
 
         <div className="flex flex-wrap items-center gap-2">
-          <Button
-            type="button"
-            variant="outline"
-            onClick={startOutlineGeneration}
-            disabled={saving}
-          >
-            <RefreshCw className="h-4 w-4" />
-            重新生成大纲
-          </Button>
+          {!isScopedRecovery && (
+            <Button
+              type="button"
+              variant="outline"
+              onClick={startOutlineGeneration}
+              disabled={saving}
+            >
+              <RefreshCw className="h-4 w-4" />
+              重新生成大纲
+            </Button>
+          )}
           <Button
             type="button"
             variant="outline"
@@ -383,7 +439,7 @@ export function OutlineReviewWorkspace({
             onClick={() => void continueGeneration()}
             disabled={saving || !outlineState || !validation.valid}
           >
-            继续生成教程
+            {isScopedRecovery ? '保存并继续失败路径' : '继续生成教程'}
             <ArrowRight className="h-4 w-4" />
           </Button>
         </div>
@@ -423,6 +479,7 @@ export function OutlineReviewWorkspace({
                             updateChapter(chapter.id, { title: event.target.value })
                           }
                           placeholder="章节标题"
+                          disabled={saving}
                         />
                       </div>
                       <Textarea
@@ -432,83 +489,104 @@ export function OutlineReviewWorkspace({
                         }
                         placeholder="章节说明（可选）"
                         rows={2}
+                        disabled={saving}
                       />
                     </div>
 
                     <div className="flex flex-wrap items-center gap-2">
-                      <Button
-                        type="button"
-                        variant="outline"
-                        size="sm"
-                        onClick={() => moveChapter(chapter.id, -1)}
-                        disabled={chapterIndex === 0}
-                      >
-                        <ArrowLeft className="h-4 w-4" />
-                        上移
-                      </Button>
-                      <Button
-                        type="button"
-                        variant="outline"
-                        size="sm"
-                        onClick={() => moveChapter(chapter.id, 1)}
-                        disabled={chapterIndex >= normalizedOutline.chapters.length - 1}
-                      >
-                        下移
-                        <ArrowRight className="h-4 w-4" />
-                      </Button>
-                      <Button type="button" variant="outline" size="sm" onClick={() => addStep(chapter.id)}>
-                        <Plus className="h-4 w-4" />
-                        添加步骤
-                      </Button>
-                      <Button
-                        type="button"
-                        variant="outline"
-                        size="sm"
-                        onClick={() => deleteChapter(chapter.id)}
-                        disabled={normalizedOutline.chapters.length <= 1}
-                      >
-                        <Trash2 className="h-4 w-4" />
-                        删除章节
-                      </Button>
+                      {!isScopedRecovery && (
+                        <>
+                          <Button
+                            type="button"
+                            variant="outline"
+                            size="sm"
+                            onClick={() => moveChapter(chapter.id, -1)}
+                            disabled={chapterIndex === 0}
+                          >
+                            <ArrowLeft className="h-4 w-4" />
+                            上移
+                          </Button>
+                          <Button
+                            type="button"
+                            variant="outline"
+                            size="sm"
+                            onClick={() => moveChapter(chapter.id, 1)}
+                            disabled={chapterIndex >= normalizedOutline.chapters.length - 1}
+                          >
+                            下移
+                            <ArrowRight className="h-4 w-4" />
+                          </Button>
+                          <Button type="button" variant="outline" size="sm" onClick={() => addStep(chapter.id)}>
+                            <Plus className="h-4 w-4" />
+                            添加步骤
+                          </Button>
+                          <Button
+                            type="button"
+                            variant="outline"
+                            size="sm"
+                            onClick={() => deleteChapter(chapter.id)}
+                            disabled={normalizedOutline.chapters.length <= 1}
+                          >
+                            <Trash2 className="h-4 w-4" />
+                            删除章节
+                          </Button>
+                        </>
+                      )}
                     </div>
                   </div>
 
                   <div className="mt-4 space-y-3">
                     {sectionSteps.map((step, stepIndex) => (
-                      <div key={step.id} className="rounded-xl border border-slate-200 bg-slate-50 p-4">
+                      <div
+                        key={step.id}
+                        className={`rounded-xl border p-4 ${
+                          isLockedStep(step.id)
+                            ? 'border-slate-200 bg-slate-100 opacity-75'
+                            : 'border-slate-200 bg-slate-50'
+                        }`}
+                      >
                         <div className="flex flex-wrap items-start justify-between gap-3">
                           <div className="flex items-center gap-2 text-sm font-medium text-slate-500">
                             <GripVertical className="h-4 w-4" />
                             Step {stepIndex + 1}
+                            {isLockedStep(step.id) && (
+                              <span className="rounded-full bg-slate-200 px-2 py-0.5 text-[10px] text-slate-600">
+                                已完成，锁定
+                              </span>
+                            )}
                           </div>
                           <div className="flex flex-wrap items-center gap-2">
-                            <Button
-                              type="button"
-                              variant="outline"
-                              size="sm"
-                              onClick={() => moveStepWithinChapter(step.id, -1)}
-                              disabled={stepIndex === 0}
-                            >
-                              上移
-                            </Button>
-                            <Button
-                              type="button"
-                              variant="outline"
-                              size="sm"
-                              onClick={() => moveStepWithinChapter(step.id, 1)}
-                              disabled={stepIndex >= sectionSteps.length - 1}
-                            >
-                              下移
-                            </Button>
-                            <Button
-                              type="button"
-                              variant="outline"
-                              size="sm"
-                              onClick={() => deleteStep(step.id)}
-                              disabled={normalizedOutline.steps.length <= 1}
-                            >
-                              删除
-                            </Button>
+                            {!isScopedRecovery && (
+                              <>
+                                <Button
+                                  type="button"
+                                  variant="outline"
+                                  size="sm"
+                                  onClick={() => moveStepWithinChapter(step.id, -1)}
+                                  disabled={stepIndex === 0}
+                                >
+                                  上移
+                                </Button>
+                                <Button
+                                  type="button"
+                                  variant="outline"
+                                  size="sm"
+                                  onClick={() => moveStepWithinChapter(step.id, 1)}
+                                  disabled={stepIndex >= sectionSteps.length - 1}
+                                >
+                                  下移
+                                </Button>
+                                <Button
+                                  type="button"
+                                  variant="outline"
+                                  size="sm"
+                                  onClick={() => deleteStep(step.id)}
+                                  disabled={normalizedOutline.steps.length <= 1}
+                                >
+                                  删除
+                                </Button>
+                              </>
+                            )}
                           </div>
                         </div>
 
@@ -520,6 +598,7 @@ export function OutlineReviewWorkspace({
                               onChange={(event) =>
                                 updateStep(step.id, { title: event.target.value })
                               }
+                              disabled={saving || isLockedStep(step.id)}
                             />
                           </div>
 
@@ -532,6 +611,7 @@ export function OutlineReviewWorkspace({
                                 onChange={(event) =>
                                   updateStep(step.id, { teachingGoal: event.target.value })
                                 }
+                                disabled={saving || isLockedStep(step.id)}
                               />
                             </div>
 
@@ -543,6 +623,7 @@ export function OutlineReviewWorkspace({
                                 onChange={(event) =>
                                   updateStep(step.id, { conceptIntroduced: event.target.value })
                                 }
+                                disabled={saving || isLockedStep(step.id)}
                               />
                             </div>
                           </div>
@@ -556,6 +637,7 @@ export function OutlineReviewWorkspace({
                                 onChange={(event) =>
                                   moveStepToChapter(step.id, event.target.value)
                                 }
+                                disabled={saving || isLockedStep(step.id)}
                               >
                                 {normalizedOutline.chapters.map((chapterOption) => (
                                   <option key={chapterOption.id} value={chapterOption.id}>
@@ -577,6 +659,7 @@ export function OutlineReviewWorkspace({
                                     estimatedLocChange: Number(event.target.value || 0),
                                   })
                                 }
+                                disabled={saving || isLockedStep(step.id)}
                               />
                             </div>
 
@@ -593,6 +676,7 @@ export function OutlineReviewWorkspace({
                                   })
                                 }
                                 placeholder="app.ts, store.ts"
+                                disabled={saving || isLockedStep(step.id)}
                               />
                             </div>
                           </div>
@@ -637,16 +721,28 @@ export function OutlineReviewWorkspace({
             <div className="rounded-2xl border border-dashed border-slate-300 bg-slate-50 p-5">
               <p className="text-sm font-medium text-slate-900">限制说明</p>
               <ul className="mt-3 space-y-2 text-sm leading-6 text-slate-600">
-                <li>这里调整的是章节和步骤结构，代码 patch 还没生成。</li>
-                <li>确认继续后，系统会基于当前大纲逐步生成教程内容。</li>
-                <li>教程生成出 patch 链后，结构性编辑会默认锁定。</li>
+                {isScopedRecovery ? (
+                  <>
+                    <li>第 {scopedRecoveryStartIndex + 1} 步之前的步骤已完成，当前只允许调整后续路径文案与目标文件。</li>
+                    <li>确认继续后，系统会保留前面的步骤，只重跑失败步骤及其后续内容。</li>
+                    <li>失败尾部恢复模式下，不再提供整份大纲重新生成入口。</li>
+                  </>
+                ) : (
+                  <>
+                    <li>这里调整的是章节和步骤结构，代码 patch 还没生成。</li>
+                    <li>确认继续后，系统会基于当前大纲逐步生成教程内容。</li>
+                    <li>教程生成出 patch 链后，结构性编辑会默认锁定。</li>
+                  </>
+                )}
               </ul>
-              <div className="mt-4">
-                <Button type="button" variant="outline" className="w-full" onClick={addChapter}>
-                  <Plus className="h-4 w-4" />
-                  添加章节
-                </Button>
-              </div>
+              {!isScopedRecovery && (
+                <div className="mt-4">
+                  <Button type="button" variant="outline" className="w-full" onClick={addChapter}>
+                    <Plus className="h-4 w-4" />
+                    添加章节
+                  </Button>
+                </div>
+              )}
             </div>
           </aside>
         </div>

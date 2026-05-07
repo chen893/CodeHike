@@ -13,6 +13,7 @@ const nextConfig = {
   basePath: normalizeBasePath(
     process.env.NEXT_PUBLIC_BASE_PATH || process.env.NEXT_BASE_PATH || ""
   ),
+  allowedDevOrigins: ['127.0.0.1'],
 }
 
 export default nextConfig

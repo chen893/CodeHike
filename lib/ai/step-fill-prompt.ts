@@ -213,6 +213,29 @@ export function buildRetrievalStepFillPrompt(
 - patch.find 必须来自“当前代码目标文件”，不能来自“原始源码参考”`;
 
   let systemPrompt = core + toolAddendum;
+
+  if (placeholderTargets.length > 0) {
+    const placeholderInstructions = placeholderTargets
+      .map((f) => {
+        const placeholderContent = previousFiles[f] ?? '';
+        return `- ${f}: find 必须是以下完整内容（逐字复制），replace 是新文件完整内容：\n\`\`\`\n${placeholderContent}\n\`\`\``;
+      })
+      .join('\n');
+    systemPrompt += `
+
+## 占位文件替换规则（优先级高于普通 Patch 规则）
+
+以下目标文件当前是占位符，尚未引入实际代码。你只需要一条 patch，将整个占位符替换为新文件内容。
+
+${placeholderInstructions}
+
+要求：
+- find 必须逐字复制上面的完整占位符内容（包括注释和空行）
+- replace 是你编写的该文件首个可运行版本
+- 仍然遵守 LOC 变化控制（如果文件太大，先写核心骨架，留到后续步骤补充）
+- 如果只需要引入文件的部分功能，replace 可以只包含这部分，后续步骤再追加`;
+  }
+
   if (sourceShape.mode === 'progressive_snapshots') {
     systemPrompt += `
 
@@ -222,8 +245,7 @@ export function buildRetrievalStepFillPrompt(
 
 - targetFiles 应优先覆盖当前里程碑对应的真实文件
 - patches 必须至少命中一个 targetFiles，不要为了方便而把所有变化都落到同一个主文件
-- 如果 targetFiles 中存在占位文件，必须直接替换该目标文件的占位内容，而不是改动更早的文件来“代替”
-- 若当前 patch 只是 stub、占位或未实现骨架，paragraphs 不得把它描述成“完整能力”
+- 若当前 patch 只是 stub、占位或未实现骨架，paragraphs 不得把它描述成”完整能力”
 - lead 必须非空，paragraphs 不得包含任何生成失败或提示人工编辑的元信息`;
   }
 

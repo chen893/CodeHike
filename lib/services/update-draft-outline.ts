@@ -25,7 +25,7 @@ export async function updateDraftOutline(
     );
   }
 
-  if (draft.tutorialDraft) {
+  if (draft.tutorialDraft && draft.generationState !== 'failed') {
     throw new RouteConflictError(
       '当前草稿已经进入代码填充阶段，不能再保存大纲。',
       'OUTLINE_ALREADY_FILLED'

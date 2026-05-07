@@ -10,36 +10,31 @@
  * Key differences from multi-phase-generator:
  *   - Every step-fill is immediately validated
  *   - REPAIRABLE steps receive a repair prompt with actual code state
- *   - Agent loop respects maxTurns=30, maxRepairsPerStep=3, maxReplans=2
+ *   - Agent loop respects a step-scaled turn budget, maxRepairsPerStep=3, maxReplans=2
  */
 
-import { generateText, Output, stepCountIs } from 'ai';
-import { tutorialOutlineSchema } from '../schemas/tutorial-outline';
-import { legacyTutorialStepSchema, type TutorialStep, type TutorialDraft, type ContentPatch } from '../schemas/tutorial-draft';
+import type { TutorialStep, TutorialDraft } from '../schemas/tutorial-draft';
 import type { TutorialOutline } from '../schemas/tutorial-outline';
 import type { SourceItem } from '../schemas/source-item';
 import type { TeachingBrief } from '../schemas/teaching-brief';
-import { buildOutlinePrompt, buildRetrievalOutlinePrompt, buildReviseOutlinePrompt } from './outline-prompt';
-import { buildStepFillPrompt, buildRetrievalStepFillPrompt, buildCurrentSnapshotSummary, buildRepairPrompt } from './step-fill-prompt';
-import { adaptPromptForModel } from './prompt-adapters';
 import { applyContentPatches } from '../tutorial/draft-code';
-import { normalizeBaseCode, normalizeTutorialMeta } from '../tutorial/normalize';
-import { ensureDraftChapters, DEFAULT_CHAPTER_ID } from '../tutorial/chapters';
-import { validateTutorialDraft } from '../utils/validation';
-import { PatchValidationError } from '../errors/error-types';
-import { createProvider, getMaxOutputTokens } from './provider-registry';
-import { parseJsonFromText } from './parse-json-text';
-import { finalizeToolCallJson } from './finalize-tool-call-json';
-import { tryAutoFixPatches } from './patch-auto-fix';
+import { normalizeBaseCode } from '../tutorial/normalize';
+import { ensureDraftChapters } from '../tutorial/chapters';
 import {
-  findProgressivePlaceholderTargets,
+  validateTutorialDraft,
+  TutorialDraftValidationError,
+} from '../utils/validation';
+import { createProvider, getMaxOutputTokens } from './provider-registry';
+import {
   materializeBaseCodeForFilledSteps,
   prepareGenerationBaseFiles,
 } from './progressive-snapshot-base-code';
-import { supportsRetrievalGeneration, RetrievalModelRequiredError, supportsNativeStructuredOutput } from './model-capabilities';
-import { createSourceTools, createScopedSourceTools, buildDirectorySummary } from './source-tools';
-import { createTokenBudgetSession, estimateTokens, getMaxInputTokens } from './token-budget';
-import { validateOutlineSourceScope, deriveStepSourceScope } from './outline-source-scope';
+import {
+  supportsRetrievalGeneration,
+  RetrievalModelRequiredError,
+  supportsNativeStructuredOutput,
+} from './model-capabilities';
+import { estimateTokens, getMaxInputTokens } from './token-budget';
 import { recommendStepBudget } from './step-budget';
 import {
   GenerationCancelledError,
@@ -52,15 +47,30 @@ import {
   type MultiPhaseGenerationOptions,
 } from './multi-phase-generator';
 import {
-  microCompact,
-  autoSummarize,
-  fullReplan,
-  checkCompressionThreshold,
-  type DistilledContext,
-} from './agent-context';
-import { createSessionMemory, type SessionMemory } from './agent-memory';
+  type AgentLoopMetrics,
+  type AgentResumeState,
+  type StepOutcome,
+} from './agent-runtime/types';
+import { createAgentContextManager } from './agent-runtime/context-manager';
+import { executeStep } from './agent-runtime/executor';
+import {
+  replanRemainingOutline,
+  resolveInitialOutline,
+  reviseOutlineTail,
+} from './agent-runtime/planner';
+import {
+  shouldAcceptDegradedStep,
+  shouldReviseTail,
+} from './agent-runtime/recovery-policy';
+import {
+  buildCritiqueSignals,
+  buildLocWarningSignal,
+  createSoftSignalCollector,
+  shouldCritiqueStep,
+} from './agent-runtime/soft-signals';
+import { microCompact } from './agent-context';
 import { reviewGeneratedTutorial, type ReviewGenerationInput } from '../review/generation-quality-review';
-import { createAgentRunLogger, type AgentRunLogger } from './agent-run-logger';
+import { createAgentRunLogger } from './agent-run-logger';
 
 // Re-export shared types so the service layer can use the same error types
 export {
@@ -71,52 +81,160 @@ export {
   type MultiPhaseStream,
   type MultiPhaseResult,
 };
+export type {
+  AgentLoopMetrics,
+  RepairRecord,
+  StepOutcome,
+  StepValidationResult,
+} from './agent-runtime/types';
 
 // ---------------------------------------------------------------------------
 // Constants
 // ---------------------------------------------------------------------------
 
-const MAX_TURNS = 30;
+const MIN_TURN_BUDGET = 40;
+const TURN_REPAIR_BUFFER_RATIO = 0.35;
+const TURN_FIXED_BUFFER = 4;
 const MAX_REPAIRS_PER_STEP = 3;
 const MAX_REPLANS = 2;
-const LOC_WARNING_FLOOR = 60;
-const LOC_DEFAULT_BUDGET = 8;
-const STEP_FILL_TOOLS_ENABLED = process.env.VIBEDOCS_STEP_FILL_TOOLS === '1';
+
+export function computeAgentLoopMaxTurns(totalSteps: number) {
+  const normalizedTotalSteps = Number.isFinite(totalSteps)
+    ? Math.max(0, Math.ceil(totalSteps))
+    : 0;
+
+  return Math.max(
+    MIN_TURN_BUDGET,
+    normalizedTotalSteps +
+      Math.ceil(normalizedTotalSteps * TURN_REPAIR_BUFFER_RATIO) +
+      MAX_REPLANS * 2 +
+      TURN_FIXED_BUFFER,
+  );
+}
 
 // ---------------------------------------------------------------------------
-// Types
+// Timing accumulator for bottleneck diagnosis
 // ---------------------------------------------------------------------------
 
-export interface StepValidationResult {
-  result: 'pass' | 'repairable' | 'unrecoverable';
-  errors: string[];
-  actualCode: Record<string, string>;
-  appliedFiles?: Record<string, string>;
-  fixedPatches?: ContentPatch[];
+interface PhaseTiming {
+  label: string;
+  startMs: number;
+  endMs: number;
+  breakdown: {
+    promptBuild: number;
+    llmCall: number;
+    validation: number;
+    snapshot: number;
+    dbPersist: number;
+    contextDistill: number;
+    critique: number;
+    other: number;
+  };
 }
 
-export interface RepairRecord {
+interface StepTiming {
   stepIndex: number;
-  attempts: number;
-  strategy: 'exact' | 'auto-fixed' | 'full-rewrite';
-  outcome: 'pass' | 'degraded';
-  errorMessage: string;
+  isRepair: boolean;
+  totalMs: number;
+  promptBuildMs: number;
+  llmCallMs: number;
+  validationMs: number;
+  snapshotMs: number;
+  persistMs: number;
+  distillMs: number;
+  critiqueMs: number;
 }
 
-export interface StepOutcome {
-  stepIndex: number;
-  result: 'pass' | 'repaired' | 'replanned';
-  repairCount: number;
-  patchStrategy: 'exact' | 'auto-fixed' | 'full-rewrite';
-  locChange: number;
+class GenerationTimer {
+  private phaseTimings: PhaseTiming[] = [];
+  private stepTimings: StepTiming[] = [];
+  private overallStart = Date.now();
+
+  startPhase(label: string): number {
+    return Date.now();
+  }
+
+  recordStep(t: StepTiming) {
+    this.stepTimings.push(t);
+  }
+
+  recordPhase(label: string, startMs: number, breakdown: PhaseTiming['breakdown']) {
+    this.phaseTimings.push({ label, startMs, endMs: Date.now(), breakdown });
+  }
+
+  printSummary() {
+    const totalMs = Date.now() - this.overallStart;
+    const lines: string[] = [
+      '',
+      `[agent-timing] ========== GENERATION TIMING SUMMARY ==========`,
+      `[agent-timing] Total wall time: ${totalMs.toLocaleString()}ms`,
+    ];
+
+    // Per-step breakdown
+    const stepRows = this.stepTimings.map(s => {
+      const otherMs = s.totalMs - s.promptBuildMs - s.llmCallMs - s.validationMs - s.snapshotMs - s.persistMs - s.distillMs - s.critiqueMs;
+      const label = s.isRepair ? `${s.stepIndex + 1}/repair` : `${s.stepIndex + 1}`;
+      return {
+        label,
+        total: s.totalMs,
+        prompt: s.promptBuildMs,
+        llm: s.llmCallMs,
+        validation: s.validationMs,
+        snapshot: s.snapshotMs,
+        persist: s.persistMs,
+        distill: s.distillMs,
+        critique: s.critiqueMs,
+        other: Math.max(0, otherMs),
+      };
+    });
+
+    // Aggregate categories
+    let sumPrompt = 0, sumLlm = 0, sumValidation = 0, sumSnapshot = 0, sumPersist = 0, sumDistill = 0, sumCritique = 0, sumOther = 0;
+    for (const r of stepRows) {
+      sumPrompt += r.prompt;
+      sumLlm += r.llm;
+      sumValidation += r.validation;
+      sumSnapshot += r.snapshot;
+      sumPersist += r.persist;
+      sumDistill += r.distill;
+      sumCritique += r.critique;
+      sumOther += r.other;
+    }
+
+    // Phase timings
+    for (const p of this.phaseTimings) {
+      const dur = p.endMs - p.startMs;
+      lines.push(`[agent-timing] Phase ${p.label}: ${dur.toLocaleString()}ms (${(dur / totalMs * 100).toFixed(1)}%)`);
+    }
+
+    // Per-step table (only if > 0 steps)
+    if (stepRows.length > 0) {
+      lines.push(`[agent-timing] --- Per-step breakdown (ms) ---`);
+      lines.push(`[agent-timing] ${'Step'.padEnd(8)} ${'Total'.padStart(7)} ${'Prompt'.padStart(7)} ${'LLM'.padStart(7)} ${'Valid'.padStart(7)} ${'Snap'.padStart(7)} ${'DB'.padStart(7)} ${'Distill'.padStart(7)} ${'Critiq'.padStart(7)} ${'Other'.padStart(7)}`);
+      for (const r of stepRows) {
+        lines.push(`[agent-timing] ${r.label.padEnd(8)} ${r.total.toLocaleString().padStart(7)} ${r.prompt.toLocaleString().padStart(7)} ${r.llm.toLocaleString().padStart(7)} ${r.validation.toLocaleString().padStart(7)} ${r.snapshot.toLocaleString().padStart(7)} ${r.persist.toLocaleString().padStart(7)} ${r.distill.toLocaleString().padStart(7)} ${r.critique.toLocaleString().padStart(7)} ${r.other.toLocaleString().padStart(7)}`);
+      }
+      lines.push(`[agent-timing] ${'SUM'.padEnd(8)} ${(sumPrompt + sumLlm + sumValidation + sumSnapshot + sumPersist + sumDistill + sumCritique + sumOther).toLocaleString().padStart(7)} ${sumPrompt.toLocaleString().padStart(7)} ${sumLlm.toLocaleString().padStart(7)} ${sumValidation.toLocaleString().padStart(7)} ${sumSnapshot.toLocaleString().padStart(7)} ${sumPersist.toLocaleString().padStart(7)} ${sumDistill.toLocaleString().padStart(7)} ${sumCritique.toLocaleString().padStart(7)} ${sumOther.toLocaleString().padStart(7)}`);
+      lines.push(`[agent-timing] ${'PCT'.padEnd(8)} ${'100%'.padStart(7)} ${(sumPrompt / totalMs * 100).toFixed(1).padStart(7)}% ${(sumLlm / totalMs * 100).toFixed(1).padStart(7)}% ${(sumValidation / totalMs * 100).toFixed(1).padStart(7)}% ${(sumSnapshot / totalMs * 100).toFixed(1).padStart(7)}% ${(sumPersist / totalMs * 100).toFixed(1).padStart(7)}% ${(sumDistill / totalMs * 100).toFixed(1).padStart(7)}% ${(sumCritique / totalMs * 100).toFixed(1).padStart(7)}% ${(sumOther / totalMs * 100).toFixed(1).padStart(7)}%`);
+    }
+
+    lines.push(`[agent-timing] ================================================`);
+    console.log(lines.join('\n'));
+  }
 }
 
-export interface AgentLoopState {
+interface AgentLoopState {
   turnCount: number;
-  repairHistory: RepairRecord[];
   replanCount: number;
-  tokenUsage: { used: number; budget: number };
   outcomes: StepOutcome[];
+}
+
+export interface AgentGenerationOptions extends MultiPhaseGenerationOptions {
+  resume?: AgentResumeState;
+  trace?: {
+    jobId?: string;
+    draftId?: string;
+  };
 }
 
 // ---------------------------------------------------------------------------
@@ -127,98 +245,17 @@ function sseEvent(event: string, data: unknown): string {
   return `event: ${event}\ndata: ${JSON.stringify(data)}\n\n`;
 }
 
-function unique(values: string[]) {
-  return [...new Set(values)];
-}
-
-function getStepPatchFiles(step: TutorialStep, primaryFile: string) {
-  return unique(
-    (step.patches ?? [])
-      .map((patch) => patch.file ?? primaryFile)
-      .filter((value): value is string => Boolean(value)),
-  );
-}
-
-function validateRetrievalStepTargets(
-  step: TutorialStep,
-  primaryFile: string,
-  stepScope: { targetFiles: string[]; contextFiles: string[] },
-  previousFiles: Record<string, string>,
+function formatStepFailureMessage(
+  stepNumber: number,
+  maxAttempts: number,
+  lastError: string | null,
+  revisedOutline: boolean,
 ) {
-  if (stepScope.targetFiles.length === 0) return;
-
-  const patchFiles = getStepPatchFiles(step, primaryFile);
-  if (patchFiles.length === 0) {
-    throw new Error(
-      `Step must include at least one patch for targetFiles: ${stepScope.targetFiles.join(', ')}`,
-    );
+  if (lastError?.startsWith('Turn budget exhausted')) {
+    return `Step ${stepNumber} could not start: ${lastError}`;
   }
 
-  if (!patchFiles.some((file) => stepScope.targetFiles.includes(file))) {
-    throw new Error(
-      `Step patches must target one of the outline targetFiles: ${stepScope.targetFiles.join(', ')}`,
-    );
-  }
-
-  const placeholderTargets = findProgressivePlaceholderTargets(previousFiles, stepScope.targetFiles);
-  if (
-    placeholderTargets.length > 0 &&
-    !patchFiles.some((file) => placeholderTargets.includes(file))
-  ) {
-    throw new Error(
-      `Step must replace the placeholder target file instead of editing an earlier file: ${placeholderTargets.join(', ')}`,
-    );
-  }
-}
-
-// ---------------------------------------------------------------------------
-// Per-step patch validation
-// ---------------------------------------------------------------------------
-
-function validateStepPatches(
-  previousFiles: Record<string, string>,
-  patches: ContentPatch[],
-  primaryFile: string,
-): StepValidationResult {
-  try {
-    const newFiles = applyContentPatches(previousFiles, patches, primaryFile);
-    return {
-      result: 'pass',
-      errors: [],
-      actualCode: previousFiles,
-      appliedFiles: newFiles,
-    };
-  } catch (patchErr: any) {
-    const errorMsg = patchErr instanceof Error ? patchErr.message : String(patchErr);
-
-    // Try auto-fix
-    const fixResult = tryAutoFixPatches(previousFiles, patches, primaryFile);
-    if (fixResult.success) {
-      try {
-        const newFiles = applyContentPatches(previousFiles, fixResult.fixedPatches, primaryFile);
-        return {
-          result: 'pass',
-          errors: [],
-          actualCode: previousFiles,
-          appliedFiles: newFiles,
-          fixedPatches: fixResult.fixedPatches,
-        };
-      } catch {
-        // Auto-fix produced patches that still fail -- fall through to repairable
-      }
-    }
-
-    // Distinguish repairable vs unrecoverable based on error patterns
-    const isUnrecoverable =
-      errorMsg.includes('目标文件') ||
-      errorMsg.includes('does not exist') ||
-      errorMsg.includes('不在当前文件集');
-    return {
-      result: isUnrecoverable ? 'unrecoverable' : 'repairable',
-      errors: [errorMsg],
-      actualCode: previousFiles,
-    };
-  }
+  return `Step ${stepNumber} failed after ${maxAttempts} attempts${revisedOutline ? ' and outline revision' : ''}: ${lastError ?? 'unknown error'}`;
 }
 
 // ---------------------------------------------------------------------------
@@ -238,12 +275,17 @@ export function createAgentGenerationStream(
   cancelToken?: CancelToken,
   lifecycleHooks: MultiPhaseLifecycleHooks = {},
   checkDbCancel?: () => Promise<boolean>,
-  options: MultiPhaseGenerationOptions = {},
+  options: AgentGenerationOptions = {},
 ): MultiPhaseStream {
   const encoder = new TextEncoder();
   const model = createProvider(modelId);
-  const logger = createAgentRunLogger();
+  const logger = createAgentRunLogger({
+    jobId: options.trace?.jobId,
+    draftId: options.trace?.draftId,
+    modelId: modelId ?? '(default)',
+  });
   const executionMode = options.mode ?? 'full';
+  const resumeState = executionMode === 'full' ? options.resume ?? null : null;
 
   let resolveResult: (value: MultiPhaseResult) => void;
   let rejectResult: (reason: any) => void;
@@ -276,6 +318,7 @@ export function createAgentGenerationStream(
     async pull(controller) {
       let currentPhase: MultiPhaseLifecyclePhase = 'outline';
       let currentStepIndex: number | null = null;
+      const genTimer = new GenerationTimer();
 
       try {
         // ── Capability detection ──
@@ -313,136 +356,47 @@ export function createAgentGenerationStream(
         // ── Phase 1: Generate Outline (identical to multi-phase-generator) ──
         currentPhase = 'outline';
         currentStepIndex = null;
+        const outlinePhaseStart = Date.now();
+        let outlinePromptBuildMs = 0;
+        let outlineLlmMs = 0;
+        let outlineValidationMs = 0;
+
         controller.enqueue(encoder.encode(
           sseEvent('phase', { phase: 'outline', status: 'started' })
         ));
         await lifecycleHooks.onPhase?.({ phase: 'outline' });
 
-        const OUTLINE_MAX_RETRIES = 3;
-
-        let outline: TutorialOutline | undefined; // let for fullReplan reassignment
+        let outline: TutorialOutline;
         try {
-          if (options.initialOutline) {
-            outline = options.initialOutline;
-          } else if (modelSupportsRetrieval) {
-            // Retrieval-based outline: directory tree + tools
-            const directorySummary = buildDirectorySummary(sourceItems);
-            const budget = createTokenBudgetSession({
-              modelId: modelId ?? 'deepseek/deepseek-chat',
-              basePrompt: directorySummary,
-            });
-            const sourceTools = createSourceTools(sourceItems, { budget });
-            const { systemPrompt, userPrompt } = buildRetrievalOutlinePrompt(
-              sourceItems, teachingBrief, directorySummary,
+          const outlineResult = await resolveInitialOutline({
+            model,
+            modelId,
+            sourceItems,
+            teachingBrief,
+            modelSupportsRetrieval,
+            useNativeStructuredOutput,
+            resumeOutline: resumeState?.outline ?? null,
+            initialOutline: options.initialOutline ?? null,
+            logger,
+          });
+          outline = outlineResult.outline;
+          if (outlineResult.source === 'resume' && resumeState) {
+            console.log(
+              `[agent-loop] Resuming from committed checkpoint at step ${resumeState.startStepIndex} of ${resumeState.outline.steps.length}`,
             );
-            const adaptedSystemPrompt = adaptPromptForModel(systemPrompt, modelId);
-            const adaptedUserPrompt = adaptPromptForModel(userPrompt, modelId);
-
-            console.log('[agent-loop] Retrieval outline prompt sizes:', {
-              systemPromptChars: systemPrompt.length,
-              userPromptChars: userPrompt.length,
-              systemPromptTokens: estimateTokens(systemPrompt),
-              userPromptTokens: estimateTokens(userPrompt),
-              budgetUsed: budget.usedInputTokens,
-              budgetRemaining: budget.remainingInputTokens,
-              budgetMax: budget.maxInputTokens,
-            });
-
-            let lastOutlineError: unknown = null;
-            for (let attempt = 0; attempt < OUTLINE_MAX_RETRIES; attempt++) {
-              try {
-                console.log(`[agent-loop] Retrieval outline attempt ${attempt + 1}/${OUTLINE_MAX_RETRIES}`);
-                const generateStart = Date.now();
-
-                const result = await generateText({
-                  model,
-                  system: adaptedSystemPrompt,
-                  prompt: adaptedUserPrompt,
-                  tools: sourceTools,
-                  stopWhen: stepCountIs(20),
-                  maxOutputTokens: getMaxOutputTokens(modelId),
-                });
-
-                console.log('[agent-loop] generateText completed in', Date.now() - generateStart, 'ms, response length:', result.text?.length ?? 0);
-                outline = await finalizeToolCallJson({
-                  label: 'outline-retrieval',
-                  schema: tutorialOutlineSchema,
-                  model,
-                  modelId,
-                  systemPrompt,
-                  userPrompt,
-                  initialText: result.text,
-                  responseMessages: result.response.messages,
-                  logPrefix: 'agent-loop',
-                });
-                lastOutlineError = null;
-                break;
-              } catch (err: any) {
-                lastOutlineError = err;
-                const isConnectionError =
-                  err?.message?.includes('terminated') ||
-                  err?.message?.includes('other side closed') ||
-                  err?.cause?.message?.includes('terminated');
-                if (isConnectionError && attempt < OUTLINE_MAX_RETRIES - 1) {
-                  console.warn(`[agent-loop] Outline attempt ${attempt + 1} failed with connection error, retrying...`, err.message);
-                  continue;
-                }
-                throw err;
-              }
-            }
-            if (lastOutlineError) throw lastOutlineError;
-            if (!outline) throw new Error('Outline not generated — unreachable');
-
-          } else {
-            // Legacy full-injection outline
-            const { systemPrompt, userPrompt } = buildOutlinePrompt(sourceItems, teachingBrief);
-
-            console.log('[agent-loop] Legacy outline prompt sizes:', {
-              systemPromptChars: systemPrompt.length,
-              userPromptChars: userPrompt.length,
-              systemPromptTokens: estimateTokens(systemPrompt),
-              userPromptTokens: estimateTokens(userPrompt),
-            });
-
-            const generateStart = Date.now();
-            const useStructuredOutput = useNativeStructuredOutput;
-            const generateOpts: Parameters<typeof generateText>[0] = {
-              model,
-              system: adaptPromptForModel(systemPrompt, modelId),
-              prompt: adaptPromptForModel(userPrompt, modelId),
-              maxOutputTokens: getMaxOutputTokens(modelId),
-            };
-            if (useStructuredOutput) {
-              generateOpts.output = Output.object({ schema: tutorialOutlineSchema });
-            }
-            const result = await generateText(generateOpts);
-            console.log('[agent-loop] generateText completed in', Date.now() - generateStart, 'ms, response length:', result.text?.length ?? 0);
-
-            if (useStructuredOutput && result.output) {
-              outline = result.output as TutorialOutline;
-            } else {
-              outline = parseJsonFromText(result.text, tutorialOutlineSchema, 'outline-legacy');
-            }
           }
-
-          // Ensure meta.lang/fileName are populated from baseCode
-          outline.meta = normalizeTutorialMeta(outline.meta, outline.baseCode);
-
-          // Post-outline validation (retrieval mode)
-          if (modelSupportsRetrieval) {
-            const { files: initialFiles } = normalizeBaseCode(outline.baseCode, outline.meta);
-            const primaryFile = Object.keys(initialFiles)[0] ?? sourceItems[0]?.label ?? '';
-            const scopeValidation = validateOutlineSourceScope(outline, sourceItems, primaryFile);
-            if (scopeValidation.shouldRetry) {
-              console.warn('[agent-loop] Outline scope validation: too many repairs, quality may be degraded', scopeValidation.errors);
-            }
-            outline = scopeValidation.outline;
-          }
+          outlinePromptBuildMs = outlineResult.timing.promptBuildMs;
+          outlineLlmMs = outlineResult.timing.llmCallMs;
+          outlineValidationMs = outlineResult.timing.validationMs;
 
           controller.enqueue(encoder.encode(sseEvent('outline', outline)));
           await lifecycleHooks.onOutlineReady?.(outline);
           resolveOutline!(outline);
           logger.logEvent('outline-complete', { stepCount: outline.steps.length, title: outline.meta.title });
+
+          const outlineTotalMs = Date.now() - outlinePhaseStart;
+          console.log('[agent-timing] Outline phase:', outlineTotalMs, 'ms (prompt:', outlinePromptBuildMs, 'llm:', outlineLlmMs, 'validate:', outlineValidationMs, 'other:', outlineTotalMs - outlinePromptBuildMs - outlineLlmMs - outlineValidationMs, ')');
+          genTimer.recordStep({ stepIndex: -1, isRepair: false, totalMs: outlineTotalMs, promptBuildMs: outlinePromptBuildMs, llmCallMs: outlineLlmMs, validationMs: outlineValidationMs, snapshotMs: 0, persistMs: 0, distillMs: 0, critiqueMs: 0 });
         } catch (outlineErr: any) {
           const causeChain: string[] = [];
           let cursor: any = outlineErr;
@@ -497,47 +451,58 @@ export function createAgentGenerationStream(
           return;
         }
 
-        const totalSteps = outline.steps.length;
-        const filledSteps: TutorialStep[] = [];
-        let totalRetries = 0;
+        let totalSteps = outline.steps.length;
+        let maxTurns = computeAgentLoopMaxTurns(totalSteps);
+        logger.logEvent('turn-budget', { totalSteps, maxTurns });
+        const resumedDraft = resumeState?.partialDraft ?? null;
+        const resumeStartStepIndex = resumeState?.startStepIndex ?? 0;
+        const filledSteps: TutorialStep[] = resumedDraft
+          ? [...resumedDraft.steps.slice(0, resumeStartStepIndex)]
+          : [];
+        let totalRetries = resumeState?.agentState.retryCount ?? 0;
 
         // Normalize baseCode to multi-file representation
+        const baseSnapshot = resumedDraft ?? outline;
         const { primaryFile } = normalizeBaseCode(
-          outline.baseCode,
-          outline.meta,
+          baseSnapshot.baseCode,
+          baseSnapshot.meta,
         );
         const generationBase = prepareGenerationBaseFiles(outline, sourceItems);
-        const initialFiles = generationBase.files;
+        const initialFiles = resumedDraft
+          ? normalizeBaseCode(resumedDraft.baseCode, resumedDraft.meta).files
+          : generationBase.files;
         const insertedProgressiveFiles = generationBase.insertedFiles;
 
         // Snapshot cache
         const snapshots: Map<number, Record<string, string>> = new Map();
         snapshots.set(-1, initialFiles);
+        for (let stepIndex = 0; stepIndex < filledSteps.length; stepIndex++) {
+          const previousFiles = snapshots.get(stepIndex - 1)!;
+          const step = filledSteps[stepIndex];
+          snapshots.set(
+            stepIndex,
+            step.patches?.length
+              ? applyContentPatches(previousFiles, step.patches, primaryFile)
+              : previousFiles,
+          );
+        }
 
         // Agent loop state
         const loopState: AgentLoopState = {
           turnCount: 0,
-          repairHistory: [],
-          replanCount: 0,
-          tokenUsage: { used: 0, budget: 0 },
+          replanCount: resumeState?.agentState.replanCount ?? 0,
           outcomes: [],
         };
-
-        // Session memory for repair history tracking and drift detection
-        const sessionMemory = createSessionMemory();
-
-        // Track token usage for compression decisions
-        const tokenBudget = getMaxInputTokens(modelId ?? 'deepseek/deepseek-chat');
-        let estimatedTokenUsage = 0;
-
-        // Distilled context placeholder (replaces full history after compression)
-        let distilledContext: DistilledContext | null = null;
+        const contextManager = createAgentContextManager({
+          modelId,
+          initialCompressionCount:
+            resumeState?.agentState.compressionCount ?? 0,
+        });
+        const softSignalCollector = createSoftSignalCollector();
 
         // Consecutive repair failure counter for reviseOutline trigger
-        let consecutiveRepairFailures = 0;
-
-        // Track compression count for agent metrics
-        let compressionCount = 0;
+        let consecutiveRepairFailures =
+          resumeState?.agentState.driftSignals.consecutiveRepairFailures ?? 0;
 
         // -----------------------------------------------------------------
         // reviseOutline: revise the outline from a given step onward when
@@ -547,62 +512,18 @@ export function createAgentGenerationStream(
           fromStepIndex: number,
           failureReason: string,
         ): Promise<TutorialOutline | null> {
-          try {
-            const completedSummary = microCompact(filledSteps, filledSteps.length);
-            const { systemPrompt, userPrompt } = buildReviseOutlinePrompt(
-              outline!,
-              fromStepIndex,
-              completedSummary,
-              snapshots.get(fromStepIndex - 1) ?? {},
-              teachingBrief,
-              sourceItems,
-              failureReason,
-            );
-
-            const result = await generateText({
-              model,
-              system: adaptPromptForModel(systemPrompt, modelId),
-              prompt: adaptPromptForModel(userPrompt, modelId),
-              maxOutputTokens: getMaxOutputTokens(modelId),
-            });
-
-            // Parse revised steps using permissive JSON extraction
-            let revisedSteps: any = null;
-            try {
-              const text = result.text;
-              const braceStart = text.indexOf('{');
-              const braceEnd = text.lastIndexOf('}');
-              if (braceStart !== -1 && braceEnd > braceStart) {
-                const jsonObj = JSON.parse(text.slice(braceStart, braceEnd + 1));
-                if (jsonObj?.steps && Array.isArray(jsonObj.steps)) {
-                  revisedSteps = jsonObj;
-                }
-              }
-            } catch {
-              // Parse failed
-            }
-
-            if (!revisedSteps?.steps || !Array.isArray(revisedSteps.steps)) {
-              console.error('[agent-loop] reviseOutline: failed to parse revised steps');
-              return null;
-            }
-
-            // Merge: keep completed steps, replace remaining
-            const mergedSteps = [
-              ...outline!.steps.slice(0, fromStepIndex),
-              ...revisedSteps.steps,
-            ];
-
-            const revisedOutline: TutorialOutline = {
-              ...outline!,
-              steps: mergedSteps,
-            };
-
-            return revisedOutline;
-          } catch (err) {
-            console.error('[agent-loop] reviseOutline failed:', err);
-            return null;
-          }
+          return reviseOutlineTail({
+            model,
+            modelId,
+            outline,
+            fromStepIndex,
+            completedStepsSummary: microCompact(filledSteps, filledSteps.length),
+            previousFiles: snapshots.get(fromStepIndex - 1) ?? {},
+            teachingBrief,
+            sourceItems,
+            failureReason,
+            logger,
+          });
         }
 
         // -----------------------------------------------------------------
@@ -610,20 +531,28 @@ export function createAgentGenerationStream(
         // Uses reviewGeneratedTutorial for assessment. Observability-only,
         // does not alter generation flow.
         // -----------------------------------------------------------------
-        function critiqueSteps(
-          currentStepIndex: number,
-        ): void {
-          // Only critique every 4 steps (at indices 3, 7, 11, 15, ...)
-          if ((currentStepIndex + 1) % 4 !== 0) return;
-          if (filledSteps.length < 3) return;
+        function recordSoftSignal(signal: Parameters<typeof softSignalCollector.record>[0]) {
+          softSignalCollector.record(signal);
+          logger.logEvent('soft-signal', {
+            kind: signal.kind,
+            code: signal.code,
+            level: signal.level,
+            stepIndex: signal.stepIndex,
+            ...signal.details,
+          });
+          const log = signal.level === 'warn' ? console.warn : console.log;
+          log(`[agent-loop] ${signal.message}`);
+        }
+
+        function critiqueSteps(currentStepIndex: number): void {
+          if (!shouldCritiqueStep(currentStepIndex, filledSteps.length)) return;
 
           try {
-            // Build a partial draft for review
             const partialDraft = ensureDraftChapters({
-              meta: outline!.meta,
-              intro: outline!.intro,
-              baseCode: outline!.baseCode,
-              chapters: outline!.chapters,
+              meta: outline.meta,
+              intro: outline.intro,
+              baseCode: outline.baseCode,
+              chapters: outline.chapters,
               steps: filledSteps,
             });
 
@@ -634,26 +563,58 @@ export function createAgentGenerationStream(
               outline,
               validationValid: true,
               validationErrors: [],
+              agentMetrics: {
+                repairCount: contextManager.getRepairHistory().length,
+                firstPassRate:
+                  loopState.outcomes.length > 0
+                    ? Math.round(
+                        (
+                          loopState.outcomes.filter((outcome) => outcome.result === 'pass')
+                            .length /
+                          loopState.outcomes.length
+                        ) * 100,
+                      ) / 100
+                    : 1,
+                degradedStepCount: loopState.outcomes.filter(
+                  (outcome) => outcome.result === 'replanned',
+                ).length,
+                compressionCount: contextManager.getCompressionCount(),
+                replanCount: loopState.replanCount,
+                avgRepairAttempts:
+                  contextManager.getRepairHistory().length > 0
+                    ? Math.round(
+                        (
+                          contextManager
+                            .getRepairHistory()
+                            .reduce((sum, record) => sum + record.attempts, 0) /
+                          contextManager.getRepairHistory().length
+                        ) * 100,
+                      ) / 100
+                    : 0,
+              },
             };
 
             const report = reviewGeneratedTutorial(reviewInput);
-
-            // Log the critique result for observability
-            console.log(`[agent-loop] critiqueSteps at step ${currentStepIndex + 1}: score ${report.totalScore}, issues: ${report.issues.length}`);
-
-            // If pedagogical progression is low, log a warning
-            if (report.scorecard.pedagogicalProgression < 70) {
-              console.warn(`[agent-loop] Low pedagogical progression (${report.scorecard.pedagogicalProgression}) at step ${currentStepIndex + 1}`);
+            for (const signal of buildCritiqueSignals(currentStepIndex, report)) {
+              recordSoftSignal(signal);
             }
           } catch (err) {
             console.error('[agent-loop] critiqueSteps failed:', err);
-            // Non-fatal -- continue generation
           }
         }
 
-        for (let i = 0; i < totalSteps; i++) {
+        for (let i = resumeStartStepIndex; i < totalSteps; i++) {
           currentPhase = 'step_fill';
           currentStepIndex = i;
+          const stepStartMs = Date.now();
+          let stepPromptBuildMs = 0;
+          let stepLlmMs = 0;
+          let stepValidationMs = 0;
+          let stepSnapshotMs = 0;
+          let stepPersistMs = 0;
+          let stepDistillMs = 0;
+          let stepCritiqueMs = 0;
+          let stepIsRepair = false;
 
           // Check cancellation at the top of each iteration
           if (await isCancelRequested()) {
@@ -668,7 +629,7 @@ export function createAgentGenerationStream(
           }
 
           // Drift detection: warn if consecutive degraded steps detected
-          const drift = sessionMemory.detectDrift();
+          const drift = contextManager.detectDrift();
           if (drift.drifting) {
             console.warn(`[agent-loop] Drift detected: ${drift.consecutiveDegraded} consecutive degraded steps`);
             // For Plan 02: log the warning. Plan 03 will integrate reviseOutline here.
@@ -689,361 +650,162 @@ export function createAgentGenerationStream(
           // Step-fill with repair loop
           let stepResult: TutorialStep | null = null;
           let lastError: string | null = null;
-          let lastFailedStep: TutorialStep | null = null;
+          let forceReplan = false;
+          let forceReplanReason: string | null = null;
+          const emitRuntimeEvent = (event: string, data: unknown) => {
+            controller.enqueue(encoder.encode(sseEvent(event, data)));
+          };
 
-          for (let attempt = 0; attempt < MAX_REPAIRS_PER_STEP; attempt++) {
-            loopState.turnCount++;
-            if (loopState.turnCount >= MAX_TURNS) {
-              console.warn(`[agent-loop] MAX_TURNS (${MAX_TURNS}) reached at step ${i + 1}, attempt ${attempt + 1}. Marking step as degraded.`);
-              break;
-            }
+          const stepExecution = await executeStep({
+            stepIndex: i,
+            totalSteps,
+            outline,
+            sourceItems,
+            teachingBrief,
+            previousFiles,
+            primaryFile,
+            model,
+            modelId,
+            modelSupportsRetrieval,
+            useNativeStructuredOutput,
+            distilledContext: contextManager.getDistilledContext(),
+            totalRetries,
+            currentTurnCount: loopState.turnCount,
+            maxTurns,
+            maxRepairsPerStep: MAX_REPAIRS_PER_STEP,
+            lifecycleHooks,
+            emitEvent: emitRuntimeEvent,
+            logger,
+          });
 
-            try {
-              let step: TutorialStep;
-              let retrievalStepScope: { targetFiles: string[]; contextFiles: string[] } | null = null;
+          loopState.turnCount += stepExecution.turnsConsumed;
+          totalRetries = stepExecution.retryCount;
+          stepPromptBuildMs += stepExecution.timings.promptBuildMs;
+          stepLlmMs += stepExecution.timings.llmCallMs;
+          stepValidationMs += stepExecution.timings.validationMs;
+          stepIsRepair = stepExecution.usedRepairPrompt;
+          lastError = stepExecution.lastError;
+          for (const repairRecord of stepExecution.repairHistory) {
+            contextManager.recordRepair(repairRecord);
+          }
 
-              // For repair attempts (attempt > 0), use the repair prompt
-              const useRepairPrompt = attempt > 0 && lastFailedStep && lastError;
-
-              if (useRepairPrompt) {
-                // Directed repair: inject actual code state + error message
-                const { systemPrompt, userPrompt } = buildRepairPrompt(
-                  lastFailedStep!,
-                  previousFiles,
-                  lastError!,
-                  outline,
-                  i,
-                  teachingBrief,
-                  sourceItems,
-                );
-
-                const generateOpts: Parameters<typeof generateText>[0] = {
-                  model,
-                  system: adaptPromptForModel(systemPrompt, modelId),
-                  prompt: adaptPromptForModel(userPrompt, modelId),
-                  maxOutputTokens: getMaxOutputTokens(modelId),
-                };
-
-                const result = await generateText(generateOpts);
-                const parsedStep = parseJsonFromText(result.text, legacyTutorialStepSchema, `step-${i + 1}-repair-attempt-${attempt}`);
-                step = { ...parsedStep, chapterId: outline.steps[i]?.chapterId ?? parsedStep.chapterId ?? DEFAULT_CHAPTER_ID };
-              } else if (modelSupportsRetrieval) {
-                // Retrieval-based step fill
-                const stepScope = deriveStepSourceScope(outline.steps[i], previousFiles);
-                retrievalStepScope = stepScope;
-                const budget = STEP_FILL_TOOLS_ENABLED
-                  ? createTokenBudgetSession({
-                      modelId: modelId ?? 'deepseek/deepseek-chat',
-                      basePrompt: '',
-                    })
-                  : null;
-                const scopedTools = budget
-                  ? createScopedSourceTools(sourceItems, previousFiles, { budget })
-                  : undefined;
-                const snapshotSummary = buildCurrentSnapshotSummary(previousFiles);
-                let { systemPrompt, userPrompt } = buildRetrievalStepFillPrompt(
-                  sourceItems,
-                  teachingBrief,
-                  outline,
-                  i,
-                  previousFiles,
-                  stepScope,
-                  snapshotSummary,
-                  lastError ?? undefined,
-                  { toolsEnabled: STEP_FILL_TOOLS_ENABLED },
-                );
-
-                // Inject distilled context if available (replaces accumulated history)
-                if (distilledContext && attempt === 0) {
-                  const distilledSection = `
-
-## Compressed context from previous steps
-${distilledContext.completedStepsSummary}
-
-## Key code structure
-${distilledContext.currentCodeSignatures}
-
-## Error and repair history
-${distilledContext.errorAndRepairHistory}`;
-                  userPrompt += distilledSection;
-                }
-
-                const generateOptions: Parameters<typeof generateText>[0] = {
-                  model,
-                  system: adaptPromptForModel(systemPrompt, modelId),
-                  prompt: adaptPromptForModel(userPrompt, modelId),
-                  maxOutputTokens: getMaxOutputTokens(modelId),
-                };
-                if (scopedTools) {
-                  generateOptions.tools = scopedTools;
-                  generateOptions.stopWhen = stepCountIs(6);
-                }
-                const result = await generateText(generateOptions);
-                const parsedStep = parseJsonFromText(result.text, legacyTutorialStepSchema, `step-${i + 1}-retrieval`);
-                step = { ...parsedStep, chapterId: outline.steps[i]?.chapterId ?? parsedStep.chapterId ?? DEFAULT_CHAPTER_ID };
-              } else {
-                // Legacy full-injection step fill
-                let { systemPrompt, userPrompt } = buildStepFillPrompt(
-                  sourceItems,
-                  teachingBrief,
-                  outline,
-                  i,
-                  previousFiles,
-                  lastError ?? undefined,
-                );
-
-                // Inject distilled context if available (replaces accumulated history)
-                if (distilledContext && attempt === 0) {
-                  const distilledSection = `
-
-## Compressed context from previous steps
-${distilledContext.completedStepsSummary}
-
-## Key code structure
-${distilledContext.currentCodeSignatures}
-
-## Error and repair history
-${distilledContext.errorAndRepairHistory}`;
-                  userPrompt += distilledSection;
-                }
-
-                const stepGenerateOpts: Parameters<typeof generateText>[0] = {
-                  model,
-                  system: adaptPromptForModel(systemPrompt, modelId),
-                  prompt: adaptPromptForModel(userPrompt, modelId),
-                  maxOutputTokens: getMaxOutputTokens(modelId),
-                };
-                if (useNativeStructuredOutput) {
-                  stepGenerateOpts.output = Output.object({ schema: legacyTutorialStepSchema });
-                }
-                const result = await generateText(stepGenerateOpts);
-
-                let parsedStep;
-                if (useNativeStructuredOutput && result.output) {
-                  parsedStep = result.output;
-                } else {
-                  parsedStep = parseJsonFromText(result.text, legacyTutorialStepSchema, `step-${i + 1}-legacy`);
-                }
-                step = { ...parsedStep, chapterId: outline.steps[i]?.chapterId ?? parsedStep.chapterId ?? DEFAULT_CHAPTER_ID };
-              }
-
-              if (modelSupportsRetrieval && retrievalStepScope) {
-                validateRetrievalStepTargets(step, primaryFile, retrievalStepScope, previousFiles);
-              }
-
-              // ── Immediate per-step validation (key difference from legacy) ──
-              if (step.patches && step.patches.length > 0) {
-                const validation = validateStepPatches(previousFiles, step.patches, primaryFile);
-
-                if (validation.result === 'pass') {
-                  logger.logEvent('step-validation', { stepIndex: i, attempt, result: 'pass', autoFixed: !!validation.fixedPatches });
-                  if (validation.fixedPatches) {
-                    step.patches = validation.fixedPatches;
-                    console.log(`[agent-loop] Auto-fix applied for step ${i + 1} (attempt ${attempt + 1})`);
-                  }
-
-                  loopState.outcomes.push({
-                    stepIndex: i,
-                    result: attempt === 0 ? 'pass' : 'repaired',
-                    repairCount: attempt,
-                    patchStrategy: validation.fixedPatches ? 'auto-fixed' : 'exact',
-                    locChange: step.patches.reduce((sum, p) => {
-                      return sum + Math.abs(p.replace.split('\n').length - p.find.split('\n').length);
-                    }, 0),
-                  });
-
-                  // Record outcome in session memory
-                  sessionMemory.recordStepOutcome({
-                    stepIndex: i,
-                    result: attempt === 0 ? 'pass' : 'repaired',
-                    repairCount: attempt,
-                    patchStrategy: validation.fixedPatches ? 'auto-fixed' : 'exact',
-                    locChange: step.patches.reduce((sum, p) => {
-                      return sum + Math.abs(p.replace.split('\n').length - p.find.split('\n').length);
-                    }, 0),
-                  });
-
-                  stepResult = step;
-                  consecutiveRepairFailures = 0; // Reset on successful step
-
-                  // Emit step-repaired if this was a repair attempt
-                  if (attempt > 0) {
-                    controller.enqueue(encoder.encode(
-                      sseEvent('step-repaired', { stepIndex: i, step: stepResult })
-                    ));
-                  }
-
-                  break; // Step passed, exit repair loop
-                }
-
-                if (validation.result === 'repairable') {
-                  logger.logEvent('step-validation', { stepIndex: i, attempt, result: 'repairable', error: validation.errors[0] });
-                  totalRetries++;
-                  lastFailedStep = step;
-                  lastError = validation.errors.join('\n');
-
-                  console.warn(`[agent-loop] Step ${i + 1} REPAIRABLE (attempt ${attempt + 1}/${MAX_REPAIRS_PER_STEP}):`, lastError);
-
-                  controller.enqueue(encoder.encode(
-                    sseEvent('repair', { stepIndex: i, attempt: attempt + 1, errorMessage: validation.errors[0] })
-                  ));
-                  await lifecycleHooks.onStepRetry?.({
-                    stepIndex: i,
-                    totalSteps,
-                    attempt: attempt + 1,
-                    retryCount: totalRetries,
-                    errorMessage: validation.errors[0],
-                  });
-
-                  // Record repair attempt
-                  loopState.repairHistory.push({
-                    stepIndex: i,
-                    attempts: attempt + 1,
-                    strategy: 'full-rewrite',
-                    outcome: 'degraded',
-                    errorMessage: lastError,
-                  });
-
-                  // Record repair in session memory
-                  sessionMemory.recordRepair({
-                    stepIndex: i,
-                    attempts: attempt + 1,
-                    strategy: 'full-rewrite',
-                    outcome: 'degraded',
-                    errorMessage: lastError ?? '',
-                  });
-
-                  // Continue inner loop -- next iteration uses buildRepairPrompt
-                  continue;
-                }
-
-                if (validation.result === 'unrecoverable') {
-                  logger.logEvent('step-validation', { stepIndex: i, attempt, result: 'unrecoverable', error: validation.errors[0] });
-                  totalRetries++;
-                  loopState.replanCount++;
-
-                  console.warn(`[agent-loop] Step ${i + 1} UNRECOVERABLE:`, validation.errors[0]);
-
-                  controller.enqueue(encoder.encode(
-                    sseEvent('replan', { fromStepIndex: i, reason: 'unrecoverable: ' + validation.errors[0], revisedStepCount: 0 })
-                  ));
-
-                  if (loopState.replanCount >= MAX_REPLANS) {
-                    console.warn(`[agent-loop] MAX_REPLANS (${MAX_REPLANS}) reached. Marking step as degraded.`);
-                  }
-
-                  // For Plan 01: mark step as degraded (full replan logic comes in Plan 03)
-                  loopState.outcomes.push({
-                    stepIndex: i,
-                    result: 'replanned',
-                    repairCount: attempt,
-                    patchStrategy: 'exact',
-                    locChange: 0,
-                  });
-
-                  // Record degraded outcome in session memory
-                  sessionMemory.recordStepOutcome({
-                    stepIndex: i,
-                    result: 'replanned',
-                    repairCount: attempt,
-                    patchStrategy: 'exact',
-                    locChange: 0,
-                  });
-
-                  // Use the step without patches as degraded
-                  step.patches = [];
-                  stepResult = step;
-                  break;
-                }
-              } else {
-                // No patches -- accept step as-is
-                loopState.outcomes.push({
-                  stepIndex: i,
-                  result: attempt === 0 ? 'pass' : 'repaired',
-                  repairCount: attempt,
-                  patchStrategy: 'exact',
-                  locChange: 0,
-                });
-
-                // Record no-patch outcome in session memory
-                sessionMemory.recordStepOutcome({
-                  stepIndex: i,
-                  result: attempt === 0 ? 'pass' : 'repaired',
-                  repairCount: attempt,
-                  patchStrategy: 'exact',
-                  locChange: 0,
-                });
-                stepResult = step;
-                consecutiveRepairFailures = 0; // Reset on successful step (no patches)
-                break;
-              }
-            } catch (stepErr: any) {
-              totalRetries++;
-              const stepErrorMessage = stepErr.message || String(stepErr);
-              lastError = stepErrorMessage;
-              console.error(`[agent-loop] Step ${i + 1} attempt ${attempt + 1} failed:`, lastError);
-              await lifecycleHooks.onStepRetry?.({
-                stepIndex: i,
-                totalSteps,
-                attempt: attempt + 1,
-                retryCount: totalRetries,
-                errorMessage: stepErrorMessage,
-              });
-            }
+          if (stepExecution.status === 'committed') {
+            stepResult = stepExecution.step;
+            loopState.outcomes.push(stepExecution.outcome);
+            contextManager.recordStepOutcome(stepExecution.outcome);
+            consecutiveRepairFailures = 0;
+          } else {
+            forceReplan = stepExecution.forceReplan;
+            forceReplanReason = stepExecution.forceReplanReason;
           }
 
           if (!stepResult) {
-            consecutiveRepairFailures++;
+            if (forceReplan) {
+              consecutiveRepairFailures = Math.max(consecutiveRepairFailures, 1);
+            } else {
+              consecutiveRepairFailures++;
+            }
 
-            // If consecutive repairs fail >= 2 times, attempt reviseOutline
-            if (consecutiveRepairFailures >= 2 && loopState.replanCount < MAX_REPLANS) {
-              console.warn(`[agent-loop] ${consecutiveRepairFailures} consecutive repair failures, triggering reviseOutline from step ${i}`);
+            const shouldAttemptReplan = shouldReviseTail({
+              consecutiveRepairFailures,
+              replanCount: loopState.replanCount,
+              maxReplans: MAX_REPLANS,
+              immediate: forceReplan,
+            });
+
+            if (shouldAttemptReplan) {
+              const replanReason = forceReplanReason ?? `${consecutiveRepairFailures} consecutive repair failures`;
+              console.warn(`[agent-loop] triggering reviseOutline from step ${i}: ${replanReason}`);
               controller.enqueue(encoder.encode(
-                sseEvent('replan', { fromStepIndex: i, reason: `${consecutiveRepairFailures} consecutive repair failures`, revisedStepCount: 0 })
+                sseEvent('replan', { fromStepIndex: i, reason: replanReason, revisedStepCount: 0 })
               ));
+              loopState.replanCount++;
+              await lifecycleHooks.onAction?.({
+                action: 'replan',
+                stepIndex: i,
+                totalSteps,
+                retryCount: totalRetries,
+                errorMessage: replanReason,
+                category: forceReplan ? 'unrecoverable' : 'repairable',
+              });
 
-              const revisedOutline = await reviseOutline(i, lastError ?? 'consecutive repair failures');
+              const revisedOutline = await reviseOutline(i, replanReason);
               if (revisedOutline) {
                 outline = revisedOutline;
-                loopState.replanCount++;
+                totalSteps = outline.steps.length;
+                maxTurns = Math.max(maxTurns, computeAgentLoopMaxTurns(totalSteps));
+                await lifecycleHooks.onOutlineReady?.(outline);
                 controller.enqueue(encoder.encode(
                   sseEvent('replan', { fromStepIndex: i, reason: 'outline revised', revisedStepCount: revisedOutline.steps.length - i })
                 ));
                 // Reset consecutive counter since outline changed
                 consecutiveRepairFailures = 0;
-                // Attempt one more fill with the revised step definition
-                try {
-                  const previousFilesForRetry = snapshots.get(i - 1)!;
-                  const { systemPrompt: sysPrompt, userPrompt: usrPrompt } = modelSupportsRetrieval
-                    ? buildRetrievalStepFillPrompt(sourceItems, teachingBrief, outline, i, previousFilesForRetry, deriveStepSourceScope(outline.steps[i], previousFilesForRetry), buildCurrentSnapshotSummary(previousFilesForRetry), undefined, { toolsEnabled: STEP_FILL_TOOLS_ENABLED })
-                    : buildStepFillPrompt(sourceItems, teachingBrief, outline, i, previousFilesForRetry, undefined);
-                  const retryResult = await generateText({
-                    model,
-                    system: adaptPromptForModel(sysPrompt, modelId),
-                    prompt: adaptPromptForModel(usrPrompt, modelId),
-                    maxOutputTokens: getMaxOutputTokens(modelId),
-                  });
-                  const retryStep = { ...parseJsonFromText(retryResult.text, legacyTutorialStepSchema, `step-${i + 1}-post-replan`), chapterId: outline.steps[i]?.chapterId ?? DEFAULT_CHAPTER_ID };
-                  const retryValidation = validateStepPatches(previousFilesForRetry, retryStep.patches ?? [], primaryFile);
-                  if (retryValidation.result === 'pass') {
-                    if (retryValidation.fixedPatches) retryStep.patches = retryValidation.fixedPatches;
-                    stepResult = retryStep;
-                    sessionMemory.recordStepOutcome({ stepIndex: i, result: 'replanned', repairCount: 0, patchStrategy: 'exact', locChange: 0 });
-                  }
-                } catch {
-                  // Post-replan attempt also failed -- accept as degraded
+                const postReplanExecution = await executeStep({
+                  stepIndex: i,
+                  totalSteps,
+                  outline,
+                  sourceItems,
+                  teachingBrief,
+                  previousFiles,
+                  primaryFile,
+                  model,
+                  modelId,
+                  modelSupportsRetrieval,
+                  useNativeStructuredOutput,
+                  totalRetries,
+                  currentTurnCount: loopState.turnCount,
+                  maxTurns,
+                  maxRepairsPerStep: 1,
+                  initialMode: 'post_replan',
+                  lifecycleHooks,
+                  emitEvent: emitRuntimeEvent,
+                  logger,
+                });
+
+                loopState.turnCount += postReplanExecution.turnsConsumed;
+                totalRetries = postReplanExecution.retryCount;
+                stepPromptBuildMs += postReplanExecution.timings.promptBuildMs;
+                stepLlmMs += postReplanExecution.timings.llmCallMs;
+                stepValidationMs += postReplanExecution.timings.validationMs;
+                stepIsRepair = stepIsRepair || postReplanExecution.usedRepairPrompt;
+                lastError = postReplanExecution.lastError ?? lastError;
+                for (const repairRecord of postReplanExecution.repairHistory) {
+                  contextManager.recordRepair(repairRecord);
+                }
+
+                if (postReplanExecution.status === 'committed') {
+                  stepResult = postReplanExecution.step;
+                  const replannedOutcome: StepOutcome = {
+                    ...postReplanExecution.outcome,
+                    result: 'replanned',
+                  };
+                  loopState.outcomes.push(replannedOutcome);
+                  contextManager.recordStepOutcome(replannedOutcome);
                 }
               }
             }
 
             if (!stepResult) {
-              // After reviseOutline attempt or if replan limit reached
               if (loopState.replanCount >= MAX_REPLANS) {
-                console.error(`[agent-loop] Step ${i + 1} failed after ${MAX_REPLANS} replans -- accepting degraded result`);
+                console.error(
+                  `[agent-loop] Step ${i + 1} failed after ${MAX_REPLANS} replans; aborting run`,
+                );
+              }
+              if (shouldAcceptDegradedStep()) {
+                throw new Error(
+                  'shouldAcceptDegradedStep unexpectedly returned true without degraded-step commit support',
+                );
               }
               throw new MultiPhaseGenerationError(
                 'step_fill',
-                new Error(`Step ${i + 1} failed after ${MAX_REPAIRS_PER_STEP} repairs${consecutiveRepairFailures >= 2 ? ' and outline revision' : ''}: ${lastError ?? 'unknown error'}`),
+                new Error(
+                  formatStepFailureMessage(
+                    i + 1,
+                    MAX_REPAIRS_PER_STEP,
+                    lastError,
+                    consecutiveRepairFailures >= 2,
+                  ),
+                ),
                 i,
               );
             }
@@ -1061,117 +823,146 @@ ${distilledContext.errorAndRepairHistory}`;
             stepIndex: i,
             totalSteps,
             retryCount: totalRetries,
+            result:
+              loopState.outcomes[loopState.outcomes.length - 1]?.result ?? 'pass',
           });
+          const _persistStart = Date.now();
           await lifecycleHooks.onStepFilled?.(i, stepResult, [...filledSteps]);
+          stepPersistMs = Date.now() - _persistStart;
 
           // Update snapshot cache
+          const _snapStart = Date.now();
           if (stepResult.patches && stepResult.patches.length > 0) {
             const newFiles = applyContentPatches(previousFiles, stepResult.patches, primaryFile);
             snapshots.set(i, newFiles);
           } else {
             snapshots.set(i, previousFiles);
           }
+          stepSnapshotMs = Date.now() - _snapStart;
+          const currentFiles = snapshots.get(i)!;
 
           // Critique teaching coherence every 4 steps
+          const _critiqueStart = Date.now();
           critiqueSteps(i);
+          stepCritiqueMs = Date.now() - _critiqueStart;
 
-          // LOC budget warning (quality signal, does not block)
-          if (stepResult.patches && stepResult.patches.length > 0) {
-            const locBudget = outline.steps[i]?.estimatedLocChange ?? LOC_DEFAULT_BUDGET;
-            const actualLoc = stepResult.patches.reduce((sum, p) => {
-              return sum + Math.abs(p.replace.split('\n').length - p.find.split('\n').length);
-            }, 0);
-            const warningThreshold = Math.max(locBudget * 2, LOC_WARNING_FLOOR);
-            if (actualLoc > warningThreshold) {
-              console.warn(
-                `[agent-loop] Step ${i + 1} LOC ${actualLoc} exceeds warning threshold ${warningThreshold} (budget ${locBudget})`,
-              );
-            }
+          const locSignal = buildLocWarningSignal({
+            stepIndex: i,
+            step: stepResult,
+            estimatedLocChange: outline.steps[i]?.estimatedLocChange ?? null,
+          });
+          if (locSignal) {
+            recordSoftSignal(locSignal);
           }
 
           // ── Context distillation (Plan 02) ──
 
-          // Micro-compact: replace completed steps with one-line summaries
-          const completedSummary = microCompact(filledSteps, filledSteps.length);
+          const _distillStart = Date.now();
+          const compressionResult = await contextManager.maybeCompress({
+            filledSteps,
+            currentCode: currentFiles,
+            outline,
+            currentStepIndex: i + 1,
+            teachingBrief,
+            sourceItems,
+            replanRemainingOutline: () =>
+              replanRemainingOutline({
+                model,
+                modelId,
+                outline,
+                currentStepIndex: i + 1,
+                completedStepsSummary: microCompact(
+                  filledSteps,
+                  filledSteps.length,
+                ),
+                currentCode: currentFiles,
+                teachingBrief,
+                sourceItems,
+                logger,
+              }),
+            onBeforeAction: async (event) => {
+              logger.logEvent('compression', {
+                type: event.mode,
+                stepIndex: i,
+                tokenUsage: contextManager.getTokenUsage(),
+              });
+              await lifecycleHooks.onAction?.({
+                action: 'compress',
+                stepIndex: i,
+                totalSteps,
+                retryCount: totalRetries,
+              });
+              controller.enqueue(encoder.encode(
+                sseEvent('compress', {
+                  type: event.mode,
+                  tokensBefore: event.tokensBefore,
+                  tokensAfter: 0,
+                }),
+              ));
+            },
+          });
 
-          // Update token usage estimate
-          estimatedTokenUsage += estimateTokens(completedSummary);
-          loopState.tokenUsage = { used: estimatedTokenUsage, budget: tokenBudget };
-
-          // Check compression thresholds
-          const compressionAction = checkCompressionThreshold(loopState.tokenUsage);
-
-          if (compressionAction === 'summary') {
-            logger.logEvent('compression', { type: 'summary', stepIndex: i, tokenUsage: loopState.tokenUsage });
-            compressionCount++;
+          if (compressionResult.action === 'summary') {
+            console.log(
+              `[agent-loop] Auto-summarize compressed context: saved ~${compressionResult.tokensBefore - compressionResult.tokensAfter} tokens`,
+            );
             controller.enqueue(encoder.encode(
               sseEvent('compress', {
                 type: 'summary',
-                tokensBefore: estimatedTokenUsage,
-                tokensAfter: 0,
+                tokensBefore: compressionResult.tokensBefore,
+                tokensAfter: compressionResult.tokensAfter,
               })
             ));
-            try {
-              distilledContext = await autoSummarize({
-                completedStepsSummary: completedSummary,
-                currentCode: previousFiles,
-                repairHistory: sessionMemory.getRepairHistory(),
-                outline,
-                currentStepIndex: i + 1,
-                teachingBrief,
-              }, modelId);
-              const tokensSaved = estimatedTokenUsage - estimateTokens(
-                JSON.stringify(distilledContext)
-              );
-              estimatedTokenUsage = Math.max(0, estimatedTokenUsage - tokensSaved);
-              console.log(`[agent-loop] Auto-summarize compressed context: saved ~${tokensSaved} tokens`);
-              controller.enqueue(encoder.encode(
-                sseEvent('compress', {
-                  type: 'summary',
-                  tokensBefore: estimatedTokenUsage + tokensSaved,
-                  tokensAfter: estimatedTokenUsage,
-                })
-              ));
-            } catch (err) {
-              console.error('[agent-loop] Auto-summarize failed:', err);
-              // Continue without compression -- not fatal
-            }
-          } else if (compressionAction === 'replan') {
-            logger.logEvent('compression', { type: 'replan', stepIndex: i, tokenUsage: loopState.tokenUsage });
-            compressionCount++;
+          } else if (
+            compressionResult.action === 'replan' &&
+            compressionResult.outline
+          ) {
+            outline = compressionResult.outline;
+            totalSteps = outline.steps.length;
+            maxTurns = Math.max(maxTurns, computeAgentLoopMaxTurns(totalSteps));
+            loopState.replanCount++;
+            await lifecycleHooks.onOutlineReady?.(outline);
+            await lifecycleHooks.onAction?.({
+              action: 'replan',
+              stepIndex: i,
+              totalSteps,
+              retryCount: totalRetries,
+            });
+            console.log(
+              `[agent-loop] Full-replan regenerated outline from step ${i + 2}`,
+            );
             controller.enqueue(encoder.encode(
               sseEvent('compress', {
                 type: 'replan',
-                tokensBefore: estimatedTokenUsage,
-                tokensAfter: 0,
+                tokensBefore: compressionResult.tokensBefore,
+                tokensAfter: compressionResult.tokensAfter,
               })
             ));
-            try {
-              const revisedOutline = await fullReplan({
-                outline,
-                currentStepIndex: i + 1,
-                completedStepsSummary: completedSummary,
-                currentCode: previousFiles,
-                teachingBrief,
-                sourceItems,
-              }, modelId);
-              outline = revisedOutline;
-              // Reset token usage after replan (context is much smaller now)
-              estimatedTokenUsage = estimateTokens(JSON.stringify(outline));
-              loopState.replanCount++;
-              console.log(`[agent-loop] Full-replan regenerated outline from step ${i + 2}`);
-              controller.enqueue(encoder.encode(
-                sseEvent('compress', {
-                  type: 'replan',
-                  tokensBefore: estimatedTokenUsage + tokenBudget * 0.2,
-                  tokensAfter: estimatedTokenUsage,
-                })
-              ));
-            } catch (err) {
-              console.error('[agent-loop] Full-replan failed:', err);
-              // Continue without replan -- not fatal
-            }
+          } else if (compressionResult.error) {
+            const failureLabel =
+              compressionResult.attemptedAction === 'summary'
+                ? 'Auto-summarize'
+                : 'Full-replan';
+            console.error(`[agent-loop] ${failureLabel} failed:`, compressionResult.error);
           }
+
+          stepDistillMs = Date.now() - _distillStart;
+
+          // Record step timing
+          const stepTotalMs = Date.now() - stepStartMs;
+          genTimer.recordStep({
+            stepIndex: i,
+            isRepair: stepIsRepair,
+            totalMs: stepTotalMs,
+            promptBuildMs: stepPromptBuildMs,
+            llmCallMs: stepLlmMs,
+            validationMs: stepValidationMs,
+            snapshotMs: stepSnapshotMs,
+            persistMs: stepPersistMs,
+            distillMs: stepDistillMs,
+            critiqueMs: stepCritiqueMs,
+          });
+          console.log(`[agent-timing] Step ${i + 1}${stepIsRepair ? '/repair' : ''}: ${stepTotalMs}ms (prompt:${stepPromptBuildMs} llm:${stepLlmMs} valid:${stepValidationMs} snap:${stepSnapshotMs} db:${stepPersistMs} distill:${stepDistillMs} critique:${stepCritiqueMs})`);
 
           // Check for cancellation between steps
           if (await isCancelRequested()) {
@@ -1201,6 +992,7 @@ ${distilledContext.errorAndRepairHistory}`;
         });
 
         // ── Phase 3: Validate ──
+        const validatePhaseStart = Date.now();
         currentPhase = 'validate';
         currentStepIndex = null;
         controller.enqueue(encoder.encode(
@@ -1214,39 +1006,55 @@ ${distilledContext.errorAndRepairHistory}`;
         });
 
         let validationErrors: string[] = [];
+        let validationResult: Awaited<ReturnType<typeof validateTutorialDraft>> | null = null;
         try {
-          const validation = await validateTutorialDraft(draft);
-          validationErrors = validation.valid ? [] : validation.errors;
+          validationResult = await validateTutorialDraft(draft);
+          validationErrors = validationResult.valid ? [] : validationResult.errors;
         } catch (valErr: any) {
           validationErrors = [valErr.message || String(valErr)];
         }
+
+        const validateTotalMs = Date.now() - validatePhaseStart;
+        console.log('[agent-timing] Validate phase:', validateTotalMs, 'ms');
 
         controller.enqueue(encoder.encode(
           sseEvent('validation', { valid: validationErrors.length === 0, errors: validationErrors })
         ));
 
+        if (validationResult && !validationResult.valid) {
+          throw new TutorialDraftValidationError(validationResult);
+        }
+        if (validationErrors.length > 0) {
+          throw new Error(validationErrors.join('; '));
+        }
+
         controller.enqueue(encoder.encode(
           sseEvent('done', { success: true })
         ));
 
-        logger.logEvent('done', { totalSteps: filledSteps.length, totalRetries, replanCount: loopState.replanCount, compressionCount, outcomeSummary: loopState.outcomes.map(o => `${o.stepIndex}:${o.result}`) });
+        const agentMetrics: AgentLoopMetrics = {
+          outcomes: loopState.outcomes,
+          repairHistory: contextManager.getRepairHistory(),
+          replanCount: loopState.replanCount,
+          compressionCount: contextManager.getCompressionCount(),
+          softSignals: softSignalCollector.list(),
+        };
+        logger.logEvent('done', {
+          totalSteps: filledSteps.length,
+          totalRetries,
+          replanCount: agentMetrics.replanCount,
+          compressionCount: agentMetrics.compressionCount,
+          outcomeSummary: loopState.outcomes.map((o) => `${o.stepIndex}:${o.result}`),
+        });
+
+        genTimer.printSummary();
 
         resolveResult({
           draft,
           outline,
           retryCount: totalRetries,
-          agentMetrics: {
-            outcomes: loopState.outcomes,
-            repairHistory: sessionMemory.getRepairHistory(),
-            replanCount: loopState.replanCount,
-            compressionCount,
-          },
-        } as MultiPhaseResult & { agentMetrics: {
-          outcomes: Array<{ stepIndex: number; result: string; repairCount: number; patchStrategy: string; locChange: number }>;
-          repairHistory: Array<{ stepIndex: number; attempts: number; strategy: string; outcome: string; errorMessage: string }>;
-          replanCount: number;
-          compressionCount: number;
-        }});
+          agentMetrics,
+        });
 
         controller.close();
       } catch (err: any) {

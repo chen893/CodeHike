@@ -44,5 +44,6 @@ export {
   appendStepRequestSchema,
   updateStepRequestSchema,
   regenerateStepRequestSchema,
+  retryFromStepRequestSchema,
   publishRequestSchema,
 } from './api';

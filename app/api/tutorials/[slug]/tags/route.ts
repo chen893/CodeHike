@@ -1,13 +1,10 @@
 import { NextResponse } from 'next/server';
 import { auth } from '@/auth';
-import { getTutorialTags, setTutorialTagsByName } from '@/lib/services/tag-service';
-import { getPublishedBySlug } from '@/lib/repositories/published-tutorial-repository';
+import {
+  getTutorialTagsBySlug,
+  setTutorialTagsBySlug,
+} from '@/lib/services/tag-service';
 import { getRouteErrorMessage } from '@/lib/api/route-errors';
-
-async function resolveTutorialId(slug: string): Promise<string | null> {
-  const tutorial = await getPublishedBySlug(slug);
-  return tutorial?.id ?? null;
-}
 
 export async function GET(
   _req: Request,
@@ -15,11 +12,10 @@ export async function GET(
 ) {
   try {
     const { slug } = await params;
-    const tutorialId = await resolveTutorialId(slug);
-    if (!tutorialId) {
+    const tags = await getTutorialTagsBySlug(slug);
+    if (!tags) {
       return NextResponse.json({ message: '教程未找到', code: 'NOT_FOUND' }, { status: 404 });
     }
-    const tags = await getTutorialTags(tutorialId);
     return NextResponse.json(tags);
   } catch (err) {
     console.error('[api/tutorials/slug/tags] GET failed:', err);
@@ -70,12 +66,10 @@ export async function PUT(
       return trimmed.length > 0 && trimmed.length <= 64;
     });
 
-    const tutorialId = await resolveTutorialId(slug);
-    if (!tutorialId) {
+    const tags = await setTutorialTagsBySlug(slug, validNames);
+    if (!tags) {
       return NextResponse.json({ message: '教程未找到', code: 'NOT_FOUND' }, { status: 404 });
     }
-
-    const tags = await setTutorialTagsByName(tutorialId, validNames);
     return NextResponse.json(tags);
   } catch (err) {
     console.error('[api/tutorials/slug/tags] PUT failed:', err);

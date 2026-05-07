@@ -50,6 +50,20 @@ test('generation job schema parses a persisted job shape', () => {
       ],
     },
     stepTitlesSnapshot: ['Step 1'],
+    agentState: {
+      checkpointIndex: 0,
+      currentAction: 'step_fill',
+      currentAttempt: 0,
+      retryCount: 1,
+      replanCount: 0,
+      compressionCount: 0,
+      driftSignals: {
+        consecutiveRepairFailures: 0,
+        consecutiveDegradedSteps: 0,
+      },
+      lastFailure: null,
+      lastCommittedSnapshotHash: 'abc123',
+    },
     createdAt: new Date(),
     updatedAt: new Date(),
   });
@@ -67,6 +81,7 @@ test('drizzle schema exposes active generation job columns', () => {
   assert.ok('draftId' in jobColumns);
   assert.ok('status' in jobColumns);
   assert.ok('errorCode' in jobColumns);
+  assert.ok('agentState' in jobColumns);
 });
 
 test('active generation job helper only accepts queued and running', () => {
@@ -97,6 +112,16 @@ test('migration encodes same-draft and single-active-job invariants', () => {
   assert.match(migration, /clock_timestamp\(\)/);
 });
 
+test('agent runtime checkpoint migration adds agent_state', () => {
+  const migration = fs.readFileSync(
+    new URL('../drizzle/0006_agent_runtime_checkpoint.sql', import.meta.url),
+    'utf8'
+  );
+
+  assert.match(migration, /agent_state/);
+  assert.match(migration, /alter table "draft_generation_jobs"/i);
+});
+
 test('snapshot matches generation job indexes and same-draft foreign key', () => {
   const snapshot = JSON.parse(
     fs.readFileSync(
@@ -122,6 +147,19 @@ test('snapshot matches generation job indexes and same-draft foreign key', () =>
     draftTable.foreignKeys.drafts_active_generation_job_same_draft_fk.columnsTo,
     ['draft_id', 'id']
   );
+});
+
+test('latest snapshot carries agent_state on generation jobs', () => {
+  const snapshot = JSON.parse(
+    fs.readFileSync(
+      new URL('../drizzle/meta/0006_snapshot.json', import.meta.url),
+      'utf8'
+    )
+  );
+
+  const jobTable = snapshot.tables['public.draft_generation_jobs'];
+  assert.ok(jobTable.columns.agent_state);
+  assert.equal(jobTable.columns.agent_state.type, 'jsonb');
 });
 
 test('generation job repository module exports the expected entry points', async () => {

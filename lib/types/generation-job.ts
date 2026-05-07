@@ -1,5 +1,7 @@
 import type { TutorialOutline } from '../schemas/tutorial-outline';
 import type {
+  AgentRuntimeAction,
+  AgentStateSnapshot,
   GenerationJobErrorCode,
   GenerationJobFailureDetail,
   GenerationJobPhase,
@@ -40,7 +42,8 @@ export function mapJobToRecoverability(job: DraftGenerationJob | null): Recovera
   // Terminal failed/cancelled/abandoned states
   if (
     (job.errorCode === 'STEP_GENERATION_FAILED' ||
-      job.errorCode === 'PATCH_VALIDATION_FAILED') &&
+      job.errorCode === 'PATCH_VALIDATION_FAILED' ||
+      job.errorCode === 'DRAFT_VALIDATION_FAILED') &&
     job.currentStepIndex != null &&
     job.currentStepIndex >= 0
   ) {
@@ -70,6 +73,18 @@ export interface DraftGenerationJob {
   failureDetail: GenerationJobFailureDetail | null;
   outlineSnapshot: TutorialOutline | null;
   stepTitlesSnapshot: string[] | null;
+  agentState: AgentStateSnapshot | null;
   createdAt: Date;
   updatedAt: Date;
+}
+
+export function getJobCurrentAction(
+  job: Pick<DraftGenerationJob, 'agentState' | 'phase'> | null
+): AgentRuntimeAction | null {
+  if (!job) return null;
+  if (job.agentState?.currentAction) return job.agentState.currentAction;
+  if (job.phase === 'outline') return 'planning';
+  if (job.phase === 'step_fill') return 'step_fill';
+  if (job.phase === 'validate') return 'validate';
+  return null;
 }

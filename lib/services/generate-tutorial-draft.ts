@@ -9,10 +9,24 @@ import {
 import {
   createAgentGenerationStream,
 } from "../ai/agent-generator";
+import {
+  computeSnapshotHash,
+  createEmptyAgentState,
+  deriveAgentResumeState,
+  validateAgentResumeCheckpoint,
+  withAgentAction,
+  withCommittedCheckpoint,
+  withFailureState,
+} from "../ai/agent-runtime/checkpoint-adapter";
+import { classifyFailureMessage } from "../ai/agent-runtime/recovery-policy";
 import { materializeBaseCodeForFilledSteps } from "../ai/progressive-snapshot-base-code";
 import { RetrievalModelRequiredError } from "../ai/model-capabilities";
 import { PatchValidationError } from "../errors/error-types";
-import { validateTutorialDraft } from "../utils/validation";
+import {
+  TutorialDraftValidationError,
+  type ValidationProvenance,
+  validateTutorialDraft,
+} from "../utils/validation";
 import { computeGenerationQuality } from "./compute-generation-quality";
 import { db } from "../db";
 import * as draftRepo from "../repositories/draft-repository";
@@ -23,12 +37,21 @@ import type {
   GenerationJobPhase,
 } from "../schemas/generation-job";
 import type { DraftGenerationJob } from "../types/generation-job";
-import { isTerminalDraftGenerationJobStatus } from "../types/generation-job";
+import {
+  getJobCurrentAction,
+  isTerminalDraftGenerationJobStatus,
+} from "../types/generation-job";
 import { ensureDraftChapters } from "../tutorial/chapters";
 import { ensureOutlineChapters } from "../tutorial/outline-chapters";
+import { normalizeBaseCode } from "../tutorial/normalize";
+import { getFilesAfterStep } from "../tutorial/draft-code";
 import type { TutorialOutline } from "../schemas/tutorial-outline";
 import type { SourceItem } from "../schemas/source-item";
 import type { DraftGenerationMode } from "../types/generation-mode";
+import type {
+  AgentResumeState,
+  AgentStateSnapshot,
+} from "../ai/agent-runtime/types";
 
 /**
  * In-memory registry of active generations.
@@ -127,6 +150,22 @@ function getErrorStepIndex(error: unknown): number | null {
   return null;
 }
 
+function getFirstValidationStepIndex(
+  provenance: unknown,
+): number | null {
+  if (!Array.isArray(provenance)) return null;
+  const match = provenance.find(
+    (
+      item,
+    ): item is ValidationProvenance =>
+      Boolean(item) &&
+      typeof item === "object" &&
+      typeof (item as { stepIndex?: unknown }).stepIndex === "number" &&
+      ((item as { stepIndex: number }).stepIndex >= 0),
+  );
+  return match?.stepIndex ?? null;
+}
+
 function getFailureDetail(error: unknown): GenerationJobFailureDetail {
   const unwrapped = unwrapGenerationError(error);
   const detail: GenerationJobFailureDetail = {
@@ -144,6 +183,11 @@ function getFailureDetail(error: unknown): GenerationJobFailureDetail {
     detail.estimatedTokens = unwrapped.estimatedTokens;
   }
 
+  if (unwrapped instanceof TutorialDraftValidationError) {
+    detail.validationErrors = unwrapped.validation.errors;
+    detail.validationProvenance = unwrapped.validation.provenance;
+  }
+
   return detail;
 }
 
@@ -155,14 +199,18 @@ export function getGenerationJobFailureUpdate(error: unknown): {
   phase: GenerationJobPhase | null;
   currentStepIndex: number | null;
 } {
+  const failureDetail = getFailureDetail(error);
+  const currentStepIndex =
+    getErrorStepIndex(error) ?? getFirstValidationStepIndex(failureDetail.validationProvenance);
+
   if (isCancelledGenerationError(error)) {
     return {
       status: "cancelled",
       errorCode: "JOB_CANCELLED",
       errorMessage: "生成已取消",
-      failureDetail: getFailureDetail(error),
+      failureDetail,
       phase: getErrorPhase(error),
-      currentStepIndex: getErrorStepIndex(error),
+      currentStepIndex,
     };
   }
 
@@ -171,6 +219,8 @@ export function getGenerationJobFailureUpdate(error: unknown): {
   const errorCode: GenerationJobErrorCode =
     unwrapped instanceof RetrievalModelRequiredError
       ? "MODEL_CAPABILITY_MISMATCH"
+      : unwrapped instanceof TutorialDraftValidationError
+        ? "DRAFT_VALIDATION_FAILED"
       : unwrapped instanceof PatchValidationError
         ? "PATCH_VALIDATION_FAILED"
         : phase === "outline"
@@ -185,16 +235,24 @@ export function getGenerationJobFailureUpdate(error: unknown): {
     status: "failed",
     errorCode,
     errorMessage: getErrorMessage(unwrapped),
-    failureDetail: getFailureDetail(error),
+    failureDetail,
     phase,
-    currentStepIndex: getErrorStepIndex(error),
+    currentStepIndex,
   };
+}
+
+function phaseToAction(phase: GenerationJobPhase | null | undefined) {
+  if (phase === "outline") return "planning" as const;
+  if (phase === "step_fill") return "step_fill" as const;
+  if (phase === "validate") return "validate" as const;
+  return "planning" as const;
 }
 
 function createJobLifecycleHooks(
   jobId: string,
   draftId: string,
   sourceItems: SourceItem[],
+  initialAgentState: AgentStateSnapshot | null = null,
 ): MultiPhaseLifecycleHooks {
   async function touchJob(data: Parameters<typeof generationJobRepo.updateDraftGenerationJob>[1]) {
     const now = new Date();
@@ -207,26 +265,91 @@ function createJobLifecycleHooks(
   }
 
   let cachedOutline: TutorialOutline | null = null;
+  let agentState = initialAgentState;
 
   return {
     onPhase: async (event) => {
+      agentState = withAgentAction(agentState, phaseToAction(event.phase), {
+        retryCount: event.retryCount ?? agentState?.retryCount ?? 0,
+      });
       await touchJob({
         phase: event.phase,
         currentStepIndex: event.stepIndex ?? null,
         totalSteps: event.totalSteps ?? undefined,
         retryCount: event.retryCount,
+        agentState,
+      });
+    },
+    onAction: async (event) => {
+      const nextReplanCount =
+        event.action === "replan"
+          ? (agentState?.replanCount ?? 0) + 1
+          : agentState?.replanCount;
+      const nextCompressionCount =
+        event.action === "compress"
+          ? (agentState?.compressionCount ?? 0) + 1
+          : agentState?.compressionCount;
+      const nextFailureCategory =
+        event.category ?? classifyFailureMessage(event.errorMessage);
+
+      agentState = event.errorMessage
+        ? withFailureState({
+            state: agentState,
+            action: event.action,
+            stepIndex: event.stepIndex ?? null,
+            category: nextFailureCategory,
+            message: event.errorMessage,
+            retryCount: event.retryCount,
+            currentAttempt: event.attempt ?? agentState?.currentAttempt ?? 0,
+            consecutiveRepairFailures:
+              agentState?.driftSignals.consecutiveRepairFailures,
+          })
+        : withAgentAction(agentState, event.action, {
+            retryCount: event.retryCount ?? agentState?.retryCount ?? 0,
+            currentAttempt: event.attempt ?? agentState?.currentAttempt ?? 0,
+            replanCount: nextReplanCount,
+            compressionCount: nextCompressionCount,
+          });
+
+      await touchJob({
+        phase: "step_fill",
+        currentStepIndex: event.stepIndex ?? null,
+        totalSteps: event.totalSteps ?? undefined,
+        retryCount: event.retryCount,
+        agentState,
       });
     },
     onOutlineReady: async (outline) => {
       cachedOutline = outline;
       const stepTitles = outline.steps.map((step) => step.title);
+      if ((agentState?.checkpointIndex ?? -1) < 0) {
+        const { files } = normalizeBaseCode(outline.baseCode, outline.meta);
+        agentState = withCommittedCheckpoint({
+          state: agentState,
+          checkpointIndex: -1,
+          currentAction: "planning",
+          snapshotHash: computeSnapshotHash(files),
+        });
+      }
       await touchJob({
         outlineSnapshot: outline,
         totalSteps: outline.steps.length,
         stepTitlesSnapshot: stepTitles,
+        agentState,
       });
     },
     onStepRetry: async (event) => {
+      agentState = withFailureState({
+        state: agentState,
+        action: "repair",
+        stepIndex: event.stepIndex,
+        category: event.category ?? classifyFailureMessage(event.errorMessage),
+        message: event.errorMessage,
+        retryCount: event.retryCount,
+        currentAttempt: event.attempt,
+        consecutiveRepairFailures:
+          (agentState?.driftSignals.consecutiveRepairFailures ?? 0) + 1,
+      });
       await touchJob({
         phase: "step_fill",
         currentStepIndex: event.stepIndex,
@@ -237,18 +360,34 @@ function createJobLifecycleHooks(
           lastRetryAttempt: event.attempt,
           lastRetryError: event.errorMessage,
         },
+        agentState,
       });
     },
     onStepCompleted: async (event) => {
+      const nextConsecutiveDegradedSteps =
+        event.result === "replanned"
+          ? (agentState?.driftSignals.consecutiveDegradedSteps ?? 0) + 1
+          : 0;
+      agentState = withAgentAction(agentState, "step_fill", {
+        retryCount: event.retryCount,
+        currentAttempt: 0,
+        driftSignals: {
+          consecutiveRepairFailures: 0,
+          consecutiveDegradedSteps: nextConsecutiveDegradedSteps,
+        },
+        lastFailure: null,
+      });
       await touchJob({
         phase: "step_fill",
         currentStepIndex: event.stepIndex,
         totalSteps: event.totalSteps,
         retryCount: event.retryCount,
+        agentState,
       });
     },
     onStepFilled: async (_stepIndex, _step, filledSteps) => {
       if (!cachedOutline) return;
+      const _partialStart = Date.now();
       try {
         const partialDraft = ensureDraftChapters({
           meta: cachedOutline.meta,
@@ -262,8 +401,31 @@ function createJobLifecycleHooks(
           steps: filledSteps,
         });
         await draftRepo.writePartialTutorial(draftId, partialDraft);
+        const committedFiles =
+          filledSteps.length > 0
+            ? getFilesAfterStep(partialDraft, filledSteps.length - 1)
+            : normalizeBaseCode(partialDraft.baseCode, partialDraft.meta).files;
+        agentState = withCommittedCheckpoint({
+          state: agentState,
+          checkpointIndex: filledSteps.length - 1,
+          currentAction: "step_fill",
+          snapshotHash: computeSnapshotHash(committedFiles),
+          retryCount: agentState?.retryCount ?? 0,
+          replanCount: agentState?.replanCount ?? 0,
+          compressionCount: agentState?.compressionCount ?? 0,
+          consecutiveRepairFailures: 0,
+        });
+        await touchJob({
+          phase: "step_fill",
+          currentStepIndex: _stepIndex,
+          totalSteps: cachedOutline.steps.length,
+          retryCount: agentState.retryCount,
+          agentState,
+        });
+        console.log(`[generate-v2] Partial persist for step ${_stepIndex}: ${Date.now() - _partialStart}ms`);
       } catch (err) {
-        console.error(`[generate-v2] Failed to persist partial draft for step ${_stepIndex}:`, err);
+        console.error(`[generate-v2] Failed to persist partial draft for step ${_stepIndex} (${Date.now() - _partialStart}ms):`, err);
+        throw err;
       }
     },
   };
@@ -293,6 +455,8 @@ export async function initiateGeneration(
     throw new Error("Generation is already in progress for this draft");
   }
 
+  const useAgentLoop = process.env.USE_AGENT_LOOP === '1';
+
   const savedOutline =
     generationMode === "fill_from_saved_outline"
       ? draft.generationOutline
@@ -311,8 +475,38 @@ export async function initiateGeneration(
     process.env.DEEPSEEK_MODEL ||
     "minimax/MiniMax-M2.7";
 
+  const latestJob = useAgentLoop
+    ? await generationJobRepo.getLatestDraftGenerationJobByDraftId(draftId)
+    : null;
+  let resumeState = deriveAgentResumeState({
+    useAgentLoop,
+    generationMode,
+    draftTutorial: draft.tutorialDraft,
+    latestJob,
+  });
+
+  if (resumeState) {
+    const checkpointValidation = validateAgentResumeCheckpoint(resumeState);
+    if (checkpointValidation.status === "invalid") {
+      console.warn(
+        `[generate-v2] Resume disabled for draft ${draftId}: ${checkpointValidation.reason}` +
+          (checkpointValidation.errorMessage ? ` (${checkpointValidation.errorMessage})` : ""),
+      );
+      resumeState = null;
+    } else if (checkpointValidation.status === "realigned") {
+      console.warn(
+        `[generate-v2] Resume checkpoint realigned for draft ${draftId}: ${checkpointValidation.reason}. Partial draft wins.`,
+      );
+      resumeState = {
+        ...resumeState,
+        agentState: checkpointValidation.agentState,
+      };
+    }
+  }
+
   let job: DraftGenerationJob;
   const startedAt = new Date();
+  const _setupStart = Date.now();
 
   await db.transaction(async (tx) => {
     job = await generationJobRepo.createDraftGenerationJob(
@@ -325,15 +519,20 @@ export async function initiateGeneration(
         heartbeatAt: startedAt,
         leaseUntil: getLeaseUntil(startedAt),
         modelId: effectiveModel,
+        outlineSnapshot: resumeState?.outline ?? null,
+        stepTitlesSnapshot: resumeState?.outline.steps.map((step) => step.title) ?? null,
+        agentState: resumeState?.agentState ?? createEmptyAgentState(),
       },
       tx
     );
     await draftRepo.clearDraftTutorialForGeneration(draftId, tx, {
       preserveOutline: generationMode === "fill_from_saved_outline",
+      preservePartialDraft: Boolean(resumeState),
     });
     await draftRepo.updateDraftGenerationState(draftId, "running", undefined, tx);
     await draftRepo.updateDraftActiveGenerationJobId(draftId, job.id, tx);
   });
+  console.log(`[generate-v2] DB setup transaction: ${Date.now() - _setupStart}ms`);
 
   return initiateGenerationStream(
     draftId,
@@ -342,6 +541,7 @@ export async function initiateGeneration(
     job!,
     generationMode,
     savedOutline,
+    resumeState,
   );
 }
 
@@ -355,9 +555,16 @@ async function initiateGenerationStream(
   job: DraftGenerationJob,
   generationMode: DraftGenerationMode,
   savedOutline: TutorialOutline | null,
+  resumeState: AgentResumeState | null,
 ): Promise<Response> {
   const cancelToken: CancelToken = { value: false };
-  const lifecycleHooks = createJobLifecycleHooks(job.id, draftId, draft.sourceItems);
+  const useAgentLoop = process.env.USE_AGENT_LOOP === '1';
+  const lifecycleHooks = createJobLifecycleHooks(
+    job.id,
+    draftId,
+    draft.sourceItems,
+    resumeState?.agentState ?? job.agentState ?? null,
+  );
 
   // Register so the cancel API endpoint can signal this generation
   activeGenerations.set(draftId, { jobId: job.id, token: cancelToken });
@@ -394,8 +601,6 @@ async function initiateGenerationStream(
     }, GENERATION_HEARTBEAT_INTERVAL_MS);
   };
 
-  const useAgentLoop = process.env.USE_AGENT_LOOP === '1';
-
   try {
     const generationStream = useAgentLoop
       ? createAgentGenerationStream(
@@ -413,6 +618,11 @@ async function initiateGenerationStream(
                   ? "fill_from_outline"
                   : "full",
             initialOutline: savedOutline ?? undefined,
+            resume: resumeState ?? undefined,
+            trace: {
+              jobId: job.id,
+              draftId,
+            },
           },
         )
       : createMultiPhaseGenerationStream(
@@ -522,6 +732,7 @@ async function persistContent(
   }
 
   const { draft: tutorialDraft, outline, retryCount } = multiPhaseResult;
+  const currentJob = await generationJobRepo.getDraftGenerationJobById(jobId);
 
   try {
     const persistStartedAt = new Date();
@@ -571,24 +782,47 @@ async function persistContent(
       return;
     }
 
+    const _valStart = Date.now();
     const validation = await validateTutorialDraft(tutorialDraft);
+    const _valMs = Date.now() - _valStart;
     const totalMs = Date.now() - startTime;
 
     // Compute quality metrics
+    const _qualityStart = Date.now();
     const quality = computeGenerationQuality(
       tutorialDraft,
       outline,
       retryCount,
       totalMs,
+      multiPhaseResult.agentMetrics,
     );
+    const _qualityMs = Date.now() - _qualityStart;
 
     const finalState = validation.valid ? "succeeded" : "failed";
+    const validationStepIndex = validation.valid
+      ? null
+      : getFirstValidationStepIndex(validation.provenance);
     const errorMsg = validation.valid
       ? undefined
       : validation.errors.join("; ");
     const finishedAt = new Date();
+    const terminalAgentState = validation.valid
+      ? withAgentAction(currentJob?.agentState, "validate", {
+          retryCount,
+          currentAttempt: 0,
+        })
+      : withFailureState({
+          state: currentJob?.agentState,
+          action: "validate",
+          stepIndex: validationStepIndex,
+          category: "validation",
+          message: errorMsg ?? null,
+          retryCount,
+          currentAttempt: 0,
+        });
 
     // Persist all updates atomically in a single transaction
+    const _txStart = Date.now();
     await db.transaction(async (tx) => {
       await draftRepo.updateDraftTutorial(
         draftId,
@@ -618,20 +852,27 @@ async function persistContent(
           finishedAt,
           heartbeatAt: finishedAt,
           leaseUntil: null,
-          currentStepIndex: null,
+          currentStepIndex: validation.valid ? null : validationStepIndex,
           totalSteps: outline.steps.length,
           retryCount,
           errorCode: validation.valid ? null : "DRAFT_VALIDATION_FAILED",
           errorMessage: validation.valid ? null : errorMsg,
           failureDetail: validation.valid
             ? null
-            : { validationErrors: validation.errors },
+            : {
+                validationErrors: validation.errors,
+                validationProvenance: validation.provenance,
+              },
           outlineSnapshot: outline,
           stepTitlesSnapshot: outline.steps.map((step) => step.title),
+          agentState: terminalAgentState,
         },
         tx
       );
     });
+    const _txMs = Date.now() - _txStart;
+    console.log(`[generate-v2] Persist phase timing: total=${Date.now() - startTime}ms (validate:${_valMs}ms quality:${_qualityMs}ms db-tx:${_txMs}ms)`);
+    console.log(`[generate-v2] Full generation wall time: ${Date.now() - startTime}ms`);
   } catch (err: any) {
     console.error(`[generate-v2] Persist failed for draft ${draftId}, job ${jobId}:`, err);
     await markGenerationFailed(draftId, jobId, err, "PERSIST_FAILED", "persist");
@@ -646,9 +887,29 @@ async function markGenerationFailed(
   phaseOverride?: GenerationJobPhase,
 ) {
   const failure = getGenerationJobFailureUpdate(error);
+  const existingJob = await generationJobRepo.getDraftGenerationJobById(jobId);
   const finishedAt = new Date();
   const errorCode = errorCodeOverride ?? failure.errorCode;
   const phase = phaseOverride ?? failure.phase;
+  const nextAgentState = withFailureState({
+    state: existingJob?.agentState,
+    action:
+      phase === "validate"
+        ? "validate"
+        : phase === "outline"
+          ? "planning"
+          : getJobCurrentAction(existingJob) ?? "step_fill",
+    stepIndex: failure.currentStepIndex,
+    category:
+      error instanceof TutorialDraftValidationError
+        ? "validation"
+        : classifyFailureMessage(failure.errorMessage),
+    message: failure.errorMessage,
+    retryCount: existingJob?.agentState?.retryCount,
+    currentAttempt: existingJob?.agentState?.currentAttempt,
+    consecutiveRepairFailures:
+      existingJob?.agentState?.driftSignals.consecutiveRepairFailures,
+  });
 
   console.error(
     `[generate-v2] Generation failed for draft ${draftId}, job ${jobId}:`,
@@ -680,6 +941,7 @@ async function markGenerationFailed(
         errorCode,
         errorMessage: failure.errorMessage,
         failureDetail: failure.failureDetail,
+        agentState: nextAgentState,
       },
       tx
     );
@@ -723,6 +985,8 @@ export async function getGenerationStatus(draftId: string, userId: string) {
       id: job.id,
       status: job.status,
       phase: job.phase,
+      currentAction: getJobCurrentAction(job),
+      checkpointIndex: job.agentState?.checkpointIndex ?? null,
       currentStepIndex: job.currentStepIndex,
       totalSteps: job.totalSteps,
       modelId: job.modelId,

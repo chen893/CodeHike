@@ -55,6 +55,29 @@ export function buildGenerationContext(draft: ClientDraftRecord): GenerationCont
   };
 }
 
+export function deriveFailedGenerationStepIndex(draft: ClientDraftRecord): number | null {
+  if (draft.generationState !== 'failed') return null;
+
+  const outlineStepCount = draft.generationOutline?.steps?.length ?? 0;
+  if (outlineStepCount <= 0) return null;
+
+  const persistedStepCount = draft.tutorialDraft?.steps?.length ?? 0;
+  if (persistedStepCount >= 0 && persistedStepCount < outlineStepCount) {
+    return persistedStepCount;
+  }
+
+  const stepMatch = draft.generationErrorMessage?.match(/(?:Step|第|步骤)\s*(\d+)\s*(?:步)?/i);
+  if (!stepMatch) return null;
+
+  const stepNumber = Number(stepMatch[1]);
+  if (!Number.isInteger(stepNumber)) return null;
+
+  const stepIndex = stepNumber - 1;
+  if (stepIndex < 0 || stepIndex >= outlineStepCount) return null;
+
+  return stepIndex;
+}
+
 export function resolveSelectedStepIndex(
   nextSteps: NonNullable<ClientDraftRecord['tutorialDraft']>['steps'],
   preferredStepId: string | null | undefined,

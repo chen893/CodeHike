@@ -43,6 +43,13 @@
       "when": 1776541498471,
       "tag": "0005_medical_the_professor",
       "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "7",
+      "when": 1777468800000,
+      "tag": "0006_agent_runtime_checkpoint",
+      "breakpoints": true
     }
   ]
 }

@@ -155,6 +155,7 @@ lib/services/compute-generation-quality.ts # 质量指标计算
 | | `GET /api/drafts/[id]/generation-status` | 轮询状态（支持 `?lightweight=true`） |
 | | `POST /api/drafts/[id]/cancel` | 取消生成 |
 | | `POST /api/drafts/[id]/incremental-regenerate` | 增量重生成 |
+| | `POST /api/drafts/[id]/retry-from-step` | 从失败步骤索引恢复后续步骤（失败步未持久化时会先补齐 outline 占位步骤） |
 | **步骤** | `POST /api/drafts/[id]/steps` | 追加步骤 |
 | | `PUT /api/drafts/[id]/steps` | 重排（stepIds 数组） |
 | | `PATCH /api/drafts/[id]/steps/[stepId]` | 编辑步骤（结构变更触发级联校验） |

@@ -13,6 +13,7 @@
 
 import type { ContentPatch } from '../schemas/tutorial-draft';
 import type { PreprocessedSource } from './source-preprocessor';
+import { isProgressivePlaceholderContent } from './progressive-snapshot-base-code';
 
 export interface AutoFixResult {
   success: boolean;
@@ -231,6 +232,19 @@ export function tryAutoFixPatches(
     }
 
     // Try auto-fix
+    // Placeholder file fallback: if the file is a placeholder stub and find
+    // doesn't match, replace the entire file content with `replace`.
+    if (isProgressivePlaceholderContent(code)) {
+      fixedPatches.push({
+        ...patch,
+        find: code,
+      });
+      fixesApplied.push(`Patch ${i + 1}: placeholder file whole-content replacement`);
+      anyFixed = true;
+      accumulated[targetFile] = patch.replace;
+      continue;
+    }
+
     const fix = tryFixSinglePatch(code, patch);
     if (fix) {
       // Verify the fixed find text matches uniquely in the current code

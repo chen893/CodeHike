@@ -77,6 +77,15 @@ test('normalizeBaseCode uses Record baseCode as-is', () => {
   assert.equal(result.primaryFile, 'a.js');
 });
 
+test('normalizeBaseCode ignores meta fileName that is not in a baseCode record', () => {
+  const result = normalizeBaseCode(
+    { 'agent/Agent.ts': 'class Agent {}', 'retry.ts': 'retry();' },
+    { title: 'Repo tutorial', fileName: 'mini-agent-typescript' }
+  );
+
+  assert.equal(result.primaryFile, 'agent/Agent.ts');
+});
+
 test('normalizeBaseCode derives lang from fileName', () => {
   const result = normalizeBaseCode('print(1)', { fileName: 'main.py' });
   assert.equal(result.lang, 'python');
@@ -118,6 +127,34 @@ test('applyContentPatches multi-file defaults to primaryFile', () => {
 
   assert.equal(result['main.js'], 'const x = 2;\n');
   assert.equal(result['utils.js'], 'noop\n');
+});
+
+test('applyContentPatches infers omitted file from a unique find match', () => {
+  const files = {
+    'retry.ts': 'export function retry() {}\n',
+    'agent/Agent.ts': '  private async summarizeMessagesIfNeeded(): Promise<void> {\n    // TODO\n  }\n',
+  };
+  const result = applyContentPatches(files, [
+    {
+      find: '  private async summarizeMessagesIfNeeded(): Promise<void> {\n    // TODO\n  }',
+      replace: '  private async summarizeMessagesIfNeeded(): Promise<void> {\n    return;\n  }',
+    },
+  ], 'retry.ts');
+
+  assert.match(result['agent/Agent.ts'], /return;/);
+  assert.equal(result['retry.ts'], files['retry.ts']);
+});
+
+test('applyContentPatches treats string undefined file as omitted', () => {
+  const files = {
+    'retry.ts': 'export function retry() {}\n',
+    'agent/Agent.ts': 'const target = true;\n',
+  };
+  const result = applyContentPatches(files, [
+    { find: 'target = true', replace: 'target = false', file: 'undefined' },
+  ], 'retry.ts');
+
+  assert.equal(result['agent/Agent.ts'], 'const target = false;\n');
 });
 
 test('getFilesBeforeStep works with multi-file baseCode', () => {
@@ -198,6 +235,16 @@ test('normalizeTutorialMeta preserves existing lang/fileName', () => {
   assert.equal(result.fileName, 'custom.py');
 });
 
+test('normalizeTutorialMeta replaces invalid multi-file fileName with primary file', () => {
+  const meta = { title: 'Repo', lang: 'typescript', fileName: 'mini-agent-typescript', description: 'desc' };
+  const result = normalizeTutorialMeta(meta, {
+    'agent/Agent.ts': 'class Agent {}',
+    'retry.ts': 'retry();',
+  });
+
+  assert.equal(result.fileName, 'agent/Agent.ts');
+});
+
 test('normalizeTutorialMeta fills from string baseCode', () => {
   const meta = { title: 'Test', description: 'desc' };
   const result = normalizeTutorialMeta(meta, 'const x = 1;');
@@ -222,4 +269,3 @@ test('applyContentPatches throws with available files listed on bad target', () 
     (err) => err.message.includes('可用: app.js')
   );
 });
-

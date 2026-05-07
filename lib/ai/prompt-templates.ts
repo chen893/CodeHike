@@ -1,5 +1,6 @@
 import type { SourceItem } from '../schemas/source-item';
 import type { TeachingBrief } from '../schemas/teaching-brief';
+import { getFilesBeforeStep } from '../tutorial/draft-code';
 
 export function buildGeneratePrompt(
   sourceItems: SourceItem[],
@@ -144,20 +145,32 @@ ${
 Patch 精确匹配规则：
 - find 必须是代码中的精确子串，逐字匹配（空格、缩进、换行完全一致）
 - find 在当前代码中必须只出现一次
+- 多文件教程中，patch.file 必须是当前代码文件列表里的真实路径；不要写仓库名、"undefined"、"null" 或不存在的文件
 - 绝对禁止使用占位符`;
 
   const beforeSteps = currentDraft.steps.slice(0, stepIndex);
   const targetStep = currentDraft.steps[stepIndex];
   const afterSteps = currentDraft.steps.slice(stepIndex + 1);
+  const currentFiles = getFilesBeforeStep(currentDraft, stepIndex);
+  const currentCodeSection = Object.entries(currentFiles)
+    .map(([fileName, code]) => `### ${fileName}\n\`\`\`\n${code}\n\`\`\``)
+    .join('\n\n');
 
   const userPrompt = `## 教程信息
 - 标题：${currentDraft.meta.title}
 - 总步骤数：${currentDraft.steps.length}
+- 当前可用文件：${Object.keys(currentFiles).join(', ')}
 
 ## 要重新生成的步骤（第 ${stepIndex + 1} 步）
 \`\`\`json
 ${JSON.stringify(targetStep, null, 2)}
 \`\`\`
+
+## 当前代码状态（第 ${stepIndex} 步之后，重新生成步骤之前）
+
+后续 patches 的 find 必须从下面这份当前代码中逐字复制；如果修改多文件中的某个文件，patch.file 必须使用对应的文件路径。
+
+${currentCodeSection}
 
 ## 前面的步骤
 ${beforeSteps.map((s: any, i: number) => `步骤 ${i + 1}: ${s.title}`).join('\n')}

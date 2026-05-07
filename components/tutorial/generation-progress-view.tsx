@@ -3,6 +3,7 @@
 import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { Loader2 } from 'lucide-react';
+import type { DraftGenerationMode } from '@/lib/types/generation-mode';
 import type {
   GenerationContext,
   GenerationProgressViewModel,
@@ -37,6 +38,7 @@ function getPlaceholderCompletedCount(status: V2Status): number {
 interface GenerationProgressViewProps {
   draftId: string;
   context: GenerationContext;
+  generationMode?: DraftGenerationMode;
   controller: GenerationProgressViewModel;
   onExit?: () => void;
 }
@@ -44,6 +46,7 @@ interface GenerationProgressViewProps {
 export function GenerationProgressView({
   draftId,
   context,
+  generationMode,
   controller,
   onExit,
 }: GenerationProgressViewProps) {
@@ -51,6 +54,7 @@ export function GenerationProgressView({
     <V2ProgressUI
       context={context}
       draftId={draftId}
+      generationMode={generationMode}
       status={controller.v2Status}
       outline={controller.outline}
       currentStepIndex={controller.currentStepIndex}
@@ -76,6 +80,7 @@ export function GenerationProgressView({
 function V2ProgressUI({
   context,
   draftId,
+  generationMode,
   status,
   outline,
   currentStepIndex,
@@ -97,6 +102,7 @@ function V2ProgressUI({
 }: {
   context: GenerationContext;
   draftId: string;
+  generationMode?: DraftGenerationMode;
   status: GenerationProgressViewModel['v2Status'];
   outline: GenerationProgressViewModel['outline'];
   currentStepIndex: number;
@@ -368,7 +374,26 @@ function V2ProgressUI({
                 )}
                 {canRetry && (
                   <button type="button" className={secondaryButton} onClick={onRetry}>
-                    {errorPhase === 'step-fill' ? '从当前进度重新生成' : '重新生成目录'}
+                    {errorPhase === 'step-fill'
+                      ? generationMode === 'fill_from_saved_outline'
+                        ? '基于当前大纲重新生成'
+                        : '从大纲重新开始'
+                      : '重新生成目录'}
+                  </button>
+                )}
+                {errorPhase === 'step-fill' && outline && (
+                  <button
+                    type="button"
+                    className={secondaryButton}
+                    onClick={() =>
+                      router.push(
+                        `/drafts/${draftId}/outline${
+                          failedStepIndex !== null ? `?fromStep=${failedStepIndex}` : ''
+                        }`
+                      )
+                    }
+                  >
+                    修改大纲后继续
                   </button>
                 )}
                 <button

@@ -49,6 +49,12 @@ export const regenerateStepRequestSchema = z.object({
   instruction: z.string().optional(),
 });
 
+// POST /api/drafts/[id]/retry-from-step
+export const retryFromStepRequestSchema = z.object({
+  stepIndex: z.number().int().min(0),
+  instruction: z.string().optional(),
+});
+
 // POST /api/drafts/[id]/publish
 export const publishRequestSchema = z.object({
   slug: z.string().optional(),

@@ -146,12 +146,27 @@ export const draftGenerationJobs = pgTable('draft_generation_jobs', {
   stepTitlesSnapshot: jsonb('step_titles_snapshot').$type<string[] | null>(),
   agentState: jsonb('agent_state').$type<{
     checkpointIndex: number;
-    snapshotHash: string;
-    repairHistory: Array<{ stepIndex: number; attempts: number; strategy: string; outcome: string }>;
+    currentAction:
+      | 'planning'
+      | 'step_fill'
+      | 'repair'
+      | 'replan'
+      | 'compress'
+      | 'validate';
+    currentAttempt: number;
+    retryCount: number;
     replanCount: number;
-    tokenUsage: { used: number; budget: number };
-    outcomes: Array<{ stepIndex: number; result: string; repairCount: number; patchStrategy: string; locChange: number }>;
-    distilledContext?: unknown;
+    compressionCount: number;
+    driftSignals: {
+      consecutiveRepairFailures: number;
+      consecutiveDegradedSteps: number;
+    };
+    lastFailure: {
+      stepIndex: number | null;
+      category: 'repairable' | 'unrecoverable' | 'provider' | 'validation' | 'unknown';
+      message: string | null;
+    } | null;
+    lastCommittedSnapshotHash: string | null;
   } | null>(),
   createdAt: timestamp('created_at', { withTimezone: true })
     .default(sql`clock_timestamp()`)

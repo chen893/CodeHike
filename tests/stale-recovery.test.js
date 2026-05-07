@@ -174,7 +174,7 @@ test('generation progress can start a new generation after a terminal job', asyn
   assert.match(source, /job\.status === 'abandoned'/);
 });
 
-test('full generation clears old tutorial content before marking draft running', async () => {
+test('generation preparation clears tutorial content unless committed-step resume is active', async () => {
   const fs = await import('node:fs');
   const path = await import('node:path');
   const url = await import('node:url');
@@ -195,7 +195,14 @@ test('full generation clears old tutorial content before marking draft running',
     /clearDraftTutorialForGeneration\(draftId,\s*tx(?:,\s*\{[\s\S]*?preserveOutline:[\s\S]*?\})?\)/
   );
   assert.match(repoSource, /export async function clearDraftTutorialForGeneration/);
-  assert.match(repoSource, /tutorialDraft:\s*null/);
+  assert.match(
+    repoSource,
+    /tutorialDraft:\s*options\?\.preservePartialDraft\s*\?\s*undefined\s*:\s*null/
+  );
+  assert.match(
+    repoSource,
+    /syncState:\s*options\?\.preservePartialDraft\s*\?\s*undefined\s*:\s*'empty'/
+  );
   assert.match(
     repoSource,
     /generationOutline:\s*options\?\.preserveOutline\s*\?\s*undefined\s*:\s*null/

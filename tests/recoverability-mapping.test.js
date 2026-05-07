@@ -82,6 +82,16 @@ test('mapJobToRecoverability returns "retry_full" for DRAFT_VALIDATION_FAILED', 
   assert.equal(mapJobToRecoverability(job), 'retry_full');
 });
 
+test('mapJobToRecoverability returns "retry_from_step" for indexed DRAFT_VALIDATION_FAILED', async () => {
+  const { mapJobToRecoverability } = await import('../lib/types/generation-job.ts');
+  const job = makeJob({
+    status: 'failed',
+    errorCode: 'DRAFT_VALIDATION_FAILED',
+    currentStepIndex: 2,
+  });
+  assert.equal(mapJobToRecoverability(job), 'retry_from_step');
+});
+
 test('mapJobToRecoverability returns "retry_full" for PERSIST_FAILED', async () => {
   const { mapJobToRecoverability } = await import('../lib/types/generation-job.ts');
   const job = makeJob({

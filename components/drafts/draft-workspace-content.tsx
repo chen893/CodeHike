@@ -1,6 +1,6 @@
 'use client';
 
-import { AlertCircle, AlertTriangle } from 'lucide-react';
+import { AlertCircle, AlertTriangle, RefreshCw } from 'lucide-react';
 import { DraftMetaEditor } from '@/components/draft-meta-editor';
 import { GenerationProgress, type GenerationContext } from '@/components/generation-progress';
 import { StepEditor } from '@/components/step-editor';
@@ -29,8 +29,10 @@ interface DraftWorkspaceContentProps {
     stepIndex: number;
     stepTitle: string;
   } | null;
+  failedGenerationStepIndex: number | null;
   onGenerationComplete: () => Promise<void>;
   onRegenerateFailedTail: () => Promise<void>;
+  onRetryFromFailedStep: (stepIndex: number) => Promise<void>;
   onSaveMeta: (data: {
     title?: string;
     description?: string;
@@ -39,6 +41,7 @@ interface DraftWorkspaceContentProps {
   onSaveStep: (stepId: string, data: unknown) => Promise<void>;
   onRegenerateStep: (stepId: string, mode: 'prose' | 'step') => Promise<void>;
   onRetryGeneration: () => void;
+  onOpenOutlineReview: () => void;
   onExitGenerationProgress: () => void;
 }
 
@@ -57,12 +60,15 @@ export function DraftWorkspaceContent({
   startNewGeneration,
   repairingStartIndex,
   firstInvalidStep,
+  failedGenerationStepIndex,
   onGenerationComplete,
   onRegenerateFailedTail,
+  onRetryFromFailedStep,
   onSaveMeta,
   onSaveStep,
   onRegenerateStep,
   onRetryGeneration,
+  onOpenOutlineReview,
   onExitGenerationProgress,
 }: DraftWorkspaceContentProps) {
   return (
@@ -92,9 +98,27 @@ export function DraftWorkspaceContent({
                 {draft.generationErrorMessage || '生成未完成，可以调整大纲后重新生成。'}
               </p>
             </div>
-            <Button variant="secondary" onClick={onRetryGeneration} disabled={saving}>
-              重新生成目录
-            </Button>
+            <div className="flex flex-wrap gap-2">
+              {failedGenerationStepIndex !== null && (
+                <Button
+                  onClick={() => void onRetryFromFailedStep(failedGenerationStepIndex)}
+                  disabled={saving}
+                >
+                  <RefreshCw className="h-4 w-4" />
+                  {repairingStartIndex === failedGenerationStepIndex
+                    ? `正在从第 ${failedGenerationStepIndex + 1} 步继续...`
+                    : '从当前进度继续生成'}
+                </Button>
+              )}
+              {draft.generationOutline && (
+                <Button variant="secondary" onClick={onOpenOutlineReview} disabled={saving}>
+                  进入大纲审阅
+                </Button>
+              )}
+              <Button variant="secondary" onClick={onRetryGeneration} disabled={saving}>
+                重新生成目录
+              </Button>
+            </div>
           </div>
         </div>
       )}
@@ -173,9 +197,27 @@ export function DraftWorkspaceContent({
                 : '教程将自动开始生成。'}
             </p>
             {draft.generationState === 'failed' && (
-              <Button variant="secondary" onClick={onRetryGeneration} disabled={saving}>
-                重新生成目录
-              </Button>
+              <div className="flex justify-center gap-2">
+                {failedGenerationStepIndex !== null && (
+                  <Button
+                    onClick={() => void onRetryFromFailedStep(failedGenerationStepIndex)}
+                    disabled={saving}
+                  >
+                    <RefreshCw className="h-4 w-4" />
+                    {repairingStartIndex === failedGenerationStepIndex
+                      ? `正在从第 ${failedGenerationStepIndex + 1} 步继续...`
+                      : '从当前进度继续生成'}
+                  </Button>
+                )}
+                {draft.generationOutline && (
+                  <Button variant="secondary" onClick={onOpenOutlineReview} disabled={saving}>
+                    进入大纲审阅
+                  </Button>
+                )}
+                <Button variant="secondary" onClick={onRetryGeneration} disabled={saving}>
+                  重新生成目录
+                </Button>
+              </div>
             )}
           </div>
         </div>

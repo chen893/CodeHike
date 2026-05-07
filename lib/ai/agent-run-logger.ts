@@ -9,42 +9,68 @@
  */
 
 import { appendFileSync, mkdirSync, existsSync } from 'fs';
+import { randomUUID } from 'crypto';
 import { join } from 'path';
 import { homedir } from 'os';
 
 export interface AgentRunLogger {
+  runId: string | null;
+  logFilePath: string | null;
   logEvent(type: string, data: Record<string, unknown>): void;
 }
 
+export interface AgentRunLoggerMetadata {
+  runId?: string;
+  jobId?: string;
+  draftId?: string;
+  modelId?: string;
+}
+
 const NOOP_LOGGER: AgentRunLogger = {
+  runId: null,
+  logFilePath: null,
   logEvent() {},
 };
 
-let logFilePath: string | null = null;
-let entryIndex = 0;
+let lastLogFilePath: string | null = null;
 
 function ensureLogDir(): string {
-  const dir = join(homedir(), '.codehike-debug');
+  const dir = process.env.AGENT_LOOP_LOG_DIR || join(homedir(), '.codehike-debug');
   if (!existsSync(dir)) {
     mkdirSync(dir, { recursive: true });
   }
   return dir;
 }
 
-function createFileLogger(): AgentRunLogger {
+function safeFilePart(value: string) {
+  return value.replace(/[^a-zA-Z0-9_-]+/g, '-').slice(0, 64) || 'run';
+}
+
+function createFileLogger(metadata: AgentRunLoggerMetadata = {}): AgentRunLogger {
   const dir = ensureLogDir();
   const now = new Date();
+  const runId = metadata.runId ?? randomUUID();
   const ts = now.toISOString().replace(/[:.]/g, '-').slice(0, 19);
-  logFilePath = join(dir, `agent-run-${ts}.log`);
+  const suffixBase = metadata.jobId ? safeFilePart(metadata.jobId) : safeFilePart(runId);
+  const suffix = `${suffixBase}-${safeFilePart(runId).slice(0, 8)}`;
+  const logFilePath = join(dir, `agent-run-${ts}-${suffix}.log`);
+  let entryIndex = 0;
+  lastLogFilePath = logFilePath;
 
   const header = {
     _header: true,
     timestamp: now.toISOString(),
+    runId,
+    jobId: metadata.jobId ?? null,
+    draftId: metadata.draftId ?? null,
+    modelId: metadata.modelId ?? null,
     pid: process.pid,
   };
   appendFileSync(logFilePath, JSON.stringify(header) + '\n');
 
   return {
+    runId,
+    logFilePath,
     logEvent(type: string, data: Record<string, unknown>) {
       entryIndex++;
       const entry = {
@@ -62,13 +88,15 @@ function createFileLogger(): AgentRunLogger {
   };
 }
 
-export function createAgentRunLogger(): AgentRunLogger {
+export function createAgentRunLogger(
+  metadata: AgentRunLoggerMetadata = {},
+): AgentRunLogger {
   if (process.env.AGENT_LOOP_DEBUG !== '1') {
     return NOOP_LOGGER;
   }
-  return createFileLogger();
+  return createFileLogger(metadata);
 }
 
 export function getLogFilePath(): string | null {
-  return logFilePath;
+  return lastLogFilePath;
 }

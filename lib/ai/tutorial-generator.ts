@@ -1,9 +1,7 @@
-import { generateText } from 'ai';
 import { legacyTutorialStepSchema } from '../schemas/tutorial-draft';
 import { buildRegenerateStepPrompt } from './prompt-templates';
-import { adaptPromptForModel } from './prompt-adapters';
 import { createProvider, getMaxOutputTokens } from './provider-registry';
-import { parseJsonFromText } from './parse-json-text';
+import { generateStructuredObject } from './structured-output-adapter';
 import type { SourceItem } from '../schemas/source-item';
 import type { TeachingBrief } from '../schemas/teaching-brief';
 
@@ -29,12 +27,16 @@ export async function regenerateStep(
     instruction
   );
 
-  const result = await generateText({
+  const result = await generateStructuredObject({
+    label: `regenerate-step-${stepIndex}`,
+    schemaName: 'tutorial_step',
+    schema: legacyTutorialStepSchema,
     model: createProvider(modelId),
-    system: adaptPromptForModel(systemPrompt, modelId),
-    prompt: adaptPromptForModel(userPrompt, modelId),
+    modelId,
+    system: systemPrompt,
+    prompt: userPrompt,
     maxOutputTokens: getMaxOutputTokens(modelId),
   });
 
-  return parseJsonFromText(result.text, legacyTutorialStepSchema, `regenerate-step-${stepIndex}`);
+  return result.output;
 }

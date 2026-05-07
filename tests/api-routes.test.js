@@ -19,6 +19,7 @@ const expectedRoutes = {
   'drafts/[id]/generate/route.ts': ['POST'],
   'drafts/[id]/outline/route.ts': ['PUT'],
   'drafts/[id]/publish/route.ts': ['POST'],
+  'drafts/[id]/retry-from-step/route.ts': ['POST'],
   'drafts/[id]/unpublish/route.ts': ['POST'],
   'drafts/[id]/payload/route.ts': ['GET'],
   'drafts/[id]/snapshots/route.ts': ['GET', 'POST'],

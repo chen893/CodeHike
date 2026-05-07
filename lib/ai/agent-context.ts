@@ -18,7 +18,7 @@ import type { TeachingBrief } from '../schemas/teaching-brief';
 import type { SourceItem } from '../schemas/source-item';
 import { estimateTokens } from './token-budget';
 import { createProvider, getMaxOutputTokens } from './provider-registry';
-import { parseJsonFromText } from './parse-json-text';
+import { generateStructuredObject } from './structured-output-adapter';
 import { tutorialOutlineSchema } from '../schemas/tutorial-outline';
 
 // ---------------------------------------------------------------------------
@@ -292,24 +292,21 @@ ${originalRemaining.map((s, i) => `${currentStepIndex + i + 1}. ${s.title} — $
 
 Please redesign the remaining ${originalRemaining.length} steps, keeping the teaching goals but adjusting based on what has actually been completed.`;
 
-  const result = await generateText({
+  const result = await generateStructuredObject<TutorialOutline>({
+    label: 'full-replan',
+    schemaName: 'tutorial_outline',
+    schema: tutorialOutlineSchema,
     model,
+    modelId,
     system: systemPrompt,
     prompt: userPrompt,
     maxOutputTokens: getMaxOutputTokens(modelId),
   });
 
-  // Parse the revised outline
-  const partialOutline = parseJsonFromText(result.text, tutorialOutlineSchema, 'full-replan');
-  if (!partialOutline) {
-    // Fallback: return original outline unchanged
-    return outline;
-  }
-
   // Merge: keep completed steps, replace remaining
   const revisedSteps = [
     ...completedSteps,
-    ...(partialOutline.steps ?? originalRemaining),
+    ...(result.output.steps ?? originalRemaining),
   ];
 
   return {
